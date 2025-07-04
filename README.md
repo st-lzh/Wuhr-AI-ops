@@ -18,7 +18,7 @@ AI助手是平台的核心功能，提供基于GPT-4o等先进模型的智能对
 
 ![AI助手界面](https://wuhrai-wordpress.oss-cn-hangzhou.aliyuncs.com/github/wuhraiops/AI%E5%8A%A9%E6%89%8B.png)
 
-🎥 **视频演示：** [观看AI助手功能演示](https://wuhrai-wordpress.oss-cn-hangzhou.aliyuncs.com/github/wuhraiops/chat.mov)
+🎥 **视频演示：** [观看AI助手功能演示](https://www.bilibili.com/video/BV19A3jzyET4/?vd_source=56a061d9ef5994305d047165b2c6a3d5)
 
 **核心特性：**
 - 🎯 智能命令建议与自动执行
