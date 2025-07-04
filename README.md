@@ -48,7 +48,7 @@ AI助手是平台的核心功能，提供基于GPT-4o等先进模型的智能对
 
 集成多种监控和分析工具，提供服务器状态监控、日志分析、性能指标追踪等功能，支持多数据中心部署。
 
-![主机管理仪表板](https://wuhrai-wordpress.oss-cn-hangzhou.aliyuncs.com/github/wuhraiops/%E4%BB%AA%E8%A1%A8%E7%9B%98.png)
+![主机管理仪表板](https://wuhrai-wordpress.oss-cn-hangzhou.aliyuncs.com/github/wuhraiops/%E4%B8%BB%E6%9C%BA%E7%AE%A1%E7%90%86.png)
 
 #### 📊 ELK日志
 
