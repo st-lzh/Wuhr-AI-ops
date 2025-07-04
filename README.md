@@ -165,5 +165,8 @@ AI助手是平台的核心功能，提供基于GPT-4o等先进模型的智能对
 - 🐛 **问题反馈**：GitHub Issues
 
 ---
+平台运维群
+
+![WechatIMG232](https://github.com/user-attachments/assets/f29540dc-9df7-47ad-8cab-baa09574a49f)
 
 **Wuhr AI Ops - 让AI为运维赋能，让管理更智能**
