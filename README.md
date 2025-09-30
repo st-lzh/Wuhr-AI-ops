@@ -333,8 +333,8 @@ tail -f app.log
 - **Chat服务**: [gpt.wuhrai.com](https://gpt.wuhrai.com)
 
 ##微信交流
+![IMG_6845](https://github.com/user-attachments/assets/9b07e703-caf9-4af9-87ca-a0ad11669a13)
 
-![WechatIMG39](https://github.com/user-attachments/assets/fdf04cc0-8dfb-466a-9fd6-2041f09569e3)
 
 
 ### 技术支持
