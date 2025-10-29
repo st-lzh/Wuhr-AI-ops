@@ -30,14 +30,9 @@
 
 ## 🎥 视频操作指南
 
-> **📹 [完整讲解演示视频]([https://www.bilibili.com/video/BV11vyWBQEDV/?vd_source=56a061d9ef5994305d047165b2c6a3d5])**
+完整讲解演示视频
+https://www.bilibili.com/video/BV11vyWBQEDV/?vd_source=56a061d9ef5994305d047165b2c6a3d5
 
-> 视频内容将包括：
-> - 系统安装部署演示
-> - AI助手使用技巧
-> - CI/CD流水线配置
-> - 监控告警设置
-> - 权限管理最佳实践
 
 ## 📸 系统界面预览与功能介绍
 
