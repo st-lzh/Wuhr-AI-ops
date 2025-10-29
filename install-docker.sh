@@ -167,7 +167,15 @@ if [ "$TABLE_COUNT" -gt 0 ]; then
     if [ "$FORCE_RESET" != "true" ]; then
         log "💡 如需重新初始化数据库，请设置环境变量: FORCE_RESET=true" \
             "💡 To reinitialize database, set environment variable: FORCE_RESET=true"
-        log "⏭️  跳过数据库导入步骤" "⏭️  Skipping database import"
+        log "🔄 同步数据库Schema..." "🔄 Syncing database schema..."
+
+        # 🔥 即使数据库有数据，也要同步schema确保表结构最新
+        if $DOCKER_COMPOSE exec app npx prisma db push --skip-generate > /tmp/prisma-sync.log 2>&1; then
+            log "✅ 数据库Schema同步成功" "✅ Database schema synced successfully"
+        else
+            log "⚠️  数据库Schema同步失败，详情见 /tmp/prisma-sync.log" "⚠️  Database schema sync failed, see /tmp/prisma-sync.log"
+            cat /tmp/prisma-sync.log
+        fi
     else
         log "🧹 强制重置数据库..." "🧹 Force resetting database..."
         $DOCKER_COMPOSE exec -T postgres psql -U wuhr_admin -d wuhr_ai_ops -c "DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public;" || {
