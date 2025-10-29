@@ -153,10 +153,10 @@ export async function POST(request: NextRequest) {
       timestamp: new Date().toISOString()
     })
 
-    // Set secure HTTP-only cookies - 开发环境优化
+    // Set secure HTTP-only cookies - 根据环境动态设置
     const cookieOptions = {
       httpOnly: true,
-      secure: false, // 开发环境下必须为false
+      secure: process.env.NODE_ENV === 'production', // 🔥 生产环境使用 secure
       sameSite: 'lax' as const,
       path: '/',
       domain: undefined // 明确不设置domain
