@@ -1,0 +1,124 @@
+/* AI助手聊天界面样式 */
+
+/* 消息容器滚动条样式 */
+.messageContainer {
+  scrollbar-width: thin;
+  scrollbar-color: #4a5568 #1a202c;
+}
+
+.messageContainer::-webkit-scrollbar {
+  width: 6px;
+}
+
+.messageContainer::-webkit-scrollbar-track {
+  background: #1a202c;
+  border-radius: 3px;
+}
+
+.messageContainer::-webkit-scrollbar-thumb {
+  background: #4a5568;
+  border-radius: 3px;
+}
+
+.messageContainer::-webkit-scrollbar-thumb:hover {
+  background: #718096;
+}
+
+/* 流式输入光标动画 */
+.streamingCursor {
+  display: inline-block;
+  width: 2px;
+  height: 1.2em;
+  background-color: #60a5fa;
+  animation: blink 1s infinite;
+  margin-left: 2px;
+}
+
+@keyframes blink {
+  0%, 50% {
+    opacity: 1;
+  }
+  51%, 100% {
+    opacity: 0;
+  }
+}
+
+/* 消息气泡动画 */
+.messageAppear {
+  animation: messageSlideIn 0.3s ease-out;
+}
+
+@keyframes messageSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* 头像固定样式 */
+.avatarFixed {
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+}
+
+/* 高亮样式 */
+.commandHighlight {
+  background: linear-gradient(90deg, #1e40af, #3b82f6);
+  color: white;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+  font-size: 0.9em;
+}
+
+.successHighlight {
+  background: linear-gradient(90deg, #059669, #10b981);
+  color: white;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-weight: 500;
+}
+
+.errorHighlight {
+  background: linear-gradient(90deg, #dc2626, #ef4444);
+  color: white;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-weight: 500;
+}
+
+/* 标签限制样式 */
+.tagContainer {
+  display: flex;
+  gap: 4px;
+  flex-wrap: nowrap;
+  overflow: hidden;
+}
+
+.tagContainer .ant-tag {
+  margin: 0;
+  font-size: 11px;
+  padding: 2px 6px;
+  line-height: 1.2;
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 响应式设计 */
+@media (max-width: 768px) {
+  .messageContainer {
+    padding: 12px;
+  }
+  
+  .tagContainer .ant-tag {
+    max-width: 80px;
+    font-size: 10px;
+  }
+}

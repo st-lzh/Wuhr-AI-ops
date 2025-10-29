@@ -1,0 +1,2 @@
+# This file ensures the deployments directory is tracked by git
+# Deployment files are ignored but the directory structure is preserved

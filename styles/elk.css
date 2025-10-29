@@ -1,0 +1,322 @@
+/* ELK日志系统样式 */
+
+/* 标签页样式 */
+.elk-tabs .ant-tabs-content-holder {
+  height: calc(100vh - 280px);
+  overflow: hidden;
+}
+
+.elk-tabs .ant-tabs-tabpane {
+  height: 100%;
+  overflow: hidden;
+}
+
+/* 日志查看器样式 */
+.enhanced-log-viewer {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.enhanced-log-viewer .ant-card {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.enhanced-log-viewer .ant-card-body {
+  flex: 1;
+  padding: 0;
+  overflow: hidden;
+}
+
+.enhanced-log-viewer .ant-table-wrapper {
+  height: 100%;
+}
+
+.enhanced-log-viewer .ant-table {
+  height: 100%;
+}
+
+.enhanced-log-viewer .ant-table-container {
+  height: calc(100% - 55px);
+}
+
+.enhanced-log-viewer .ant-table-body {
+  height: 100%;
+  overflow-y: auto;
+}
+
+/* 仪表板管理器样式 */
+.kibana-dashboard-manager .ant-card {
+  height: calc(100vh - 280px);
+  overflow: hidden;
+}
+
+.kibana-dashboard-manager .ant-card-body {
+  height: calc(100% - 57px);
+  overflow-y: auto;
+}
+
+/* 工具栏样式 */
+.elk-toolbar {
+  background: #fafafa;
+  border-bottom: 1px solid #f0f0f0;
+  padding: 12px 16px;
+  margin-bottom: 0;
+}
+
+.elk-toolbar .ant-space {
+  width: 100%;
+  justify-content: space-between;
+}
+
+/* 全屏模式样式 */
+.elk-fullscreen {
+  position: fixed !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  z-index: 9999 !important;
+  background: white;
+}
+
+.elk-fullscreen .enhanced-log-viewer {
+  height: 100vh;
+}
+
+/* 日志级别颜色 */
+.log-level-error {
+  color: #ff4d4f;
+  font-weight: 600;
+}
+
+.log-level-warn {
+  color: #faad14;
+  font-weight: 500;
+}
+
+.log-level-info {
+  color: #1890ff;
+}
+
+.log-level-debug {
+  color: #52c41a;
+}
+
+.log-level-trace {
+  color: #8c8c8c;
+}
+
+/* 日志消息样式 */
+.log-message {
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+  font-size: 13px;
+  line-height: 1.4;
+  word-break: break-all;
+}
+
+.log-message.highlight-errors {
+  background: #fff2f0;
+  border-left: 3px solid #ff4d4f;
+  padding-left: 8px;
+}
+
+/* 时间戳样式 */
+.log-timestamp {
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+  font-size: 12px;
+  color: #8c8c8c;
+}
+
+/* 过滤器面板样式 */
+.elk-filters {
+  background: #f5f5f5;
+  border-radius: 6px;
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+.elk-filters .ant-form-item {
+  margin-bottom: 12px;
+}
+
+.elk-filters .ant-form-item:last-child {
+  margin-bottom: 0;
+}
+
+/* 仪表板卡片样式 */
+.dashboard-card {
+  transition: all 0.3s ease;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.dashboard-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.dashboard-card.selected {
+  border-color: #1890ff;
+  box-shadow: 0 0 0 2px rgba(24, 144, 255, 0.2);
+}
+
+.dashboard-card .ant-card-meta-title {
+  font-size: 16px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.dashboard-card .ant-card-meta-description {
+  color: #8c8c8c;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+/* 模板选择样式 */
+.template-option {
+  padding: 12px;
+  border: 1px solid #d9d9d9;
+  border-radius: 6px;
+  margin-bottom: 12px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.template-option:hover {
+  border-color: #1890ff;
+  background: #f6ffed;
+}
+
+.template-option.selected {
+  border-color: #1890ff;
+  background: #e6f7ff;
+}
+
+.template-option .template-name {
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.template-option .template-description {
+  color: #8c8c8c;
+  font-size: 13px;
+}
+
+.template-option .template-tags {
+  margin-top: 8px;
+}
+
+/* 响应式设计 */
+@media (max-width: 768px) {
+  .elk-tabs .ant-tabs-content-holder {
+    height: calc(100vh - 200px);
+  }
+  
+  .enhanced-log-viewer {
+    height: calc(100vh - 200px);
+  }
+  
+  .kibana-dashboard-manager .ant-card {
+    height: calc(100vh - 200px);
+  }
+  
+  .elk-toolbar {
+    padding: 8px 12px;
+  }
+  
+  .elk-toolbar .ant-space {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  
+  .elk-toolbar .ant-space-item {
+    margin-bottom: 8px;
+  }
+  
+  .elk-toolbar .ant-space-item:last-child {
+    margin-bottom: 0;
+  }
+}
+
+@media (max-width: 576px) {
+  .log-message {
+    font-size: 12px;
+  }
+  
+  .log-timestamp {
+    font-size: 11px;
+  }
+  
+  .dashboard-card .ant-card-meta-title {
+    font-size: 14px;
+  }
+  
+  .dashboard-card .ant-card-meta-description {
+    font-size: 13px;
+  }
+}
+
+/* 暗色主题支持 */
+[data-theme='dark'] .elk-toolbar {
+  background: #141414;
+  border-bottom-color: #303030;
+}
+
+[data-theme='dark'] .elk-filters {
+  background: #1f1f1f;
+}
+
+[data-theme='dark'] .log-message.highlight-errors {
+  background: #2a1215;
+  border-left-color: #ff7875;
+}
+
+[data-theme='dark'] .template-option {
+  border-color: #434343;
+  background: #1f1f1f;
+}
+
+[data-theme='dark'] .template-option:hover {
+  border-color: #1890ff;
+  background: #111b26;
+}
+
+[data-theme='dark'] .template-option.selected {
+  border-color: #1890ff;
+  background: #0f1419;
+}
+
+/* 滚动条样式 */
+.enhanced-log-viewer .ant-table-body::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.enhanced-log-viewer .ant-table-body::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 4px;
+}
+
+.enhanced-log-viewer .ant-table-body::-webkit-scrollbar-thumb {
+  background: #c1c1c1;
+  border-radius: 4px;
+}
+
+.enhanced-log-viewer .ant-table-body::-webkit-scrollbar-thumb:hover {
+  background: #a8a8a8;
+}
+
+[data-theme='dark'] .enhanced-log-viewer .ant-table-body::-webkit-scrollbar-track {
+  background: #2f2f2f;
+}
+
+[data-theme='dark'] .enhanced-log-viewer .ant-table-body::-webkit-scrollbar-thumb {
+  background: #555;
+}
+
+[data-theme='dark'] .enhanced-log-viewer .ant-table-body::-webkit-scrollbar-thumb:hover {
+  background: #777;
+}

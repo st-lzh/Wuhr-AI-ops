@@ -1,0 +1,22 @@
+[
+  {
+    "id": "user_1751337594121_ojrqebjvy",
+    "username": "admin",
+    "email": "admin@wuhr.ai",
+    "password": "$2a$12$F4znexXcWlTxhFWIDeQxxuK0lleSjBuvbLngWMt2mdCSQ8Fg15rKq",
+    "role": "admin",
+    "permissions": [
+      "users:read",
+      "users:write",
+      "users:delete",
+      "cicd:all",
+      "servers:all",
+      "config:all",
+      "admin:all"
+    ],
+    "isActive": true,
+    "createdAt": "2025-07-01T02:39:54.121Z",
+    "updatedAt": "2025-07-01T02:39:54.121Z",
+    "lastLoginAt": null
+  }
+]

@@ -1,0 +1,1195 @@
+generator client {
+  provider        = "prisma-client-js"
+  output          = "../lib/generated/prisma"
+  previewFeatures = ["jsonProtocol"]
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model User {
+  id                     String                  @id @default(cuid())
+  username               String                  @unique @db.VarChar(50)
+  email                  String                  @unique @db.VarChar(255)
+  password               String                  @db.VarChar(255)
+  role                   UserRole                @default(viewer)
+  permissions            String[]
+  isActive               Boolean                 @default(false)
+  lastLoginAt            DateTime?
+  createdAt              DateTime                @default(now())
+  updatedAt              DateTime                @updatedAt
+  approvalStatus         UserApprovalStatus      @default(pending)
+  approvedAt             DateTime?
+  approvedBy             String?
+  rejectedReason         String?
+  realName               String?                 @db.VarChar(100)
+  phone                  String?                 @db.VarChar(20)
+  department             String?                 @db.VarChar(100)
+  avatar                 String?                 @db.VarChar(500)
+  apiKeys                ApiKey[]
+  approvalRecords        ApprovalRecord[]
+  approvalWorkflows      ApprovalWorkflow[]
+  authLogs               AuthLog[]
+  sessions               AuthSession[]
+  builds                 Build[]
+  chatSessions           ChatSession[]
+  cicdProjects           CICDProject[]
+  customToolsConfig      CustomToolsConfig?      @relation("CustomToolsConfig")
+  deploymentApprovals    DeploymentApproval[]
+  deploymentTemplates    DeploymentTemplate[]
+  deployments            Deployment[]
+  elkConfigs             ELKConfig[]
+  elkViewerConfig        ELKViewerConfig?
+  gitCredentials         GitCredential[]
+  grafanaConfigs         GrafanaConfig[]
+  infoNotifications      InfoNotification[]      @relation("InfoNotificationUser")
+  jenkinsConfigApprovers JenkinsConfigApprover[] @relation("JenkinsConfigApprover")
+  jenkinsConfigs         JenkinsConfig[]
+  jenkinsJobApprovals    JenkinsJobApproval[]    @relation("JenkinsJobApprovalApprover")
+  jenkinsJobConfigs      JenkinsJobConfig[]
+  jenkinsJobExecutions   JenkinsJobExecution[]   @relation("JenkinsJobExecutionRequester")
+  jenkinsJobGroups       JenkinsJobGroup[]
+  jenkinsJobNotifiers    JenkinsJobNotifier[]    @relation("JenkinsJobNotifier")
+  kibanaDashboards       KibanaDashboard[]
+  mcpToolsConfig         MCPToolsConfig?         @relation("MCPToolsConfig")
+  modelConfigs           ModelConfig[]
+  notifications          Notification[]
+  pipelines              Pipeline[]
+  securityConfig         SecurityConfig?         @relation("SecurityConfig")
+  serverGroups           ServerGroup[]
+  servers                Server[]
+  userModelSelection     UserModelSelection?
+  permissionGroups       UserPermissionGroup[]
+  approver               User?                   @relation("UserApproval", fields: [approvedBy], references: [id])
+  approvedUsers          User[]                  @relation("UserApproval")
+
+  @@index([email])
+  @@index([username])
+  @@index([role])
+  @@index([isActive])
+  @@index([approvalStatus])
+  @@map("users")
+}
+
+model Permission {
+  id               String                      @id @default(cuid())
+  name             String                      @db.VarChar(100)
+  code             String                      @unique @db.VarChar(100)
+  description      String?
+  category         String                      @db.VarChar(50)
+  createdAt        DateTime                    @default(now())
+  updatedAt        DateTime                    @updatedAt
+  permissionGroups PermissionGroupPermission[]
+
+  @@index([category])
+  @@index([code])
+  @@map("permissions")
+}
+
+model UserRegistration {
+  id                String                 @id @default(cuid())
+  username          String                 @unique @db.VarChar(50)
+  email             String                 @unique @db.VarChar(255)
+  password          String                 @db.VarChar(255)
+  realName          String                 @db.VarChar(100)
+  reason            String
+  permissionGroupId String?
+  status            UserRegistrationStatus @default(PENDING)
+  submittedAt       DateTime               @default(now())
+  reviewedAt        DateTime?
+  reviewedBy        String?
+  reviewNote        String?
+  createdAt         DateTime               @default(now())
+  updatedAt         DateTime               @updatedAt
+
+  @@index([status])
+  @@index([submittedAt])
+  @@index([permissionGroupId])
+  @@map("user_registrations")
+}
+
+model Role {
+  name        UserRole @id
+  displayName String   @db.VarChar(100)
+  description String
+  permissions Json
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("roles")
+}
+
+model AuthSession {
+  id             String   @id @default(cuid())
+  userId         String
+  refreshTokenId String   @unique @db.VarChar(255)
+  userAgent      String?
+  ipAddress      String?  @db.VarChar(45)
+  isActive       Boolean  @default(true)
+  expiresAt      DateTime
+  lastUsedAt     DateTime @default(now())
+  createdAt      DateTime @default(now())
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([refreshTokenId])
+  @@index([expiresAt])
+  @@index([isActive])
+  @@map("auth_sessions")
+}
+
+model AuthLog {
+  id        String   @id @default(cuid())
+  userId    String?
+  username  String?  @db.VarChar(50)
+  email     String?  @db.VarChar(255)
+  action    String   @db.VarChar(50)
+  success   Boolean
+  ipAddress String?  @db.VarChar(45)
+  userAgent String?
+  details   String?
+  timestamp DateTime @default(now())
+  user      User?    @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([action])
+  @@index([success])
+  @@index([timestamp])
+  @@map("auth_logs")
+}
+
+model SystemLog {
+  id        String   @id @default(cuid())
+  level     LogLevel @default(info)
+  category  String   @db.VarChar(100)
+  message   String
+  details   Json?
+  source    String?  @db.VarChar(255)
+  userId    String?
+  metadata  Json?
+  timestamp DateTime @default(now())
+
+  @@index([level])
+  @@index([category])
+  @@index([timestamp])
+  @@index([userId])
+  @@map("system_logs")
+}
+
+model SystemConfig {
+  key         String   @id @db.VarChar(255)
+  value       Json
+  category    String   @db.VarChar(100)
+  description String?
+  isPublic    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([category])
+  @@index([isPublic])
+  @@map("system_configs")
+}
+
+model ApiKey {
+  id        String   @id @default(cuid())
+  name      String   @db.VarChar(255)
+  provider  String   @db.VarChar(50)
+  apiKey    String   @db.VarChar(500)
+  baseUrl   String?  @db.VarChar(500)
+  isDefault Boolean  @default(false)
+  isActive  Boolean  @default(true)
+  config    Json?
+  userId    String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([provider])
+  @@index([isActive])
+  @@index([isDefault])
+  @@map("api_keys")
+}
+
+model Notification {
+  id        String           @id @default(cuid())
+  type      NotificationType
+  title     String           @db.VarChar(255)
+  message   String
+  data      Json?
+  isRead    Boolean          @default(false)
+  userId    String
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([type])
+  @@index([isRead])
+  @@index([createdAt])
+  @@map("notifications")
+}
+
+model Server {
+  id              String         @id @default(cuid())
+  name            String         @db.VarChar(255)
+  hostname        String         @db.VarChar(255)
+  ip              String         @db.VarChar(45)
+  port            Int            @default(22)
+  status          ServerStatus   @default(offline)
+  os              String         @db.VarChar(100)
+  version         String?        @db.VarChar(50)
+  location        String?        @db.VarChar(100)
+  tags            String[]
+  description     String?
+  username        String         @db.VarChar(100)
+  password        String?        @db.VarChar(255)
+  keyPath         String?        @db.VarChar(500)
+  lastConnectedAt DateTime?
+  userId          String
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  authType        String         @default("password") @db.VarChar(50)
+  isActive        Boolean        @default(true)
+  isDefault       Boolean        @default(false)
+  datacenter      String?        @db.VarChar(100)
+  groupId         String?
+  cicdProjects    CICDProject[]
+  alerts          ServerAlert[]
+  logs            ServerLog[]
+  metrics         ServerMetric[]
+  group           ServerGroup?   @relation(fields: [groupId], references: [id])
+  user            User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([status])
+  @@index([ip])
+  @@index([hostname])
+  @@index([isDefault])
+  @@index([groupId])
+  @@map("servers")
+}
+
+model ServerGroup {
+  id          String   @id @default(cuid())
+  name        String   @db.VarChar(100)
+  description String?
+  color       String?  @db.VarChar(20)
+  icon        String?  @db.VarChar(50)
+  tags        String[]
+  userId      String
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  isDefault   Boolean  @default(false)
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  servers     Server[]
+
+  @@index([userId])
+  @@index([isActive])
+  @@index([name])
+  @@index([isDefault])
+  @@map("server_groups")
+}
+
+model ServerMetric {
+  id          String   @id @default(cuid())
+  serverId    String
+  timestamp   DateTime @default(now())
+  cpuUsage    Float?
+  cpuCores    Int?
+  memoryTotal Float?
+  memoryUsed  Float?
+  diskTotal   Float?
+  diskUsed    Float?
+  networkIn   Float?
+  networkOut  Float?
+  uptime      Int?
+  server      Server   @relation(fields: [serverId], references: [id], onDelete: Cascade)
+
+  @@index([serverId])
+  @@index([timestamp])
+  @@map("server_metrics")
+}
+
+model ServerAlert {
+  id           String     @id @default(cuid())
+  serverId     String
+  type         AlertType  @default(custom)
+  level        AlertLevel @default(info)
+  title        String     @db.VarChar(255)
+  message      String
+  threshold    Float?
+  currentValue Float?
+  isResolved   Boolean    @default(false)
+  resolvedAt   DateTime?
+  createdAt    DateTime   @default(now())
+  server       Server     @relation(fields: [serverId], references: [id], onDelete: Cascade)
+
+  @@index([serverId])
+  @@index([level])
+  @@index([isResolved])
+  @@index([createdAt])
+  @@map("server_alerts")
+}
+
+model ServerLog {
+  id        String   @id @default(cuid())
+  serverId  String
+  level     LogLevel @default(info)
+  source    String   @db.VarChar(100)
+  message   String
+  metadata  Json?
+  timestamp DateTime @default(now())
+  server    Server   @relation(fields: [serverId], references: [id], onDelete: Cascade)
+
+  @@index([serverId])
+  @@index([level])
+  @@index([source])
+  @@index([timestamp])
+  @@map("server_logs")
+}
+
+model ChatSession {
+  id        String        @id @default(cuid())
+  title     String        @db.VarChar(255)
+  userId    String
+  metadata  Json?
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+  messages  ChatMessage[]
+  user      User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([createdAt])
+  @@map("chat_sessions")
+}
+
+model ChatMessage {
+  id        String        @id @default(cuid())
+  sessionId String
+  type      MessageType
+  content   String
+  metadata  Json?
+  status    MessageStatus @default(success)
+  createdAt DateTime      @default(now())
+  session   ChatSession   @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId])
+  @@index([type])
+  @@index([createdAt])
+  @@map("chat_messages")
+}
+
+model KibanaDashboard {
+  id          String   @id @default(cuid())
+  userId      String
+  name        String   @db.VarChar(255)
+  description String?
+  config      Json
+  isTemplate  Boolean  @default(false)
+  isDefault   Boolean  @default(false)
+  category    String?  @db.VarChar(100)
+  tags        String[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([isTemplate])
+  @@index([category])
+  @@map("kibana_dashboards")
+}
+
+model ELKViewerConfig {
+  id          String   @id @default(cuid())
+  userId      String   @unique
+  layout      Json
+  filters     Json?
+  preferences Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("elk_viewer_configs")
+}
+
+model ELKConfig {
+  id        String   @id @default(cuid())
+  name      String   @db.VarChar(100)
+  host      String   @db.VarChar(255)
+  port      Int
+  username  String?  @db.VarChar(100)
+  password  String?
+  indices   Json     @default("[]")
+  ssl       Boolean  @default(false)
+  isActive  Boolean  @default(false)
+  apiKey    String?
+  webUrl    String?  @db.VarChar(500)
+  userId    String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([isActive])
+  @@map("elk_configs")
+}
+
+model GrafanaConfig {
+  id          String   @id @default(cuid())
+  name        String   @db.VarChar(100)
+  host        String   @db.VarChar(255)
+  port        Int      @default(3000)
+  protocol    String   @default("http") @db.VarChar(10)
+  username    String?  @db.VarChar(100)
+  password    String?
+  apiKey      String?
+  orgId       Int      @default(1)
+  isActive    Boolean  @default(false)
+  description String?
+  tags        Json?    @default("[]")
+  userId      String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([isActive])
+  @@map("grafana_configs")
+}
+
+model CICDProject {
+  id                   String             @id @default(cuid())
+  name                 String             @db.VarChar(100)
+  description          String?
+  repositoryUrl        String             @db.VarChar(500)
+  repositoryType       String             @db.VarChar(50)
+  branch               String             @default("main") @db.VarChar(100)
+  buildScript          String?
+  deployScript         String?
+  environment          String             @db.VarChar(50)
+  isActive             Boolean            @default(true)
+  userId               String
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+  serverId             String?
+  gitCredentialId      String?
+  buildTimeout         Int?
+  buildTriggers        Json?
+  notificationUsers    Json?
+  environmentVariables Json?
+  tags                 Json?
+  approvalUsers        Json?
+  requireApproval      Boolean            @default(false)
+  approvalWorkflows    ApprovalWorkflow[]
+  gitCredential        GitCredential?     @relation(fields: [gitCredentialId], references: [id])
+  server               Server?            @relation(fields: [serverId], references: [id])
+  user                 User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  deployments          Deployment[]
+  pipelines            Pipeline[]
+
+  @@index([userId])
+  @@index([serverId])
+  @@index([gitCredentialId])
+  @@index([isActive])
+  @@index([environment])
+  @@map("cicd_projects")
+}
+
+model JenkinsConfig {
+  id              String                  @id @default(cuid())
+  name            String                  @db.VarChar(100)
+  description     String?
+  serverUrl       String                  @db.VarChar(500)
+  username        String?                 @db.VarChar(100)
+  apiToken        String?                 @db.VarChar(500)
+  webhookUrl      String?                 @db.VarChar(500)
+  config          Json?
+  isActive        Boolean                 @default(true)
+  lastTestAt      DateTime?
+  testStatus      String?                 @db.VarChar(50)
+  userId          String
+  createdAt       DateTime                @default(now())
+  updatedAt       DateTime                @updatedAt
+  builds          Build[]
+  configApprovers JenkinsConfigApprover[]
+  user            User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  jobConfigs      JenkinsJobConfig[]
+  jobExecutions   JenkinsJobExecution[]
+  jobGroups       JenkinsJobGroup[]
+
+  @@index([userId])
+  @@index([isActive])
+  @@index([testStatus])
+  @@map("jenkins_configs")
+}
+
+model JenkinsJobConfig {
+  id              String        @id @default(cuid())
+  jenkinsConfigId String
+  jobName         String        @db.VarChar(200)
+  displayName     String?       @db.VarChar(200)
+  description     String?
+  requireApproval Boolean       @default(true)
+  approvalRoles   Json?
+  parameters      Json?
+  schedule        Json?
+  enabled         Boolean       @default(true)
+  isActive        Boolean       @default(true)
+  userId          String
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  jenkinsConfig   JenkinsConfig @relation(fields: [jenkinsConfigId], references: [id], onDelete: Cascade)
+  user            User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([jenkinsConfigId, jobName])
+  @@index([jenkinsConfigId])
+  @@index([userId])
+  @@index([isActive])
+  @@index([enabled])
+  @@map("jenkins_job_configs")
+}
+
+model JenkinsJobGroup {
+  id              String                   @id @default(cuid())
+  jenkinsConfigId String
+  name            String                   @db.VarChar(100)
+  description     String?
+  color           String?                  @db.VarChar(20)
+  icon            String?                  @db.VarChar(50)
+  sortOrder       Int                      @default(0)
+  isActive        Boolean                  @default(true)
+  userId          String
+  createdAt       DateTime                 @default(now())
+  updatedAt       DateTime                 @updatedAt
+  jobMappings     JenkinsJobGroupMapping[]
+  jenkinsConfig   JenkinsConfig            @relation(fields: [jenkinsConfigId], references: [id], onDelete: Cascade)
+  user            User                     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([jenkinsConfigId])
+  @@index([userId])
+  @@index([isActive])
+  @@index([sortOrder])
+  @@map("jenkins_job_groups")
+}
+
+model JenkinsJobGroupMapping {
+  id        String          @id @default(cuid())
+  groupId   String
+  jobName   String          @db.VarChar(200)
+  sortOrder Int             @default(0)
+  isActive  Boolean         @default(true)
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+  group     JenkinsJobGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@unique([groupId, jobName])
+  @@index([groupId])
+  @@index([jobName])
+  @@index([isActive])
+  @@map("jenkins_job_group_mappings")
+}
+
+model Pipeline {
+  id             String      @id @default(cuid())
+  projectId      String
+  name           String      @db.VarChar(100)
+  description    String?
+  jenkinsJobName String      @db.VarChar(200)
+  parameters     Json?
+  triggers       Json?
+  stages         Json?
+  isActive       Boolean     @default(true)
+  userId         String
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+  builds         Build[]
+  project        CICDProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user           User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@index([userId])
+  @@index([isActive])
+  @@map("pipelines")
+}
+
+model Build {
+  id              String        @id @default(cuid())
+  jenkinsConfigId String
+  pipelineId      String?
+  buildNumber     Int
+  jenkinsJobName  String        @db.VarChar(200)
+  status          BuildStatus   @default(pending)
+  result          String?       @db.VarChar(50)
+  startedAt       DateTime?
+  completedAt     DateTime?
+  duration        Int?
+  queueId         String?       @db.VarChar(100)
+  buildUrl        String?       @db.VarChar(500)
+  parameters      Json?
+  artifacts       Json?
+  logs            String?
+  userId          String
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  jenkinsConfig   JenkinsConfig @relation(fields: [jenkinsConfigId], references: [id], onDelete: Cascade)
+  pipeline        Pipeline?     @relation(fields: [pipelineId], references: [id])
+  user            User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  deployments     Deployment[]
+
+  @@index([jenkinsConfigId])
+  @@index([pipelineId])
+  @@index([userId])
+  @@index([status])
+  @@index([buildNumber])
+  @@index([startedAt])
+  @@map("builds")
+}
+
+model Deployment {
+  id                  String               @id @default(cuid())
+  projectId           String?
+  name                String               @db.VarChar(100)
+  description         String?
+  environment         String               @db.VarChar(50)
+  version             String?              @db.VarChar(100)
+  status              DeploymentStatus     @default(pending)
+  buildNumber         Int?
+  deployScript        String?
+  rollbackScript      String?
+  scheduledAt         DateTime?
+  startedAt           DateTime?
+  completedAt         DateTime?
+  duration            Int?
+  logs                String?
+  config              Json?
+  userId              String
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+  templateId          String?
+  approvalUsers       Json?
+  deploymentHosts     Json?
+  notificationUsers   Json?
+  requireApproval     Boolean              @default(false)
+  jenkinsJobId        String?
+  buildId             String?
+  isJenkinsDeployment Boolean              @default(false)
+  jenkinsJobIds       Json?
+  jenkinsJobName      String?
+  jenkinsBuildNumber  Int?
+  jenkinsQueueId      Int?
+  jenkinsQueueUrl     String?
+  approvals           DeploymentApproval[]
+  build               Build?               @relation(fields: [buildId], references: [id])
+  project             CICDProject?         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  template            DeploymentTemplate?  @relation(fields: [templateId], references: [id])
+  user                User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@index([userId])
+  @@index([templateId])
+  @@index([buildId])
+  @@index([status])
+  @@index([environment])
+  @@index([requireApproval])
+  @@index([scheduledAt])
+  @@index([createdAt])
+  @@map("deployments")
+}
+
+model DeploymentApproval {
+  id           String         @id @default(cuid())
+  deploymentId String
+  approverId   String
+  status       ApprovalStatus @default(pending)
+  comments     String?
+  approvedAt   DateTime?
+  level        Int            @default(1)
+  isRequired   Boolean        @default(true)
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+  approver     User           @relation(fields: [approverId], references: [id], onDelete: Cascade)
+  deployment   Deployment     @relation(fields: [deploymentId], references: [id], onDelete: Cascade)
+
+  @@index([deploymentId])
+  @@index([approverId])
+  @@index([status])
+  @@index([level])
+  @@map("deployment_approvals")
+}
+
+model ApprovalRecord {
+  id           String         @id @default(cuid())
+  approvalType ApprovalType
+  targetId     String
+  targetName   String         @db.VarChar(255)
+  operatorId   String
+  operatorName String         @db.VarChar(100)
+  action       ApprovalStatus
+  comment      String?
+  operatedAt   DateTime       @default(now())
+  metadata     Json?
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+  operator     User           @relation(fields: [operatorId], references: [id], onDelete: Cascade)
+
+  @@index([approvalType])
+  @@index([targetId])
+  @@index([operatorId])
+  @@index([action])
+  @@index([operatedAt])
+  @@map("approval_records")
+}
+
+model ApprovalWorkflow {
+  id          String       @id @default(cuid())
+  name        String       @db.VarChar(100)
+  description String?
+  environment String       @db.VarChar(20)
+  projectId   String?
+  isDefault   Boolean      @default(false)
+  config      Json
+  isActive    Boolean      @default(true)
+  userId      String
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  project     CICDProject? @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([environment])
+  @@index([projectId])
+  @@index([isDefault])
+  @@index([userId])
+  @@map("approval_workflows")
+}
+
+model JenkinsJobExecution {
+  id              String               @id @default(cuid())
+  configId        String
+  jobName         String               @db.VarChar(200)
+  operationType   String               @db.VarChar(50)
+  status          String               @default("pending") @db.VarChar(50)
+  requestedBy     String
+  reason          String?
+  parameters      Json?
+  executionResult Json?
+  executedAt      DateTime?
+  completedAt     DateTime?
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+  approvals       JenkinsJobApproval[]
+  config          JenkinsConfig        @relation(fields: [configId], references: [id], onDelete: Cascade)
+  requester       User                 @relation("JenkinsJobExecutionRequester", fields: [requestedBy], references: [id], onDelete: Cascade)
+  notifiers       JenkinsJobNotifier[]
+
+  @@index([configId])
+  @@index([requestedBy])
+  @@index([status])
+  @@index([operationType])
+  @@map("jenkins_job_executions")
+}
+
+model JenkinsJobApproval {
+  id          String              @id @default(cuid())
+  executionId String
+  approverId  String
+  level       Int                 @default(1)
+  status      ApprovalStatus      @default(pending)
+  comments    String?
+  approvedAt  DateTime?
+  expiresAt   DateTime?
+  isRequired  Boolean             @default(true)
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+  approver    User                @relation("JenkinsJobApprovalApprover", fields: [approverId], references: [id], onDelete: Cascade)
+  execution   JenkinsJobExecution @relation(fields: [executionId], references: [id], onDelete: Cascade)
+
+  @@index([executionId])
+  @@index([approverId])
+  @@index([status])
+  @@index([level])
+  @@map("jenkins_job_approvals")
+}
+
+model JenkinsConfigApprover {
+  id         String        @id @default(cuid())
+  configId   String
+  approverId String
+  level      Int           @default(1)
+  isActive   Boolean       @default(true)
+  createdAt  DateTime      @default(now())
+  updatedAt  DateTime      @updatedAt
+  approver   User          @relation("JenkinsConfigApprover", fields: [approverId], references: [id], onDelete: Cascade)
+  config     JenkinsConfig @relation(fields: [configId], references: [id], onDelete: Cascade)
+
+  @@unique([configId, approverId])
+  @@index([configId])
+  @@index([approverId])
+  @@index([isActive])
+  @@map("jenkins_config_approvers")
+}
+
+model JenkinsJobNotifier {
+  id               String              @id @default(cuid())
+  executionId      String
+  notifierId       String
+  notifyOnSubmit   Boolean             @default(true)
+  notifyOnApprove  Boolean             @default(true)
+  notifyOnReject   Boolean             @default(true)
+  notifyOnExecute  Boolean             @default(true)
+  notifyOnComplete Boolean             @default(true)
+  isActive         Boolean             @default(true)
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+  execution        JenkinsJobExecution @relation(fields: [executionId], references: [id], onDelete: Cascade)
+  notifier         User                @relation("JenkinsJobNotifier", fields: [notifierId], references: [id], onDelete: Cascade)
+
+  @@unique([executionId, notifierId])
+  @@index([executionId])
+  @@index([notifierId])
+  @@index([isActive])
+  @@map("jenkins_job_notifiers")
+}
+
+model InfoNotification {
+  id         String    @id @default(cuid())
+  type       String    @db.VarChar(50)
+  title      String    @db.VarChar(200)
+  content    String
+  userId     String
+  isRead     Boolean   @default(false)
+  readAt     DateTime?
+  actionUrl  String?   @db.VarChar(500)
+  actionText String?   @db.VarChar(100)
+  metadata   Json?
+  expiresAt  DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  user       User      @relation("InfoNotificationUser", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([type])
+  @@index([isRead])
+  @@index([createdAt])
+  @@index([expiresAt])
+  @@map("info_notifications")
+}
+
+model GitCredential {
+  id                   String        @id @default(cuid())
+  name                 String        @db.VarChar(100)
+  platform             String        @db.VarChar(50)
+  authType             String        @db.VarChar(50)
+  encryptedCredentials String
+  isDefault            Boolean       @default(false)
+  isActive             Boolean       @default(true)
+  userId               String
+  createdAt            DateTime      @default(now())
+  updatedAt            DateTime      @updatedAt
+  projects             CICDProject[]
+  user                 User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([platform])
+  @@index([authType])
+  @@index([isDefault])
+  @@index([isActive])
+  @@map("git_credentials")
+}
+
+model ModelConfig {
+  id                 String               @id @default(cuid())
+  userId             String
+  modelName          String               @db.VarChar(100)
+  displayName        String               @db.VarChar(100)
+  provider           String               @db.VarChar(50)
+  apiKey             String               @db.VarChar(500)
+  baseUrl            String?              @db.VarChar(500)
+  description        String?
+  isActive           Boolean              @default(true)
+  isDefault          Boolean              @default(false)
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
+  commandValidation  Boolean              @default(true)
+  enableToolUseShim  Boolean              @default(false)
+  externalTools      Boolean              @default(false)
+  mcpClientEnabled   Boolean              @default(false)
+  privilegedBlocking Boolean              @default(true)
+  requireApproval    Boolean              @default(true)
+  skipPermissions    Boolean              @default(false)
+  toolConfigPaths    String[]             @default([])
+  user               User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userModelSelection UserModelSelection[]
+
+  @@unique([userId, modelName])
+  @@index([userId])
+  @@index([provider])
+  @@index([isActive])
+  @@index([isDefault])
+  @@map("model_configs")
+}
+
+model PresetModel {
+  id                String    @id @default(cuid())
+  name              String    @db.VarChar(100)
+  displayName       String    @db.VarChar(100)
+  provider          String    @db.VarChar(50)
+  description       String?
+  contextLength     Int?
+  maxTokens         Int?
+  supportedFeatures String[]
+  isActive          Boolean   @default(true)
+  category          String?   @db.VarChar(50)
+  series            String?   @db.VarChar(50)
+  sortOrder         Int?      @default(0)
+  releaseDate       DateTime?
+  tags              String[]  @default([])
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@unique([name, provider])
+  @@index([provider])
+  @@index([isActive])
+  @@index([category])
+  @@index([series])
+  @@index([sortOrder])
+  @@map("preset_models")
+}
+
+model UserModelSelection {
+  id              String      @id @default(cuid())
+  userId          String      @unique
+  selectedModelId String
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+  selectedModel   ModelConfig @relation(fields: [selectedModelId], references: [id], onDelete: Cascade)
+  user            User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([selectedModelId])
+  @@map("user_model_selections")
+}
+
+model DeploymentTemplate {
+  id          String       @id @default(cuid())
+  name        String       @db.VarChar(100)
+  description String?
+  type        String       @db.VarChar(20)
+  content     String
+  version     String       @db.VarChar(50)
+  isActive    Boolean      @default(true)
+  usageCount  Int          @default(0)
+  createdBy   String
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  creator     User         @relation(fields: [createdBy], references: [id], onDelete: Cascade)
+  deployments Deployment[]
+
+  @@index([type])
+  @@index([isActive])
+  @@index([createdBy])
+  @@index([createdAt])
+  @@map("deployment_templates")
+}
+
+model PermissionGroup {
+  id          String                      @id @default(cuid())
+  name        String                      @db.VarChar(100)
+  description String?
+  createdAt   DateTime                    @default(now())
+  updatedAt   DateTime                    @updatedAt
+  permissions PermissionGroupPermission[]
+  users       UserPermissionGroup[]
+
+  @@index([name])
+  @@map("permission_groups")
+}
+
+model PermissionGroupPermission {
+  groupId      String
+  permissionId String
+  createdAt    DateTime        @default(now())
+  group        PermissionGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  permission   Permission      @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([groupId, permissionId])
+  @@index([groupId])
+  @@index([permissionId])
+  @@map("permission_group_permissions")
+}
+
+model UserPermissionGroup {
+  userId    String
+  groupId   String
+  createdAt DateTime        @default(now())
+  group     PermissionGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  user      User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([userId, groupId])
+  @@index([userId])
+  @@index([groupId])
+  @@map("user_permission_groups")
+}
+
+model MCPToolsConfig {
+  id               String   @id @default(cuid())
+  userId           String   @unique
+  enabled          Boolean  @default(false)
+  servers          Json     @default("[]")
+  discoveryEnabled Boolean  @default(true)
+  autoConnect      Boolean  @default(true)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  user             User     @relation("MCPToolsConfig", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([enabled])
+  @@map("mcp_tools_configs")
+}
+
+model CustomToolsConfig {
+  id             String   @id @default(cuid())
+  userId         String   @unique
+  enabled        Boolean  @default(false)
+  tools          Json     @default("[]")
+  defaultTimeout Int      @default(30000)
+  maxConcurrency Int      @default(5)
+  logLevel       String   @default("info") @db.VarChar(20)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  user           User     @relation("CustomToolsConfig", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([enabled])
+  @@map("custom_tools_configs")
+}
+
+model SecurityConfig {
+  id                        String   @id @default(cuid())
+  userId                    String   @unique
+  enabled                   Boolean  @default(true)
+  commandValidation         Boolean  @default(true)
+  privilegedCommandBlocking Boolean  @default(true)
+  pathTraversalProtection   Boolean  @default(true)
+  commandHistory            Boolean  @default(true)
+  auditLogging              Boolean  @default(true)
+  rateLimiting              Boolean  @default(true)
+  createdAt                 DateTime @default(now())
+  updatedAt                 DateTime @updatedAt
+  requireApproval           Boolean  @default(true)
+  user                      User     @relation("SecurityConfig", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([enabled])
+  @@map("security_configs")
+}
+
+enum UserRole {
+  admin
+  manager
+  developer
+  viewer
+}
+
+enum UserApprovalStatus {
+  pending
+  approved
+  rejected
+}
+
+enum UserRegistrationStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum LogLevel {
+  debug
+  info
+  warn
+  error
+  fatal
+}
+
+enum ServerStatus {
+  online
+  offline
+  warning
+  error
+}
+
+enum AlertType {
+  cpu
+  memory
+  disk
+  network
+  service
+  custom
+}
+
+enum AlertLevel {
+  info
+  warning
+  error
+  critical
+}
+
+enum NotificationType {
+  user_registration
+  user_approved
+  user_rejected
+  system_alert
+  api_key_expired
+}
+
+enum MessageType {
+  user
+  ai
+  system
+}
+
+enum MessageStatus {
+  sending
+  success
+  error
+}
+
+enum BuildStatus {
+  pending
+  queued
+  running
+  success
+  failed
+  aborted
+  unstable
+}
+
+enum DeploymentStatus {
+  pending
+  approved
+  rejected
+  scheduled
+  deploying
+  success
+  failed
+  rolled_back
+}
+
+enum ApprovalStatus {
+  pending
+  approved
+  rejected
+  expired
+}
+
+enum ApprovalType {
+  user_registration
+  deployment
+  cicd_pipeline
+  system_config
+  jenkins_job
+}
