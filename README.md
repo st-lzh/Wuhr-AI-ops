@@ -1,4 +1,4 @@
-# Wuhr AI Ops 智能运维平台
+<img width="1512" height="982" alt="截屏2025-10-29 22 41 33" src="https://github.com/user-attachments/assets/b64f964f-3c16-4fd0-8d6e-2bdff591641f" /># Wuhr AI Ops 智能运维平台
 
 <div align="center">
 
@@ -30,7 +30,7 @@
 
 ## 🎥 视频操作指南
 
-> **📹 [完整讲解演示视频](https://www.bilibili.com/video/BV1EK86ziE2y/?vd_source=56a061d9ef5994305d047165b2c6a3d5)**
+> **📹 [完整讲解演示视频]([https://www.bilibili.com/video/BV1EK86ziE2y/?vd_source=56a061d9ef5994305d047165b2c6a3d5](https://www.bilibili.com/video/BV11vyWBQEDV/?vd_source=56a061d9ef5994305d047165b2c6a3d5))**
 
 > 视频内容将包括：
 > - 系统安装部署演示
@@ -83,7 +83,8 @@
     - 支持Python、Shell、Node.js等脚本
     - 灵活扩展AI助手功能
     - 脚本参数自动识别和传递
-  <img width="1512" height="949" alt="截屏2025-07-31 00 35 10" src="https://github.com/user-attachments/assets/4c4019dd-9b19-4b30-a70c-604458e90df5" />
+  <img width="1512" height="982" alt="截屏2025-10-29 22 41 33" src="https://github.com/user-attachments/assets/a5c06e62-10d8-4739-8fea-9acd21349824" />
+
 
 #### 🖥️ 主机管理
 - **功能描述**: 统一管理远程服务器资源
@@ -167,14 +168,8 @@
 
 ```bash
 # 克隆项目
-git clone https://github.com/st-lzh/wuhr-ai-ops.git
-cd wuhr-ai-ops
-
-# 国内用户使用中文安装脚本
-./install-zh.sh
-
-# 国外用户使用英文安装脚本
-./install-en.sh
+git clone https://github.com/st-lzh/wuhr-AI-ops.git
+cd wuhr-AI-ops
 
 # docker一键脚本部署
 ./install-docker.sh
@@ -194,8 +189,8 @@ cd wuhr-ai-ops
 
 ```bash
 # 1. 环境准备
-git clone https://github.com/st-lzh/wuhr-ai-ops.git
-cd wuhr-ai-ops
+git clone https://github.com/st-lzh/wuhr-AI-ops.git
+cd wuhr-AI-ops
 
 # 2. 配置环境变量
 cp .env.example .env
@@ -231,8 +226,8 @@ npm start
 
 ```bash
 # 克隆项目
-git clone https://github.com/st-lzh/wuhr-ai-ops.git
-cd wuhr-ai-ops
+git clone https://github.com/st-lzh/wuhr-AI-ops.git
+cd wuhr-AI-ops
 
 # 一键安装和启动所有服务
 ./install-docker.sh
@@ -356,7 +351,7 @@ tail -f app.log
 
 ##微信交流
 
-![IMG_6601](https://github.com/user-attachments/assets/02c2c3f1-858b-4d7f-b3a4-2c7d08cf1b92)
+![IMG_7032](https://github.com/user-attachments/assets/fb947001-b9aa-41bc-8723-a95e1ff5f9bd)
 
 
 ### 📚 技术文档
