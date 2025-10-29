@@ -38,7 +38,7 @@ services:
     container_name: wuhr-ai-ops-app
     restart: unless-stopped
     environment:
-      - NODE_ENV=production
+      - NODE_ENV=development
       - DB_HOST=postgres
       - DB_PORT=5432
       - DB_NAME=wuhr_ai_ops

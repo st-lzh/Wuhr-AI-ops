@@ -31,7 +31,7 @@ RUN npx pnpm prisma generate && npx pnpm build
 
 FROM node:20-slim AS runner
 WORKDIR /app
-ENV NODE_ENV=production TZ=Asia/Shanghai NEXT_TELEMETRY_DISABLED=1
+ENV NODE_ENV=development TZ=Asia/Shanghai NEXT_TELEMETRY_DISABLED=1
 # 安装运行时依赖
 RUN apt-get update && apt-get install -y \
     postgresql-client \
