@@ -154,13 +154,26 @@ export async function POST(request: NextRequest) {
     })
 
     // Set secure HTTP-only cookies - 根据环境动态设置
+    // 🔥 改进: 检测实际协议，而不仅依赖 NODE_ENV
+    const isProduction = process.env.NODE_ENV === 'production'
+    const forwardedProto = request.headers.get('x-forwarded-proto')
+    const isHttps = forwardedProto === 'https'
+
     const cookieOptions = {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production', // 🔥 生产环境使用 secure
+      secure: isProduction && isHttps, // 只在生产环境且HTTPS下使用secure
       sameSite: 'lax' as const,
       path: '/',
       domain: undefined // 明确不设置domain
     }
+
+    console.log('🍪 Setting cookie with options:', {
+      secure: cookieOptions.secure,
+      sameSite: cookieOptions.sameSite,
+      httpOnly: cookieOptions.httpOnly,
+      isProduction,
+      isHttps
+    })
 
     response.cookies.set('accessToken', accessToken, {
       ...cookieOptions,

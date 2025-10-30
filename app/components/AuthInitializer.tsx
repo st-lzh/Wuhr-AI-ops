@@ -64,12 +64,34 @@ export function AuthInitializer({ children }: AuthInitializerProps) {
         // 如果是401错误，说明用户未认证
         if (verifyResponse.status === 401) {
           console.log('🔍 检测到401错误，用户未认证')
+
+          // 🔥 新增: 检查是否刚刚登录成功
+          const justLoggedIn = sessionStorage.getItem('just_logged_in')
+          if (justLoggedIn) {
+            console.log('⚠️ 检测到刚登录成功但验证失败，可能是cookie延迟，等待重试')
+            sessionStorage.removeItem('just_logged_in')
+            // 延迟200ms后重试一次
+            setTimeout(() => {
+              window.location.reload()
+            }, 200)
+            return
+          }
         }
 
         console.log('ℹ️ 未找到有效的认证状态，用户需要重新登录')
 
         // 只有在非登录页面时才强制退出
         if (typeof window !== 'undefined' && !window.location.pathname.includes('/login')) {
+          // 🔥 新增: 避免在刚登录后立即清除状态
+          const loginTimestamp = sessionStorage.getItem('login_timestamp')
+          if (loginTimestamp) {
+            const recentLogin = Date.now() - parseInt(loginTimestamp)
+            if (recentLogin < 3000) { // 3秒内的登录不强制退出
+              console.log('⚠️ 检测到最近登录（' + recentLogin + 'ms前），跳过强制退出')
+              return
+            }
+          }
+
           // 强制退出用户
           dispatch({ type: 'AUTH_LOGOUT' })
 

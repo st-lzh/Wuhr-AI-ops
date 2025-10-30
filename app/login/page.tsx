@@ -54,6 +54,10 @@ function LoginForm() {
       // 清除退出标记，确保认证状态持久化
       sessionStorage.removeItem('user_logged_out')
 
+      // 🔥 新增: 设置刚登录标记和时间戳，防止AuthInitializer立即清除状态
+      sessionStorage.setItem('just_logged_in', 'true')
+      sessionStorage.setItem('login_timestamp', Date.now().toString())
+
       // 使用 window.location.href 强制刷新跳转，确保状态完全更新
       window.location.href = returnUrl
       
