@@ -27,22 +27,12 @@ export async function POST(request: NextRequest) {
       timestamp: new Date().toISOString()
     })
 
-    // 清除所有认证相关的cookies
-    const cookieOptions = {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax' as const,
-      path: '/',
-      maxAge: 0,
-      // 在开发环境下不设置domain，允许跨IP访问
-      ...(process.env.NODE_ENV === 'production' && { domain: process.env.COOKIE_DOMAIN })
-    }
+    // 清除所有认证相关的cookies - 使用 delete 方法
+    response.cookies.delete('accessToken')
+    response.cookies.delete('refreshToken')
+    response.cookies.delete('token') // 兼容旧版本
 
-    response.cookies.set('accessToken', '', cookieOptions)
-    response.cookies.set('refreshToken', '', cookieOptions)
-    response.cookies.set('token', '', cookieOptions) // 兼容旧版本
-
-    console.log('✅ 用户已成功退出登录')
+    console.log('✅ 用户已成功退出登录，Cookie 已清除')
     return response
 
   } catch (error) {
@@ -55,17 +45,9 @@ export async function POST(request: NextRequest) {
       timestamp: new Date().toISOString()
     })
 
-    const cookieOptions = {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax' as const,
-      path: '/',
-      maxAge: 0
-    }
-
-    response.cookies.set('accessToken', '', cookieOptions)
-    response.cookies.set('refreshToken', '', cookieOptions)
-    response.cookies.set('token', '', cookieOptions)
+    response.cookies.delete('accessToken')
+    response.cookies.delete('refreshToken')
+    response.cookies.delete('token')
 
     return response
   }
