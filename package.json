@@ -44,7 +44,7 @@
   "dependencies": {
     "@ant-design/charts": "^2.4.0",
     "@ant-design/icons": "^5.2.0",
-    "@prisma/client": "^6.10.1",
+    "@prisma/client": "^6.18.0",
     "@types/ioredis": "^4.28.10",
     "@types/node-ssh": "^7.0.6",
     "@types/pg": "^8.15.4",
@@ -70,7 +70,6 @@
     "pg": "^8.16.3",
     "playwright": "^1.54.1",
     "postcss": "^8.4.0",
-    "prisma": "^6.10.1",
     "react": "^18.0.0",
     "react-codemirror2": "^8.0.1",
     "react-dom": "^18.0.0",
@@ -97,6 +96,7 @@
     "eslint": "^8.0.0",
     "eslint-config-next": "^14.0.0",
     "ignore-loader": "^0.1.2",
+    "prisma": "^6.18.0",
     "typescript": "^5.0.0"
   }
 }
