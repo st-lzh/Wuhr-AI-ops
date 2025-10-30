@@ -82,7 +82,15 @@ export function AuthInitializer({ children }: AuthInitializerProps) {
 
         // 只有在非登录页面时才强制退出
         if (typeof window !== 'undefined' && !window.location.pathname.includes('/login')) {
-          // 🔥 新增: 避免在刚登录后立即清除状态
+          // 🔥 检查是否主动退出，如果是则直接跳转不再检查时间戳
+          const userLoggedOut = sessionStorage.getItem('user_logged_out')
+          if (userLoggedOut === 'true') {
+            console.log('ℹ️ 检测到主动退出标记，跳转到登录页')
+            window.location.href = '/login'
+            return
+          }
+
+          // 🔥 避免在刚登录后立即清除状态
           const loginTimestamp = sessionStorage.getItem('login_timestamp')
           if (loginTimestamp) {
             const recentLogin = Date.now() - parseInt(loginTimestamp)

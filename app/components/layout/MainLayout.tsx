@@ -367,6 +367,9 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
             try {
               // 设置退出标记，防止自动重新登录
               sessionStorage.setItem('user_logged_out', 'true')
+              // 🔥 清除登录时间戳和刚登录标记，确保退出生效
+              sessionStorage.removeItem('login_timestamp')
+              sessionStorage.removeItem('just_logged_in')
 
               console.log('🚪 开始退出登录...')
 
