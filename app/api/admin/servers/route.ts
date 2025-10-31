@@ -304,7 +304,7 @@ export async function PUT(request: NextRequest) {
       }
 
       const body = await request.json()
-      const { id, name, hostname, ip, port, username, password, keyPath, os, version, location, tags, description, isDefault = false } = body
+      const { id, name, hostname, ip, port, username, password, keyPath, os, version, location, tags, description, isDefault = false, groupId } = body
 
       // 验证必要参数
       if (!id) {
@@ -343,6 +343,21 @@ export async function PUT(request: NextRequest) {
       }
     }
 
+    // 🔥 如果提供了groupId，验证组是否存在且属于当前用户
+    if (groupId !== undefined && groupId !== null) {
+      const group = await prisma.serverGroup.findFirst({
+        where: {
+          id: groupId,
+          userId: authResult.user.id,
+          isActive: true
+        }
+      })
+
+      if (!group) {
+        return errorResponse('指定的主机组不存在', '主机组不存在或无权访问', 400)
+      }
+    }
+
     // 如果设置为默认主机，先将用户的其他主机的isDefault设为false
     if (isDefault) {
       await prisma.server.updateMany({
@@ -374,6 +389,7 @@ export async function PUT(request: NextRequest) {
         ...(location && { location }),
         ...(tags && { tags }),
         ...(description !== undefined && { description }),
+        ...(groupId !== undefined && { groupId: groupId || null }), // 🔥 添加主机组ID支持
         isDefault, // 更新默认状态
         updatedAt: new Date()
       },
@@ -390,6 +406,14 @@ export async function PUT(request: NextRequest) {
         tags: true,
         description: true,
         isDefault: true, // 包含默认状态
+        groupId: true, // 🔥 包含主机组ID
+        group: { // 🔥 包含主机组详细信息
+          select: {
+            id: true,
+            name: true,
+            color: true
+          }
+        },
         createdAt: true,
         updatedAt: true
       }

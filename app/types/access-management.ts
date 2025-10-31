@@ -105,6 +105,12 @@ export interface ServerInfo {
   authType: ServerAuthType
   isActive: boolean
   isDefault?: boolean // 新增默认主机字段
+  groupId?: string | null // 🔥 主机组ID
+  group?: { // 🔥 主机组详细信息
+    id: string
+    name: string
+    color?: string
+  } | null
   datacenter?: string
   lastConnectedAt?: Date | null
   userId: string

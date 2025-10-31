@@ -63,7 +63,8 @@ const ServerFormModal: React.FC<ServerFormModalProps> = ({
           version: server.version,
           location: server.location,
           description: server.description || '',
-          isDefault: server.isDefault || false // 添加默认主机状态
+          isDefault: server.isDefault || false, // 添加默认主机状态
+          groupId: server.groupId || undefined // 🔥 添加主机组ID
         })
         setTags(server.tags || [])
       } else {
