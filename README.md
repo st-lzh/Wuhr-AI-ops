@@ -180,41 +180,6 @@ cd wuhr-AI-ops
 > - **前台运行模式**：开发测试使用，可查看实时日志
 > - **系统服务模式**：生产环境使用，开机自启，后台运行
 
-### 手动部署
-
-```bash
-# 1. 环境准备
-git clone https://github.com/st-lzh/wuhr-AI-ops.git
-cd wuhr-AI-ops
-
-# 2. 配置环境变量
-cp .env.example .env
-# 编辑 .env 文件，配置数据库和AI API密钥
-
-# 3. 配置npm镜像源（国内用户）
-npm config set registry https://registry.npmmirror.com/
-
-# 4. 下载kubelet-wuhrai工具
-wget -O kubelet-wuhrai https://wuhrai-wordpress.oss-cn-hangzhou.aliyuncs.com/kubelet-wuhrai
-chmod +x kubelet-wuhrai
-
-# 5. 启动数据库服务
-docker-compose up -d postgres redis pgadmin
-sleep 30
-
-# 6. 安装依赖
-npm install
-
-# 7. 数据库初始化（导入完整数据）
-docker-compose exec postgres psql -U wuhr_admin -d wuhr_ai_ops -f /docker-entrypoint-initdb.d/00-init-database.sql
-
-# 8. 构建和启动应用
-npm run build
-npm start
-```
-
-> **📝 注意**: 手动部署已简化，只需要导入一个SQL文件即可完成数据库初始化，无需执行多个node脚本。
-
 ### 🐳 Docker一键部署（推荐）
 
 #### 快速启动
@@ -227,8 +192,6 @@ cd wuhr-AI-ops
 # 一键安装和启动所有服务
 ./install-docker.sh
 
-# 或者使用docker-compose直接启动
-docker-compose up -d
 ```
 
 > **🚀 一键部署特性**:
@@ -265,20 +228,6 @@ docker-compose up -d
 - **健康检查**: 自动监控服务状态
 - **一键部署**: 简化部署流程
 
-#### 故障排除
-
-```bash
-# 查看服务日志
-docker-compose logs [service_name]
-
-# 重新构建镜像
-docker-compose build --no-cache
-
-# 完全清理重置
-docker-compose down -v
-docker-compose up -d
-```
-
 ### 演示地址
 
 - **主应用**: https://aiops.wuhrai.com
@@ -288,26 +237,7 @@ docker-compose up -d
 - **邮箱**: admin@wuhr.ai
 - **密码**: Admin123!
 
-## ⚙️ 系统服务管理
 
-### 服务管理
-
-```bash
-# 启动服务（后台运行）
-./restart.sh
-
-# 停止服务
-./restart.sh stop
-
-# 查看日志
-tail -f app.log
-
-# 清理构建缓存（解决构建问题）
-./scripts/clean-build.sh
-
-# 完全清理重建（包括依赖）
-./scripts/clean-build.sh --full
-```
 ## 📄 许可证
 
 本项目采用 [MIT License (Modified)](./LICENSE) 开源协议。
