@@ -62,7 +62,7 @@ export default function ServerGroupsPage() {
   const [modalVisible, setModalVisible] = useState(false)
   const [editingGroup, setEditingGroup] = useState<ServerGroupInfo | null>(null)
   const [form] = Form.useForm()
-  
+
   // 组内主机管理相关状态
   const [groupServersModalVisible, setGroupServersModalVisible] = useState(false)
   const [selectedGroup, setSelectedGroup] = useState<ServerGroupInfo | null>(null)
@@ -71,12 +71,16 @@ export default function ServerGroupsPage() {
   const [availableServers, setAvailableServers] = useState<any[]>([])
   const [addServerModalVisible, setAddServerModalVisible] = useState(false)
 
+  // 🔥 新增：主机选择器相关状态
+  const [selectedServerIds, setSelectedServerIds] = useState<string[]>([])
+  const [serversLoading, setServersLoading] = useState(false)
+
   const fetchGroups = async () => {
     try {
       setLoading(true)
       const response = await fetch('/api/servers/groups')
       const result = await response.json()
-      
+
       if (result.success) {
         setGroups(result.data)
       } else {
@@ -90,26 +94,47 @@ export default function ServerGroupsPage() {
     }
   }
 
+  // 🔥 新增：获取可用主机列表
+  const fetchAvailableServersForGroup = async () => {
+    try {
+      setServersLoading(true)
+      const response = await fetch('/api/admin/servers')
+      const result = await response.json()
+
+      if (result.success) {
+        setAvailableServers(result.data.servers || [])
+      }
+    } catch (error) {
+      console.error('获取主机列表失败:', error)
+    } finally {
+      setServersLoading(false)
+    }
+  }
+
   const handleSubmit = async (values: ServerGroupFormData) => {
     try {
       const url = editingGroup ? `/api/servers/groups/${editingGroup.id}` : '/api/servers/groups'
       const method = editingGroup ? 'PUT' : 'POST'
-      
+
       const response = await fetch(url, {
         method,
         headers: {
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify(values)
+        body: JSON.stringify({
+          ...values,
+          serverIds: selectedServerIds  // 🔥 添加主机ID列表
+        })
       })
-      
+
       const result = await response.json()
-      
+
       if (result.success) {
         message.success(editingGroup ? '主机组更新成功' : '主机组创建成功')
         setModalVisible(false)
         setEditingGroup(null)
         form.resetFields()
+        setSelectedServerIds([])  // 🔥 清空选中的主机
         fetchGroups()
       } else {
         message.error(result.error || '操作失败')
@@ -149,6 +174,9 @@ export default function ServerGroupsPage() {
       icon: group.icon,
       tags: group.tags
     })
+    // 🔥 设置已选中的主机ID
+    setSelectedServerIds(group.servers?.map(s => s.id) || [])
+    fetchAvailableServersForGroup()  // 🔥 获取可用主机列表
     setModalVisible(true)
   }
 
@@ -183,6 +211,8 @@ export default function ServerGroupsPage() {
       color: '#1890ff',
       icon: 'server'
     })
+    setSelectedServerIds([])  // 🔥 清空选中的主机
+    fetchAvailableServersForGroup()  // 🔥 获取可用主机列表
     setModalVisible(true)
   }
 
@@ -513,6 +543,58 @@ export default function ServerGroupsPage() {
               placeholder="输入标签，按回车添加"
               tokenSeparators={[',']}
             />
+          </Form.Item>
+
+          {/* 🔥 新增：主机选择器 */}
+          <Form.Item
+            label="选择主机"
+            extra="选择要加入此主机组的主机（可选）"
+          >
+            <Select
+              mode="multiple"
+              placeholder="请选择主机"
+              value={selectedServerIds}
+              onChange={setSelectedServerIds}
+              loading={serversLoading}
+              showSearch
+              filterOption={(input, option) => {
+                const label = option?.label
+                if (typeof label === 'string') {
+                  return label.toLowerCase().includes(input.toLowerCase())
+                }
+                return false
+              }}
+              optionFilterProp="label"
+              style={{ width: '100%' }}
+            >
+              {availableServers.map(server => (
+                <Select.Option
+                  key={server.id}
+                  value={server.id}
+                  label={`${server.name} (${server.ip})`}
+                >
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="font-medium">{server.name}</div>
+                      <div className="text-sm text-gray-500">{server.ip} - {server.os}</div>
+                    </div>
+                    <div>
+                      {server.groupId && server.groupId !== editingGroup?.id && (
+                        <Tag color="orange" className="text-xs">已在其他组</Tag>
+                      )}
+                      {server.groupId === editingGroup?.id && (
+                        <Tag color="blue" className="text-xs">当前组</Tag>
+                      )}
+                    </div>
+                  </div>
+                </Select.Option>
+              ))}
+            </Select>
+            {selectedServerIds.length > 0 && (
+              <div className="mt-2 text-gray-600">
+                已选择 {selectedServerIds.length} 台主机
+              </div>
+            )}
           </Form.Item>
 
           <Form.Item className="mb-0 mt-6">

@@ -75,7 +75,7 @@ export async function PUT(
     }
 
     const body = await request.json()
-    const { name, description, color, icon, tags } = body
+    const { name, description, color, icon, tags, serverIds = [] } = body  // 🔥 接收serverIds
 
     if (!name?.trim()) {
       return NextResponse.json(
@@ -118,36 +118,78 @@ export async function PUT(
       )
     }
 
-    const group = await prisma.serverGroup.update({
-      where: {
-        id: params.id
-      },
-      data: {
-        name: name.trim(),
-        description: description?.trim() || null,
-        color: color || '#1890ff',
-        icon: icon || 'server',
-        tags: tags || []
-      },
-      include: {
-        servers: {
-          where: {
-            isActive: true
-          }
+    // 🔥 使用事务更新主机组并重新关联主机
+    const result = await prisma.$transaction(async (tx) => {
+      // 更新主机组基本信息
+      const group = await tx.serverGroup.update({
+        where: {
+          id: params.id
         },
-        _count: {
-          select: {
-            servers: true
+        data: {
+          name: name.trim(),
+          description: description?.trim() || null,
+          color: color || '#1890ff',
+          icon: icon || 'server',
+          tags: tags || []
+        }
+      })
+
+      // 先将该组的所有主机的groupId设为null（解除关联）
+      await tx.server.updateMany({
+        where: {
+          groupId: params.id,
+          userId: authResult.user.id
+        },
+        data: {
+          groupId: null
+        }
+      })
+
+      // 然后将选中的主机重新关联到该组
+      if (serverIds && serverIds.length > 0) {
+        await tx.server.updateMany({
+          where: {
+            id: { in: serverIds },
+            userId: authResult.user.id,
+            isActive: true
+          },
+          data: {
+            groupId: params.id
+          }
+        })
+      }
+
+      // 返回包含主机列表的完整主机组信息
+      return await tx.serverGroup.findUnique({
+        where: { id: params.id },
+        include: {
+          servers: {
+            where: {
+              isActive: true
+            },
+            select: {
+              id: true,
+              name: true,
+              hostname: true,
+              ip: true,
+              status: true,
+              os: true
+            }
+          },
+          _count: {
+            select: {
+              servers: true
+            }
           }
         }
-      }
+      })
     })
 
     return NextResponse.json({
       success: true,
       data: {
-        ...group,
-        serverCount: group._count.servers
+        ...result,
+        serverCount: result?._count.servers || 0
       }
     })
   } catch (error) {
