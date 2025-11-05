@@ -276,7 +276,7 @@ cd wuhr-AI-ops
 
 ##微信交流
 
-![IMG_7032](https://github.com/user-attachments/assets/fb947001-b9aa-41bc-8723-a95e1ff5f9bd)
+![微信图片_20251105135508_33_633](https://github.com/user-attachments/assets/a904f421-e7e1-4991-8d31-70f74be747a3)
 
 
 ### 📚 技术文档
