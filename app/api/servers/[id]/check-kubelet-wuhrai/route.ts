@@ -104,7 +104,7 @@ export async function GET(
 
         recommendations.push({
           type: 'info',
-          message: `curl -fsSL https://www.wuhrai.com/download/v1.0.0/install-kubelet-wuhrai.sh | bash -s -- --port=${kubeletPort}`
+          message: `curl -fsSL https://www.wuhrai.com/download/v2.0.0/install-kubelet-wuhrai.sh | bash -s -- --port=${kubeletPort}`
         })
       }
 

@@ -156,6 +156,9 @@ ${executionResults}
     const apiModel = model || 'deepseek-chat'
     const apiProvider = provider || 'deepseek'
 
+    // 移除baseUrl末尾的斜杠,避免双斜杠
+    apiBaseUrl = apiBaseUrl.replace(/\/$/, '')
+
     // 根据provider确定API路径
     let apiPath = '/v1/chat/completions'  // 默认OpenAI格式
     if (apiProvider === 'doubao') {

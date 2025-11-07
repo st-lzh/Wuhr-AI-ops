@@ -96,7 +96,11 @@ export async function POST(request: NextRequest) {
       customToolsCount: httpRequest.customTools?.length || 0, // 🔧 记录自定义工具数量
       config: {
         ...httpRequest.config,
-        apiKey: httpRequest.config.apiKey ? '[REDACTED]' : undefined
+        apiKey: httpRequest.config.apiKey ? `[${httpRequest.config.apiKey.length}字符] ${httpRequest.config.apiKey.substring(0, 10)}...` : '(空)',
+        hasApiKey: !!httpRequest.config.apiKey,
+        provider: httpRequest.config.provider,
+        model: httpRequest.config.model,
+        baseUrl: httpRequest.config.baseUrl
       }
     })
 

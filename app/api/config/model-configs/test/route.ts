@@ -66,9 +66,32 @@ export async function POST(request: NextRequest) {
 }
 
 // 测试OpenAI兼容API
-async function testOpenAICompatible(apiKey: string, baseUrl: string, modelName: string) {
-  const url = baseUrl ? `${baseUrl}/chat/completions` : 'https://api.openai.com/v1/chat/completions'
-  
+async function testOpenAICompatible(apiKey: string, baseUrl: string | undefined, modelName: string) {
+  // 智能处理baseURL
+  let url = 'https://api.openai.com/v1/chat/completions'
+  if (baseUrl) {
+    // 移除末尾的斜杠
+    baseUrl = baseUrl.replace(/\/$/, '')
+    // 如果已经包含/v1/chat/completions,直接使用
+    if (baseUrl.endsWith('/v1/chat/completions')) {
+      url = baseUrl
+    }
+    // 如果已经包含/chat/completions,直接使用
+    else if (baseUrl.endsWith('/chat/completions')) {
+      url = baseUrl
+    }
+    // 如果包含/v1但不包含/chat/completions,添加/chat/completions
+    else if (baseUrl.endsWith('/v1')) {
+      url = `${baseUrl}/chat/completions`
+    }
+    // 否则添加完整路径/v1/chat/completions
+    else {
+      url = `${baseUrl}/v1/chat/completions`
+    }
+  }
+
+  console.log(`🧪 [API测试] 测试URL: ${url}`)
+
   const response = await fetch(url, {
     method: 'POST',
     headers: {

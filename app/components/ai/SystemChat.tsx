@@ -864,7 +864,15 @@ const SystemChat: React.FC = () => {
       }
     }
 
-    // 构建请求配置，使用数据库中的模型配置
+    // 构建请求配置,使用数据库中的模型配置
+    console.log('🔍 [SystemChat] 当前模型配置:', {
+      hasConfig: !!currentModelConfig,
+      modelName: currentModelConfig?.modelName,
+      provider: currentModelConfig?.provider,
+      hasApiKey: !!currentModelConfig?.apiKey,
+      apiKeyLength: currentModelConfig?.apiKey?.length,
+      baseUrl: currentModelConfig?.baseUrl
+    })
 
     const requestConfig = {
       model: currentModelConfig.modelName,
@@ -876,6 +884,16 @@ const SystemChat: React.FC = () => {
       // 🔧 添加自定义工具
       customTools: customToolsConfig.enabled ? customToolsConfig.tools : []
     }
+
+    console.log('🚀 [SystemChat] 发送请求配置:', {
+      model: requestConfig.model,
+      provider: requestConfig.provider,
+      hasApiKey: !!requestConfig.apiKey,
+      apiKeyPreview: requestConfig.apiKey ? requestConfig.apiKey.substring(0, 10) + '...' : '(无)',
+      baseUrl: requestConfig.baseUrl,
+      hostId: requestConfig.hostId,
+      isK8sMode: requestConfig.isK8sMode
+    })
 
     await sendMessage(finalMessage, requestConfig)
 
@@ -1942,8 +1960,15 @@ const SystemChat: React.FC = () => {
                         size="small"
                       >
                         <Radio.Button value="single">主机</Radio.Button>
-                        <Radio.Button value="group">主机组</Radio.Button>
+                        <Tooltip title="主机组批量执行功能开发中，当前仅支持选择单台主机">
+                          <Radio.Button value="group" disabled style={{ cursor: 'not-allowed' }}>
+                            主机组
+                          </Radio.Button>
+                        </Tooltip>
                       </Radio.Group>
+                      <Text className="text-gray-400 text-xs block mt-1">
+                        💡 主机组批量执行功能正在开发中，敬请期待
+                      </Text>
                     </div>
 
                     {/* 根据模式显示对应的选择器 */}

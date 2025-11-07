@@ -79,8 +79,10 @@ const ModelConfigPanel: React.FC = () => {
   const [editingModel, setEditingModel] = useState<ModelConfig | null>(null)
   const [selectedProvider, setSelectedProvider] = useState<string>('all')
   const [testingId, setTestingId] = useState<string | null>(null)
+  const [testingFCId, setTestingFCId] = useState<string | null>(null) // Function Calling测试状态
   const [loading, setLoading] = useState(false)
   const [testResults, setTestResults] = useState<Record<string, { success: boolean; responseTime?: number; error?: string }>>({})
+  const [fcTestResults, setFCTestResults] = useState<Record<string, { supported: boolean; message?: string; details?: any }>>({})
   const [form] = Form.useForm<ModelFormData>()
 
   // 提供商选项
@@ -221,6 +223,68 @@ const ModelConfigPanel: React.FC = () => {
       message.error(`API测试失败: ${(error as Error).message}`)
     } finally {
       setTestingId(null)
+    }
+  }
+
+  // 测试Function Calling能力
+  const testFunctionCalling = async (model: ModelConfig) => {
+    setTestingFCId(model.id)
+
+    try {
+      const response = await fetch('/api/config/test-model-capabilities', {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          modelName: model.modelName,
+          provider: model.provider,
+          apiKey: model.apiKey,
+          baseUrl: model.baseUrl
+        })
+      })
+
+      const result = await response.json()
+
+      if (result.success) {
+        setFCTestResults(prev => ({
+          ...prev,
+          [model.id]: {
+            supported: result.supported,
+            message: result.message,
+            details: result.details
+          }
+        }))
+
+        if (result.supported) {
+          message.success(result.message || 'Function Calling测试成功')
+        } else if (result.skipTest) {
+          message.info(result.message)
+        } else {
+          message.warning(result.message || 'Function Calling测试失败')
+        }
+      } else {
+        setFCTestResults(prev => ({
+          ...prev,
+          [model.id]: {
+            supported: false,
+            message: result.error || '测试失败'
+          }
+        }))
+        message.error(`测试失败: ${result.error || '未知错误'}`)
+      }
+    } catch (error) {
+      setFCTestResults(prev => ({
+        ...prev,
+        [model.id]: {
+          supported: false,
+          message: (error as Error).message
+        }
+      }))
+      message.error(`测试失败: ${(error as Error).message}`)
+    } finally {
+      setTestingFCId(null)
     }
   }
 
@@ -366,9 +430,17 @@ const ModelConfigPanel: React.FC = () => {
         <Space direction="vertical" size="small">
           {testResults[record.id] && (
             <Tag color={testResults[record.id].success ? 'success' : 'error'}>
-              {testResults[record.id].success ? 
-                `✅ ${testResults[record.id].responseTime}ms` : 
-                '❌ 测试失败'
+              {testResults[record.id].success ?
+                `✅ API ${testResults[record.id].responseTime}ms` :
+                '❌ API失败'
+              }
+            </Tag>
+          )}
+          {fcTestResults[record.id] && (
+            <Tag color={fcTestResults[record.id].supported ? 'success' : 'warning'}>
+              {fcTestResults[record.id].supported ?
+                '🔧 支持Function Calling' :
+                '⚠️ 不支持Function Calling'
               }
             </Tag>
           )}
@@ -380,13 +452,22 @@ const ModelConfigPanel: React.FC = () => {
       key: 'actions',
       render: (record: ModelConfig) => (
         <Space>
-          <Tooltip title="测试API">
+          <Tooltip title="测试API连接">
             <Button
               type="text"
               icon={testingId === record.id ? <LoadingOutlined /> : <ApiOutlined />}
               loading={testingId === record.id}
               onClick={() => testModelAPI(record)}
-              disabled={testingId !== null}
+              disabled={testingId !== null || testingFCId !== null}
+            />
+          </Tooltip>
+          <Tooltip title="测试Function Calling能力">
+            <Button
+              type="text"
+              icon={testingFCId === record.id ? <LoadingOutlined /> : <ToolOutlined />}
+              loading={testingFCId === record.id}
+              onClick={() => testFunctionCalling(record)}
+              disabled={testingId !== null || testingFCId !== null}
             />
           </Tooltip>
           <Tooltip title="编辑">
@@ -631,7 +712,7 @@ const ModelConfigPanel: React.FC = () => {
                   {form.getFieldValue('provider') === 'openai-compatible' ? 'OpenAI兼容服务需要自定义Base URL' : '可选，自定义API地址'}
                 </div>
                 <div className="text-xs text-gray-400">
-                  填写规则：https://api.deepseek.com/v1 需要带v1后缀
+                  填写规则: https://api.deepseek.com 或 https://ai.wuhrai.com (无需添加/v1后缀,系统会自动处理)
                 </div>
               </div>
             }

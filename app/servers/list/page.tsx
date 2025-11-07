@@ -556,13 +556,28 @@ const ServerListPage: React.FC = () => {
                 (row['标签'] || row['tags']).split(',').map((tag: string) => tag.trim()).filter(Boolean) :
                 []) : [],
             groupName: row['主机组名称'] || row['groupName'] || ''
-          })).filter((server: any) => server.name && server.ip && server.username) // 过滤掉必填字段为空的行
+          })).filter((server: any) => {
+            // 过滤掉必填字段为空的行，并提供详细的验证
+            const isValid = server.name && server.ip && server.username && server.password
+            if (!isValid) {
+              console.warn('跳过无效行:', {
+                name: server.name || '(缺失)',
+                ip: server.ip || '(缺失)',
+                username: server.username || '(缺失)',
+                password: server.password ? '(已提供)' : '(缺失)'
+              })
+            }
+            return isValid
+          })
 
           if (servers.length === 0) {
-            message.error('Excel文件中没有找到有效的服务器配置数据，请检查必填字段是否完整')
+            message.error('Excel文件中没有找到有效的服务器配置数据，请检查必填字段（主机名称、IP地址、SSH用户名、SSH密码）是否完整')
             setImportLoading(false)
             return
           }
+
+          console.log(`准备导入 ${servers.length} 个服务器配置...`)
+          message.info(`准备导入 ${servers.length} 个服务器配置，请稍候...`)
         } else {
           message.error('不支持的文件格式，请使用.xlsx、.xls或.json文件')
           setImportLoading(false)
@@ -579,8 +594,11 @@ const ServerListPage: React.FC = () => {
           body: JSON.stringify({ servers })
         })
 
+        console.log('导入请求响应状态:', response.status, response.statusText)
+
         if (response.ok) {
           const result = await response.json()
+          console.log('导入结果:', result)
           const { imported, skipped, errors } = result.data
 
           let successMessage = `成功导入 ${imported} 个服务器配置`
@@ -616,11 +634,16 @@ const ServerListPage: React.FC = () => {
           fetchRealServers() // 刷新列表
         } else {
           const errorData = await response.json()
+          console.error('导入失败，响应数据:', errorData)
           message.error(`导入失败: ${errorData.error || '未知错误'}`)
         }
       } catch (error) {
         console.error('导入服务器配置失败:', error)
-        message.error('导入服务器配置失败：文件格式错误或网络异常')
+        if (error instanceof Error) {
+          message.error(`导入服务器配置失败：${error.message}`)
+        } else {
+          message.error('导入服务器配置失败：文件格式错误或网络异常')
+        }
       } finally {
         setImportLoading(false)
       }

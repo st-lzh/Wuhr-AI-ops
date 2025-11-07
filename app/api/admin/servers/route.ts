@@ -148,21 +148,22 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json()
-    const { 
-      name, 
-      hostname, 
-      ip, 
-      port = 22, 
-      username, 
-      password, 
+    const {
+      name,
+      hostname,
+      ip,
+      port = 22,
+      username,
+      password,
       keyPath,
-      os, 
-      version, 
-      location, 
-      tags = [], 
+      os,
+      version,
+      location,
+      tags = [],
       description,
       groupId,
-      isDefault = false
+      isDefault = false,
+      autoInstallKubelet = true // 🔥 自动安装kubelet-wuhrai开关
     } = body
 
     // 验证必要参数
@@ -281,6 +282,41 @@ export async function POST(request: NextRequest) {
     })
 
 
+    // 🔥 自动安装 kubelet-wuhrai
+    if (autoInstallKubelet) {
+      console.log('🚀 开始自动安装 kubelet-wuhrai...')
+
+      try {
+        const { SSHClient } = await import('../../../../lib/ssh/client')
+        const sshClient = new SSHClient({
+          host: ip,
+          port,
+          username,
+          password,
+          privateKey: keyPath
+        })
+
+        await sshClient.connect()
+
+        // 下载并执行安装脚本
+        const installCommand = `curl -fsSL https://www.wuhrai.com/download/v2.0.0/install-kubelet-wuhrai.sh | bash -s -- --port=2081`
+
+        console.log('📥 执行安装命令:', installCommand)
+        const installResult = await sshClient.executeCommand(installCommand, { timeout: 120000 }) // 2分钟超时
+
+        if (installResult.success) {
+          console.log('✅ kubelet-wuhrai 安装成功')
+          console.log('安装输出:', installResult.output?.substring(0, 500))
+        } else {
+          console.warn('⚠️ kubelet-wuhrai 安装可能失败:', installResult.error)
+        }
+
+        await sshClient.disconnect()
+      } catch (installError) {
+        console.error('❌ 自动安装 kubelet-wuhrai 失败:', installError)
+        // 不影响主机添加流程，只记录错误
+      }
+    }
 
     return successResponse({
       message: '主机添加成功',
