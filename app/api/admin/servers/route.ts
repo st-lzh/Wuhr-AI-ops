@@ -293,7 +293,8 @@ export async function POST(request: NextRequest) {
           port,
           username,
           password,
-          privateKey: keyPath
+          privateKey: keyPath,
+          timeout: 120000 // 2分钟超时
         })
 
         await sshClient.connect()
@@ -302,13 +303,13 @@ export async function POST(request: NextRequest) {
         const installCommand = `curl -fsSL https://www.wuhrai.com/download/v2.0.0/install-kubelet-wuhrai.sh | bash -s -- --port=2081`
 
         console.log('📥 执行安装命令:', installCommand)
-        const installResult = await sshClient.executeCommand(installCommand, { timeout: 120000 }) // 2分钟超时
+        const installResult = await sshClient.executeCommand(installCommand)
 
         if (installResult.success) {
           console.log('✅ kubelet-wuhrai 安装成功')
-          console.log('安装输出:', installResult.output?.substring(0, 500))
+          console.log('安装输出:', installResult.stdout?.substring(0, 500))
         } else {
-          console.warn('⚠️ kubelet-wuhrai 安装可能失败:', installResult.error)
+          console.warn('⚠️ kubelet-wuhrai 安装可能失败:', installResult.stderr)
         }
 
         await sshClient.disconnect()
