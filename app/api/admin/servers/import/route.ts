@@ -78,8 +78,8 @@ export async function POST(request: NextRequest) {
 
       try {
         // 基本验证
-        if (!serverData.name || !serverData.ip || !serverData.username) {
-          errors.push(`第 ${rowNum} 行：缺少必填字段（主机名称、IP地址、SSH用户名）`)
+        if (!serverData.name || !serverData.ip || !serverData.username || !serverData.password) {
+          errors.push(`第 ${rowNum} 行：缺少必填字段（主机名称、IP地址、SSH用户名、SSH密码）`)
           continue
         }
 

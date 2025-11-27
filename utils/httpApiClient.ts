@@ -230,13 +230,52 @@ export class HTTPApiClient {
     let lastDataTime = Date.now()
     let dataCount = 0
 
+    // 🔥 添加超时检测配置
+    const HEARTBEAT_TIMEOUT = 120000 // 120秒无数据才视为超时(之前可能是隐式的较短超时)
+    const HEARTBEAT_CHECK_INTERVAL = 5000 // 每5秒检查一次
+
     // 启动连接状态监控
     this.connectionState = 'connected'
     this.connectionStartTime = Date.now()
     this.lastHeartbeat = Date.now()
     this.startHeartbeat()
 
-    console.log('🌊 开始处理SSE流式响应')
+    console.log('🌊 开始处理SSE流式响应', {
+      heartbeatTimeout: HEARTBEAT_TIMEOUT,
+      checkInterval: HEARTBEAT_CHECK_INTERVAL
+    })
+
+    // 🔥 启动超时检测定时器
+    let heartbeatCheckTimer: NodeJS.Timeout | null = null
+    const startHeartbeatCheck = () => {
+      heartbeatCheckTimer = setInterval(() => {
+        const timeSinceLastData = Date.now() - lastDataTime
+
+        // 如果超过超时阈值且还在等待数据
+        if (timeSinceLastData > HEARTBEAT_TIMEOUT && !isCompleted) {
+          console.warn('⏰ [SSE心跳检测] 超时检测触发', {
+            timeSinceLastData,
+            timeout: HEARTBEAT_TIMEOUT,
+            lastDataTime: new Date(lastDataTime).toISOString(),
+            currentTime: new Date().toISOString()
+          })
+
+          // 不立即断开,而是发送警告日志并继续等待(避免批准等待期间断开)
+          console.log('⚠️ [SSE心跳检测] 检测到长时间无数据,但继续保持连接(可能在等待批准)')
+        }
+      }, HEARTBEAT_CHECK_INTERVAL)
+    }
+
+    // 停止心跳检测
+    const stopHeartbeatCheck = () => {
+      if (heartbeatCheckTimer) {
+        clearInterval(heartbeatCheckTimer)
+        heartbeatCheckTimer = null
+      }
+    }
+
+    // 启动心跳检测
+    startHeartbeatCheck()
 
     try {
       while (true) {
@@ -329,7 +368,10 @@ export class HTTPApiClient {
                 }
                 return // 完成时直接返回
               } else if (data.type === 'connection') {
-                // 跳过connection事件
+                // 🔥 connection事件作为心跳,更新lastDataTime
+                lastDataTime = Date.now()
+                console.log('💓 [SSE心跳] 收到connection事件,更新心跳时间')
+                // 跳过不转发给前端
                 continue
               } else {
                 // 兼容其他格式
@@ -389,6 +431,9 @@ export class HTTPApiClient {
         }
       }
     } finally {
+      // 🔥 清理心跳检测定时器
+      stopHeartbeatCheck()
+
       try {
         reader.releaseLock()
       } catch (releaseError) {

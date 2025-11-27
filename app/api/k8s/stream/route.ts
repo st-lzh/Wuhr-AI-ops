@@ -87,7 +87,12 @@ export async function POST(request: NextRequest) {
         maxIterations: 20,
         streamingOutput: true,
         isK8sMode: true, // 🔥 确保config中也设置为K8s模式
-        requireApproval: config?.requireApproval || false // 🔥 传递命令批准配置
+        requireApproval: config?.requireApproval || false, // 🔥 传递命令批准配置
+        // 🔥 对于本地部署模型(vLLM等),启用工具垫片模式(不需要function calling支持)
+        enableToolUseShim: config?.baseUrl &&
+          !config?.baseUrl.includes('api.openai.com') &&
+          !config?.baseUrl.includes('api.deepseek.com') &&
+          !config?.baseUrl.includes('dashscope.aliyuncs.com')
       }
     }
 

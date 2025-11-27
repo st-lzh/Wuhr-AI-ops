@@ -902,28 +902,29 @@ model GitCredential {
 }
 
 model ModelConfig {
-  id                 String               @id @default(cuid())
-  userId             String
-  modelName          String               @db.VarChar(100)
-  displayName        String               @db.VarChar(100)
-  provider           String               @db.VarChar(50)
-  apiKey             String               @db.VarChar(500)
-  baseUrl            String?              @db.VarChar(500)
-  description        String?
-  isActive           Boolean              @default(true)
-  isDefault          Boolean              @default(false)
-  createdAt          DateTime             @default(now())
-  updatedAt          DateTime             @updatedAt
-  commandValidation  Boolean              @default(true)
-  enableToolUseShim  Boolean              @default(false)
-  externalTools      Boolean              @default(false)
-  mcpClientEnabled   Boolean              @default(false)
-  privilegedBlocking Boolean              @default(true)
-  requireApproval    Boolean              @default(true)
-  skipPermissions    Boolean              @default(false)
-  toolConfigPaths    String[]             @default([])
-  user               User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
-  userModelSelection UserModelSelection[]
+  id                      String               @id @default(cuid())
+  userId                  String
+  modelName               String               @db.VarChar(100)
+  displayName             String               @db.VarChar(100)
+  provider                String               @db.VarChar(50)
+  apiKey                  String               @db.VarChar(500)
+  baseUrl                 String?              @db.VarChar(500)
+  description             String?
+  isActive                Boolean              @default(true)
+  isDefault               Boolean              @default(false)
+  createdAt               DateTime             @default(now())
+  updatedAt               DateTime             @updatedAt
+  commandValidation       Boolean              @default(true)
+  enableToolUseShim       Boolean              @default(false)
+  externalTools           Boolean              @default(false)
+  mcpClientEnabled        Boolean              @default(false)
+  privilegedBlocking      Boolean              @default(true)
+  requireApproval         Boolean              @default(true)
+  skipPermissions         Boolean              @default(false)
+  toolConfigPaths         String[]             @default([])
+  supportsFunctionCalling Boolean              @default(true)
+  user                    User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userModelSelection      UserModelSelection[]
 
   @@unique([userId, modelName])
   @@index([userId])

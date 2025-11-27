@@ -531,9 +531,25 @@ const SystemChat: React.FC = () => {
 
               {kubeletStatus === 'not_installed' && (
                 <div className="mt-4 p-3 bg-transparent border border-gray-500/30 rounded">
-                  <strong className="text-gray-300">安装说明：</strong>
-                  <div className="mt-1 p-2 bg-transparent border border-gray-600/30 rounded text-sm text-gray-400">
-                    请参考kubelet-wuhrai官方文档进行安装
+                  <strong className="text-gray-300">安装选项：</strong>
+                  <div className="mt-2 space-y-3">
+                    <Button
+                      type="primary"
+                      icon={<CloudUploadOutlined />}
+                      onClick={() => {
+                        Modal.destroyAll()
+                        installKubeletWuhrai(serverId)
+                      }}
+                      block
+                    >
+                      自动安装 kubelet-wuhrai
+                    </Button>
+                    <div className="text-xs text-gray-500 text-center">
+                      或手动在服务器上执行以下命令：
+                    </div>
+                    <div className="p-2 bg-transparent border border-gray-600/30 rounded text-sm text-gray-400 font-mono">
+                      curl -fsSL https://www.wuhrai.com/download/v2.0.0/install-kubelet-wuhrai.sh | bash -s -- --port=2081
+                    </div>
                   </div>
                 </div>
               )}
@@ -574,6 +590,113 @@ const SystemChat: React.FC = () => {
       })
     } finally {
       setKubeletCheckLoading(false)
+    }
+  }
+
+  // 🔥 自动安装kubelet-wuhrai到远程服务器
+  const installKubeletWuhrai = async (serverId: string) => {
+    if (!serverId) {
+      message.error('未选择服务器')
+      return
+    }
+
+    // 显示安装进度对话框
+    const installModal = Modal.info({
+      title: '正在安装 kubelet-wuhrai...',
+      content: (
+        <div className="space-y-3">
+          <div className="flex items-center space-x-2">
+            <Spin size="small" />
+            <span>正在连接到远程服务器并执行安装脚本...</span>
+          </div>
+          <div className="text-gray-400 text-sm">
+            这可能需要1-2分钟，请耐心等待
+          </div>
+        </div>
+      ),
+      width: 500,
+      okButtonProps: { style: { display: 'none' } }
+    })
+
+    try {
+      const response = await fetch(`/api/servers/${serverId}/install-kubelet-wuhrai`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ port: 2081 })
+      })
+
+      const result = await response.json()
+      installModal.destroy()
+
+      if (result.success) {
+        Modal.success({
+          title: 'kubelet-wuhrai 安装成功',
+          content: (
+            <div className="space-y-3">
+              <div className="text-green-400">
+                ✅ 服务已成功安装并启动在端口 {result.data?.kubeletPort || 2081}
+              </div>
+              <div className="mt-3 p-3 bg-transparent border border-gray-600/30 rounded">
+                <strong className="text-gray-300">安装日志：</strong>
+                <div className="mt-2 max-h-40 overflow-y-auto text-xs text-gray-400 font-mono">
+                  {result.data?.logs?.slice(-10).map((log: string, i: number) => (
+                    <div key={i}>{log}</div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          ),
+          width: 600
+        })
+
+        // 刷新kubelet状态
+        setTimeout(() => {
+          checkKubeletWuhrai(serverId)
+        }, 1000)
+      } else {
+        Modal.error({
+          title: 'kubelet-wuhrai 安装失败',
+          content: (
+            <div className="space-y-3">
+              <div className="text-red-400">
+                ❌ {result.error || '安装过程中出现错误'}
+              </div>
+              {result.data?.logs && (
+                <div className="mt-3 p-3 bg-transparent border border-red-500/30 rounded">
+                  <strong className="text-gray-300">安装日志：</strong>
+                  <div className="mt-2 max-h-40 overflow-y-auto text-xs text-gray-400 font-mono">
+                    {result.data.logs.map((log: string, i: number) => (
+                      <div key={i}>{log}</div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              <div className="text-sm text-gray-400">
+                请尝试手动安装或检查服务器SSH连接是否正常
+              </div>
+            </div>
+          ),
+          width: 600
+        })
+      }
+    } catch (error) {
+      installModal.destroy()
+      Modal.error({
+        title: '安装请求失败',
+        content: (
+          <div>
+            <p className="text-red-400">
+              ❌ {error instanceof Error ? error.message : '网络请求失败'}
+            </p>
+            <p className="text-sm text-gray-400 mt-2">
+              请检查网络连接和服务器状态
+            </p>
+          </div>
+        )
+      })
     }
   }
 

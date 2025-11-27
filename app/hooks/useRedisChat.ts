@@ -165,6 +165,9 @@ ${executionResults}
       apiPath = '/completions'  // 豆包API路径（baseUrl已包含/api/v3/chat）
     } else if (apiProvider === 'qwen') {
       apiPath = '/chat/completions'  // Qwen API路径（baseUrl已包含/compatible-mode/v1）
+    } else if (apiProvider === 'openai-compatible' || apiBaseUrl.includes('/v1')) {
+      // 🔥 对于openai-compatible或baseUrl已包含/v1的情况，只添加/chat/completions
+      apiPath = '/chat/completions'
     }
 
     console.log('🚀 [总结函数] 直接调用LLM API生成总结:', {
@@ -558,16 +561,32 @@ export function useRedisChat(options: UseRedisChatOptions = {}) {
     // 初始加载
     loadSecurityConfig()
 
-    // 🔥 监听storage事件,当配置更新时重新加载
+    // 🔥 监听storage事件,当配置更新时重新加载（跨标签页）
     const handleStorageChange = (e: StorageEvent) => {
       if (e.key === 'securityConfig') {
-        console.log('🔐 检测到安全配置更新，重新加载')
+        console.log('🔐 检测到安全配置更新（跨标签页），重新加载')
         loadSecurityConfig()
       }
     }
 
+    // 🔥 监听自定义事件,当配置更新时立即生效（同页面实时更新）
+    const handleCustomConfigChange = (e: Event) => {
+      const customEvent = e as CustomEvent
+      if (customEvent.detail) {
+        setSecurityConfig({
+          enabled: customEvent.detail.enabled ?? false,
+          requireApproval: customEvent.detail.requireApproval ?? false
+        })
+        console.log('🔐 检测到安全配置实时更新:', customEvent.detail)
+      }
+    }
+
     window.addEventListener('storage', handleStorageChange)
-    return () => window.removeEventListener('storage', handleStorageChange)
+    window.addEventListener('securityConfigChanged', handleCustomConfigChange)
+    return () => {
+      window.removeEventListener('storage', handleStorageChange)
+      window.removeEventListener('securityConfigChanged', handleCustomConfigChange)
+    }
   }, [])
 
   // Redis API 调用函数
@@ -912,7 +931,12 @@ export function useRedisChat(options: UseRedisChatOptions = {}) {
           isK8sMode: isK8sModeValue, // 🔥 修复：明确传递isK8sMode值
           maxIterations: 20,
           streamingOutput: true,
-          requireApproval: securityConfig.enabled && securityConfig.requireApproval  // 🔥 新增: 命令执行询问
+          requireApproval: securityConfig.enabled && securityConfig.requireApproval,  // 🔥 新增: 命令执行询问
+          // 🔥 对于本地部署模型(vLLM等),启用工具垫片模式(不需要function calling支持)
+          enableToolUseShim: modelConfig?.baseUrl &&
+            !modelConfig?.baseUrl.includes('api.openai.com') &&
+            !modelConfig?.baseUrl.includes('api.deepseek.com') &&
+            !modelConfig?.baseUrl.includes('dashscope.aliyuncs.com')
         },
         // 优化：添加会话上下文信息，用于kubelet-wuhrai后端会话管理
         sessionId: session.id, // 传递会话ID给kubelet-wuhrai
@@ -930,6 +954,15 @@ export function useRedisChat(options: UseRedisChatOptions = {}) {
           provider: modelConfig.provider || 'openai-compatible', // 添加provider字段
         })
       }
+
+      console.log('🔧 [disableTools判断] 配置详情:', {
+        baseUrl: modelConfig?.baseUrl,
+        hasBaseUrl: !!modelConfig?.baseUrl,
+        isOpenAI: modelConfig?.baseUrl?.includes('api.openai.com'),
+        isDeepSeek: modelConfig?.baseUrl?.includes('api.deepseek.com'),
+        isQwen: modelConfig?.baseUrl?.includes('dashscope.aliyuncs.com'),
+        finalDisableTools: requestBody.config.disableTools
+      })
 
       // 🔧 自定义工具集成 - 如果前面已经获取过配置，直接使用
       try {

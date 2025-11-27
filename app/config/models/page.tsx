@@ -92,6 +92,7 @@ const ModelConfigPanel: React.FC = () => {
     { id: 'gemini', name: 'Google Gemini', color: '#4285F4' },
     { id: 'qwen', name: 'Qwen', color: '#FF6B35' },
     { id: 'doubao', name: 'Doubao', color: '#722ED1' },
+    { id: 'ollama', name: 'Ollama', color: '#000000' },
     { id: 'local-deployment', name: 'Local Deployment', color: '#52C41A' }
   ]
 
@@ -692,12 +693,16 @@ const ModelConfigPanel: React.FC = () => {
                 name="apiKey"
                 label="API密钥"
                 rules={[{
-                  required: form.getFieldValue('provider') !== 'local-deployment',
+                  required: form.getFieldValue('provider') !== 'local-deployment' && form.getFieldValue('provider') !== 'ollama',
                   message: '请输入API密钥'
                 }]}
               >
                 <Input.Password
-                  placeholder={form.getFieldValue('provider') === 'local-deployment' ? '本地部署无需API密钥（可选）' : '输入API密钥'}
+                  placeholder={
+                    form.getFieldValue('provider') === 'local-deployment' || form.getFieldValue('provider') === 'ollama'
+                      ? '无需API密钥（可选）'
+                      : '输入API密钥'
+                  }
                 />
               </Form.Item>
             </Col>
@@ -709,15 +714,30 @@ const ModelConfigPanel: React.FC = () => {
             extra={
               <div className="space-y-1">
                 <div className="text-gray-500">
-                  {form.getFieldValue('provider') === 'openai-compatible' ? 'OpenAI兼容服务需要自定义Base URL' : '可选，自定义API地址'}
+                  {form.getFieldValue('provider') === 'openai-compatible'
+                    ? 'OpenAI兼容服务需要自定义Base URL'
+                    : form.getFieldValue('provider') === 'ollama'
+                    ? 'Ollama服务地址（默认：http://127.0.0.1:11434）'
+                    : '可选，自定义API地址'}
                 </div>
                 <div className="text-xs text-gray-400">
-                  填写规则: https://api.deepseek.com 或 https://ai.wuhrai.com (无需添加/v1后缀,系统会自动处理)
+                  {form.getFieldValue('provider') === 'ollama'
+                    ? '填写示例: http://localhost:11434 或远程服务器地址'
+                    : '填写规则: https://api.deepseek.com 或 https://ai.wuhrai.com'}
+                </div>
+                <div className="text-xs text-green-600">
+                  💡 带/v1或不带/v1都可以，后端会自动标准化处理
                 </div>
               </div>
             }
           >
-            <Input placeholder={form.getFieldValue('provider') === 'openai-compatible' ? 'https://api.openai.com/v1' : '可选，自定义API地址'} />
+            <Input placeholder={
+              form.getFieldValue('provider') === 'openai-compatible'
+                ? 'https://api.openai.com/v1'
+                : form.getFieldValue('provider') === 'ollama'
+                ? 'http://localhost:11434'
+                : '可选，自定义API地址'
+            } />
           </Form.Item>
 
           <Form.Item

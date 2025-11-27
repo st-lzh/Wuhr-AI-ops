@@ -276,6 +276,14 @@ export class KubeletWuhraiClient {
           'doubao-pro-4k',
           'doubao-lite-4k'
         ],
+        'ollama': [
+          'llama3.3:70b',
+          'qwen2.5:32b',
+          'deepseek-r1:32b',
+          'gemma2:27b',
+          'mixtral:8x7b',
+          'codellama:13b'
+        ],
         'local-deployment': []
       }
 

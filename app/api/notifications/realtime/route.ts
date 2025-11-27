@@ -51,7 +51,7 @@ export async function GET(request: NextRequest) {
         // 创建Redis订阅连接
         subscriber = createRedisConnection()
         const channel = `user:${user.id}:notifications`
-        
+
         subscriber.on('connect', () => {
           console.log(`📡 [Realtime Notifications] Redis连接已建立，订阅频道: ${channel}`)
         })
@@ -60,14 +60,20 @@ export async function GET(request: NextRequest) {
           console.error('❌ [Realtime Notifications] Redis连接错误:', err)
           cleanup()
         })
-        
-        subscriber.subscribe(channel, (err) => {
-          if (err) {
-            console.error('❌ [Realtime Notifications] Redis订阅失败:', err)
-            cleanup()
-            return
-          }
-          console.log(`📡 [Realtime Notifications] 已订阅频道: ${channel}`)
+
+        // 先连接Redis再订阅
+        subscriber.connect().then(() => {
+          subscriber?.subscribe(channel, (err) => {
+            if (err) {
+              console.error('❌ [Realtime Notifications] Redis订阅失败:', err)
+              cleanup()
+              return
+            }
+            console.log(`📡 [Realtime Notifications] 已订阅频道: ${channel}`)
+          })
+        }).catch((err) => {
+          console.error('❌ [Realtime Notifications] Redis连接失败:', err)
+          cleanup()
         })
 
         subscriber.on('message', (receivedChannel, message) => {
