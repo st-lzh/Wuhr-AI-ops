@@ -88,9 +88,12 @@ export async function POST(request: NextRequest) {
         streamingOutput: true,
         isK8sMode: true, // 🔥 确保config中也设置为K8s模式
         requireApproval: config?.requireApproval || false, // 🔥 传递命令批准配置
-        // 🔥 不再前端设置enableToolUseShim,由后端根据provider自动判断
-        // vLLM等支持原生function calling的本地部署,后端会自动使用原生工具调用
-        enableToolUseShim: false
+        // 🔥 对于本地部署模型(vLLM等),使用ReAct格式执行工具调用
+        // 因为某些本地模型(如Qwen3-8B MoE)不支持原生function calling
+        enableToolUseShim: config?.baseUrl &&
+          !config?.baseUrl.includes('api.openai.com') &&
+          !config?.baseUrl.includes('api.deepseek.com') &&
+          !config?.baseUrl.includes('dashscope.aliyuncs.com')
       }
     }
 
