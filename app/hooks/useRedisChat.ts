@@ -932,11 +932,9 @@ export function useRedisChat(options: UseRedisChatOptions = {}) {
           maxIterations: 20,
           streamingOutput: true,
           requireApproval: securityConfig.enabled && securityConfig.requireApproval,  // 🔥 新增: 命令执行询问
-          // 🔥 对于本地部署模型(vLLM等),启用工具垫片模式(不需要function calling支持)
-          enableToolUseShim: modelConfig?.baseUrl &&
-            !modelConfig?.baseUrl.includes('api.openai.com') &&
-            !modelConfig?.baseUrl.includes('api.deepseek.com') &&
-            !modelConfig?.baseUrl.includes('dashscope.aliyuncs.com')
+          // 🔥 不再前端设置enableToolUseShim,由后端根据provider自动判断
+          // vLLM等支持原生function calling的本地部署,后端会自动使用原生工具调用
+          enableToolUseShim: false
         },
         // 优化：添加会话上下文信息，用于kubelet-wuhrai后端会话管理
         sessionId: session.id, // 传递会话ID给kubelet-wuhrai
