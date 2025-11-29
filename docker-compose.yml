@@ -1,8 +1,13 @@
-# version属性在新版本Docker Compose中已废弃，移除以避免警告
+# =============================================================================
+# Wuhr AI Ops Docker Compose - 国内优化版
+# 使用国内镜像源加速部署
+# =============================================================================
 
 services:
   # PostgreSQL 数据库服务
   postgres:
+    # 使用Docker Hub官方镜像（通过daemon.json配置国内镜像加速器）
+    # 或者直接使用: docker.m.daocloud.io/library/postgres:15-alpine
     image: postgres:15-alpine
     container_name: wuhr-ai-ops-postgres
     restart: unless-stopped
@@ -10,35 +15,53 @@ services:
       POSTGRES_DB: wuhr_ai_ops
       POSTGRES_USER: wuhr_admin
       POSTGRES_PASSWORD: wuhr_secure_password_2024
+      TZ: Asia/Shanghai
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     networks:
       - wuhr-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U wuhr_admin -d wuhr_ai_ops"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
-  # Redis 缓存服务（为未来功能准备）
+  # Redis 缓存服务
   redis:
     image: redis:7-alpine
     container_name: wuhr-ai-ops-redis
     restart: unless-stopped
     command: redis-server --appendonly yes --requirepass redis_password_2024
+    environment:
+      TZ: Asia/Shanghai
     ports:
       - "6379:6379"
     volumes:
       - redis_data:/data
     networks:
       - wuhr-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "redis_password_2024", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   # Wuhr AI Ops 主应用服务
   app:
     build:
       context: .
       dockerfile: Dockerfile
+      # 启用BuildKit提升构建速度
+      args:
+        BUILDKIT_INLINE_CACHE: 1
+    image: wuhr-ai-ops:latest
     container_name: wuhr-ai-ops-app
     restart: unless-stopped
     environment:
-      - NODE_ENV=development
+      - NODE_ENV=production
+      - TZ=Asia/Shanghai
       - DB_HOST=postgres
       - DB_PORT=5432
       - DB_NAME=wuhr_ai_ops
@@ -47,6 +70,7 @@ services:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - REDIS_PASSWORD=redis_password_2024
+      - REDIS_URL=redis://:redis_password_2024@redis:6379
       - DATABASE_URL=postgresql://wuhr_admin:wuhr_secure_password_2024@postgres:5432/wuhr_ai_ops?sslmode=disable&connection_limit=10&pool_timeout=20&connect_timeout=10
       - DIRECT_URL=postgresql://wuhr_admin:wuhr_secure_password_2024@postgres:5432/wuhr_ai_ops?sslmode=disable&connection_limit=5&pool_timeout=20&connect_timeout=10
       - JWT_SECRET=wuhr_ai_ops_jwt_secret_2024_production_change_this_in_production
@@ -61,14 +85,22 @@ services:
     networks:
       - wuhr-network
     depends_on:
-      - postgres
-      - redis
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     logging:
       driver: "json-file"
       options:
         max-size: "10m"
         max-file: "3"
         compress: "true"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
 
 volumes:
   postgres_data:

@@ -87,13 +87,9 @@ export async function POST(request: NextRequest) {
         maxIterations: 20,
         streamingOutput: true,
         isK8sMode: false, // 🔥 确保config中也设置为Linux模式
-        requireApproval: config?.requireApproval || false, // 🔥 传递命令批准配置
-        // 🔥 对于本地部署模型(vLLM等),使用ReAct格式执行工具调用
-        // 因为某些本地模型(如Qwen3-8B MoE)不支持原生function calling
-        enableToolUseShim: config?.baseUrl &&
-          !config?.baseUrl.includes('api.openai.com') &&
-          !config?.baseUrl.includes('api.deepseek.com') &&
-          !config?.baseUrl.includes('dashscope.aliyuncs.com')
+        requireApproval: config?.requireApproval || false,
+        // 🔥 vLLM需要ReAct模式
+        enableToolUseShim: true
       }
     }
 

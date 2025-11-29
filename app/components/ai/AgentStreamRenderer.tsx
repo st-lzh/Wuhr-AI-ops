@@ -325,7 +325,7 @@ const AgentStreamRenderer: React.FC<AgentStreamRendererProps> = ({
                       <div className="bg-gray-100 dark:bg-gray-800 p-2 rounded mb-2">
                         <div className="text-xs text-gray-600 dark:text-gray-400 mb-1">安装命令：</div>
                         <code className="text-xs text-gray-800 dark:text-gray-200 block overflow-x-auto">
-                          curl -fsSL https://www.wuhrai.com/download/v1.0.0/install-kubelet-wuhrai.sh | bash -s -- --port=2081
+                          curl -fsSL https://www.wuhrai.com/download/v2.0.0/install-kubelet-wuhrai.sh | bash -s -- --port=2081
                         </code>
                       </div>
 

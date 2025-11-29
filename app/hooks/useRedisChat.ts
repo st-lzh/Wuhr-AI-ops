@@ -931,13 +931,9 @@ export function useRedisChat(options: UseRedisChatOptions = {}) {
           isK8sMode: isK8sModeValue, // 🔥 修复：明确传递isK8sMode值
           maxIterations: 20,
           streamingOutput: true,
-          requireApproval: securityConfig.enabled && securityConfig.requireApproval,  // 🔥 新增: 命令执行询问
-          // 🔥 对于本地部署模型(vLLM等),使用ReAct格式执行工具调用
-          // 因为某些本地模型(如Qwen3-8B MoE)不支持原生function calling
-          enableToolUseShim: modelConfig?.baseUrl &&
-            !modelConfig?.baseUrl.includes('api.openai.com') &&
-            !modelConfig?.baseUrl.includes('api.deepseek.com') &&
-            !modelConfig?.baseUrl.includes('dashscope.aliyuncs.com')
+          requireApproval: securityConfig.enabled && securityConfig.requireApproval,
+          // 🔥 vLLM需要ReAct模式(enableToolUseShim: true)，因为没有--enable-auto-tool-choice
+          enableToolUseShim: true
         },
         // 优化：添加会话上下文信息，用于kubelet-wuhrai后端会话管理
         sessionId: session.id, // 传递会话ID给kubelet-wuhrai
