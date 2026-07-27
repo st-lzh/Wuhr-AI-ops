@@ -5,6 +5,7 @@ import { notificationService } from '../../../../lib/services/notificationServic
 import { infoNotificationService } from '../../../../lib/notifications/infoNotificationService'
 import { logDeployment, LogLevel } from '../../../../lib/logging/cicdLogger'
 import { z } from 'zod'
+import { canWriteTeamAssets } from '../../../../lib/auth/teamAccess'
 import { notificationManager } from '../../../../lib/notifications/manager'
 
 // 部署任务创建验证schema
@@ -49,9 +50,8 @@ export async function GET(request: NextRequest) {
     const prisma = await getPrismaClient()
 
     // 构建查询条件
-    let whereConditions: any = {
-      userId: user.id // 只显示用户自己的部署任务
-    }
+    // 单个可信运维团队共享发布任务，写操作仍通过权限和审批控制。
+    let whereConditions: any = {}
 
     if (projectId) {
       whereConditions.projectId = projectId
@@ -189,6 +189,9 @@ export async function POST(request: NextRequest) {
     }
 
     const { user } = authResult
+    if (!canWriteTeamAssets(user, 'cicd:write')) {
+      return NextResponse.json({ success: false, error: '没有部署任务写入权限' }, { status: 403 })
+    }
     const body = await request.json()
 
     console.log('📥 接收到的部署任务数据:', body)
@@ -211,6 +214,36 @@ export async function POST(request: NextRequest) {
     const data = validationResult.data
     const prisma = await getPrismaClient()
 
+    if (!data.isJenkinsDeployment && data.environment === 'prod' && !data.rollbackScript?.trim()) {
+      return NextResponse.json({ success: false, error: '生产环境必须配置真实回滚脚本，禁止创建不可回滚的生产部署' }, { status: 400 })
+    }
+
+    // 审批人必须具备实际审批权限，否则任务会永久停留在待审批状态。
+    if (data.approvalUsers?.length) {
+      const eligibleApprovers = await prisma.user.findMany({
+        where: {
+          id: { in: data.approvalUsers },
+          isActive: true,
+          approvalStatus: 'approved',
+          OR: [
+            { role: 'admin' },
+            { role: 'manager' },
+            { permissions: { has: 'cicd:write' } }
+          ]
+        },
+        select: { id: true }
+      })
+      const eligibleIds = new Set(eligibleApprovers.map(approver => approver.id))
+      const invalidApproverIds = data.approvalUsers.filter(id => !eligibleIds.has(id))
+      if (invalidApproverIds.length > 0) {
+        return NextResponse.json({
+          success: false,
+          error: '部分审批人员无权处理部署审批，请选择管理员、运维经理或具有 cicd:write 权限的成员',
+          details: { invalidApproverIds }
+        }, { status: 400 })
+      }
+    }
+
     console.log('🔨 创建部署任务:', {
       projectId: data.projectId,
       name: data.name,
@@ -224,7 +257,7 @@ export async function POST(request: NextRequest) {
       project = await prisma.cICDProject.findFirst({
         where: {
           id: data.projectId,
-          userId: user.id
+          isActive: true
         }
       })
 
@@ -483,7 +516,7 @@ export async function POST(request: NextRequest) {
                 OR: [
                   { role: 'admin' },
                   { role: 'manager' },
-                  { permissions: { has: 'cicd:approve' } }
+                  { permissions: { has: 'cicd:write' } }
                 ]
               },
               select: { id: true }
@@ -553,12 +586,7 @@ export async function POST(request: NextRequest) {
 
           console.log(`✅ 创建了 ${approvals.length} 个审批记录`)
         } else {
-          console.log('⚠️ 没有找到合适的审批人，部署任务将直接进入已审批状态')
-          // 如果没有审批人，直接设置为已审批状态
-          await prisma.deployment.update({
-            where: { id: deployment.id },
-            data: { status: 'approved' }
-          })
+          console.log('⚠️ 没有找到合适的审批人，任务保持待审批且不会自动执行')
         }
       } catch (approvalError) {
         console.error('❌ 创建审批记录失败:', approvalError)

@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title">
+  <title id="title">Wuhr AI Ops</title>
+  <defs>
+    <linearGradient id="background" x1="8" y1="8" x2="56" y2="56" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#3b82f6"/>
+      <stop offset="1" stop-color="#10b981"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="15" fill="url(#background)"/>
+  <path d="M20 23.5h24a6 6 0 0 1 6 6v15a6 6 0 0 1-6 6H20a6 6 0 0 1-6-6v-15a6 6 0 0 1 6-6Z" fill="#fff" fill-opacity=".96"/>
+  <path d="M32 14v9.5M27.5 14h9" stroke="#fff" stroke-width="4" stroke-linecap="round"/>
+  <circle cx="25" cy="35" r="3" fill="#2563eb"/>
+  <circle cx="39" cy="35" r="3" fill="#059669"/>
+  <path d="M24 43c4.7 3 11.3 3 16 0" fill="none" stroke="#334155" stroke-width="3" stroke-linecap="round"/>
+</svg>

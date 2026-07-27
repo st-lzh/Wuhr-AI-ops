@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '../../../../../../lib/auth/apiHelpers-new'
 import { getPrismaClient } from '../../../../../../lib/config/database'
+import { revealSecret } from '../../../../../../lib/crypto/encryption'
 
 // Jenkins连接测试API
 export async function POST(
@@ -52,7 +53,7 @@ export async function POST(
       console.log(`🔗 开始测试Jenkins连接: ${jenkins.serverUrl}`)
 
       // 构建认证头
-      const auth = Buffer.from(`${jenkins.username}:${jenkins.apiToken}`).toString('base64')
+      const auth = Buffer.from(`${jenkins.username}:${revealSecret(jenkins.apiToken)}`).toString('base64')
 
       // 测试Jenkins API连接
       const testResponse = await fetch(`${jenkins.serverUrl}/api/json`, {

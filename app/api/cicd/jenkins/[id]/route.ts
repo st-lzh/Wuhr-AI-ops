@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '../../../../../lib/auth/apiHelpers-new'
 import { getPrismaClient } from '../../../../../lib/config/database'
 import { z } from 'zod'
+import { protectSecret } from '../../../../../lib/crypto/encryption'
+import { canWriteTeamAssets } from '../../../../../lib/auth/teamAccess'
 
 // Jenkins配置更新验证schema
 const UpdateJenkinsConfigSchema = z.object({
@@ -47,14 +49,6 @@ export async function GET(
       }, { status: 404 })
     }
 
-    // 检查权限：超级管理员和管理员可以访问任何配置，普通用户只能访问自己的配置
-    if (user.email !== 'admin@wuhr.ai' && user.role !== 'admin' && config.userId !== user.id) {
-      return NextResponse.json({
-        success: false,
-        error: '无权限访问此Jenkins配置'
-      }, { status: 403 })
-    }
-
     console.log('✅ Jenkins配置详情获取成功:', configId)
 
     return NextResponse.json({
@@ -95,6 +89,9 @@ export async function PUT(
     }
 
     const { user } = authResult
+    if (!canWriteTeamAssets(user, 'cicd:write')) {
+      return NextResponse.json({ success: false, error: '没有 Jenkins 配置写入权限' }, { status: 403 })
+    }
     const configId = params.id
     const body = await request.json()
 
@@ -127,19 +124,13 @@ export async function PUT(
       }, { status: 404 })
     }
 
-    // 检查权限：超级管理员和管理员可以更新任何配置，普通用户只能更新自己的配置
-    if (user.email !== 'admin@wuhr.ai' && user.role !== 'admin' && existingConfig.userId !== user.id) {
-      return NextResponse.json({
-        success: false,
-        error: '无权限更新此Jenkins配置'
-      }, { status: 403 })
-    }
-
     // 更新Jenkins配置
+    const { apiToken, ...safeData } = data
     const updatedConfig = await prisma.jenkinsConfig.update({
       where: { id: configId },
       data: {
-        ...data,
+        ...safeData,
+        ...(apiToken?.trim() ? { apiToken: protectSecret(apiToken) } : {}),
         updatedAt: new Date()
       }
     })
@@ -185,6 +176,9 @@ export async function DELETE(
     }
 
     const { user } = authResult
+    if (!canWriteTeamAssets(user, 'cicd:write')) {
+      return NextResponse.json({ success: false, error: '没有 Jenkins 配置写入权限' }, { status: 403 })
+    }
     const configId = params.id
     const prisma = await getPrismaClient()
 
@@ -202,14 +196,6 @@ export async function DELETE(
         success: false,
         error: 'Jenkins配置不存在'
       }, { status: 404 })
-    }
-
-    // 检查权限：超级管理员和管理员可以删除任何配置，普通用户只能删除自己的配置
-    if (user.email !== 'admin@wuhr.ai' && user.role !== 'admin' && existingConfig.userId !== user.id) {
-      return NextResponse.json({
-        success: false,
-        error: '无权限删除此Jenkins配置'
-      }, { status: 403 })
     }
 
     // 删除Jenkins配置

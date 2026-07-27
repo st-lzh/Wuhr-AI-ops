@@ -26,7 +26,6 @@ export async function GET(request: NextRequest) {
     // 获取用户的所有服务器（包含主机组信息）
     const servers = await prisma.server.findMany({
       where: {
-        userId: authResult.user.id,
         isActive: true
       },
       include: {

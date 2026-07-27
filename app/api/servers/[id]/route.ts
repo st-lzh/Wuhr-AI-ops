@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '../../../../lib/auth/apiHelpers-new'
-import { hasPermission } from '../../../../lib/auth/permissions'
+import { canWriteTeamAssets } from '../../../../lib/auth/teamAccess'
 import { getPrismaClient } from '../../../../lib/config/database'
 
 // 获取单个服务器信息
@@ -18,10 +18,29 @@ export async function GET(
     const server = await prisma.server.findFirst({
       where: {
         id: params.id,
-        userId: authResult.user.id,
         isActive: true
       },
-      include: {
+      select: {
+        id: true,
+        name: true,
+        hostname: true,
+        ip: true,
+        port: true,
+        status: true,
+        os: true,
+        version: true,
+        location: true,
+        tags: true,
+        description: true,
+        username: true,
+        authType: true,
+        keyPath: true,
+        groupId: true,
+        isDefault: true,
+        isActive: true,
+        lastConnectedAt: true,
+        createdAt: true,
+        updatedAt: true,
         group: {
           select: {
             id: true,
@@ -63,7 +82,7 @@ export async function PATCH(
       return authResult.response
     }
 
-    if (!hasPermission(authResult.user.permissions, 'servers:write')) {
+    if (!canWriteTeamAssets(authResult.user, 'servers:write')) {
       return NextResponse.json(
         { success: false, error: '权限不足' },
         { status: 403 }
@@ -79,7 +98,6 @@ export async function PATCH(
     const server = await prisma.server.findFirst({
       where: {
         id: params.id,
-        userId: authResult.user.id,
         isActive: true
       }
     })
@@ -96,7 +114,6 @@ export async function PATCH(
       const group = await prisma.serverGroup.findFirst({
         where: {
           id: groupId,
-          userId: authResult.user.id,
           isActive: true
         }
       })

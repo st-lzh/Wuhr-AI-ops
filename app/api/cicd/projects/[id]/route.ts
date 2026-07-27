@@ -101,11 +101,6 @@ export async function PUT(
       return errorResponse('项目不存在', undefined, 404)
     }
 
-    // 权限检查：只有项目所有者可以更新项目
-    if (existingProject.userId !== authResult.user.id) {
-      return errorResponse('您没有权限更新此项目', undefined, 403)
-    }
-
     // 构建更新数据 - 包含所有可更新字段
     const updatePayload: any = {}
     if (updateData.name !== undefined) updatePayload.name = updateData.name
@@ -194,11 +189,6 @@ export async function DELETE(
 
     if (!existingProject) {
       return errorResponse('项目不存在', undefined, 404)
-    }
-
-    // 权限检查：只有项目所有者可以删除项目
-    if (existingProject.userId !== authResult.user.id) {
-      return errorResponse('您没有权限删除此项目', undefined, 403)
     }
 
     // 删除项目

@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '../../../../lib/auth/apiHelpers-new'
 import { getPrismaClient } from '../../../../lib/config/database'
+import {
+  createSSHConfigFromServer,
+  performSSHReachabilityCheck
+} from '../../../../lib/utils/sshConnectionUtils'
 
 // 强制动态渲染，解决构建时的request.headers问题
 export const dynamic = 'force-dynamic'
@@ -25,7 +29,7 @@ export async function GET(request: NextRequest) {
       }, { status: 400 })
     }
 
-    const serverIds = idsParam.split(',').filter(id => id.trim())
+    const serverIds = Array.from(new Set(idsParam.split(',').map(id => id.trim()).filter(Boolean)))
     
     if (serverIds.length === 0) {
       return NextResponse.json({
@@ -56,47 +60,31 @@ export async function GET(request: NextRequest) {
         os: true,
         version: true,
         tags: true,
+        username: true,
+        password: true,
+        keyPath: true,
         lastConnectedAt: true,
         updatedAt: true
       }
     })
 
-    // 模拟实时状态检查
-    const serversWithStatus = await Promise.all(
-      servers.map(async (server) => {
+    // 使用真实 SSH 握手检查；分批限制并发，避免一次打开过多连接。
+    const serversWithStatus: any[] = []
+    for (let offset = 0; offset < servers.length; offset += 8) {
+      const batch = servers.slice(offset, offset + 8)
+      const batchResults = await Promise.all(batch.map(async (server) => {
         try {
           const now = new Date()
-          const lastConnected = server.lastConnectedAt
-          
-          let realTimeStatus = server.status
-          
-          // 如果超过5分钟没有连接，标记为离线
-          if (lastConnected) {
-            const timeDiff = now.getTime() - lastConnected.getTime()
-            const minutesDiff = timeDiff / (1000 * 60)
-            
-            if (minutesDiff > 5) {
-              realTimeStatus = 'offline'
-            } else if (minutesDiff > 2) {
-              realTimeStatus = 'warning'
-            } else {
-              realTimeStatus = 'online'
-            }
-          } else {
-            // 没有连接记录，模拟状态检查
-            realTimeStatus = Math.random() > 0.3 ? 'online' : 'offline'
-          }
+          const check = await performSSHReachabilityCheck(createSSHConfigFromServer(server))
+          const realTimeStatus = check.success ? 'online' : 'offline'
 
-          // 更新数据库中的状态（如果状态发生变化）
-          if (realTimeStatus !== server.status) {
-            await prisma.server.update({
-              where: { id: server.id },
-              data: { 
-                status: realTimeStatus,
-                lastConnectedAt: realTimeStatus === 'online' ? now : server.lastConnectedAt
-              }
-            })
-          }
+          await prisma.server.update({
+            where: { id: server.id },
+            data: {
+              status: realTimeStatus,
+              lastConnectedAt: check.success ? now : server.lastConnectedAt
+            }
+          })
 
           return {
             id: server.id,
@@ -111,18 +99,31 @@ export async function GET(request: NextRequest) {
             tags: server.tags,
             lastConnectedAt: realTimeStatus === 'online' ? now : server.lastConnectedAt,
             updatedAt: now,
-            environment: server.location || 'unknown'
+            environment: server.location || 'unknown',
+            error: check.error
           }
         } catch (error) {
           console.error(`❌ 检查服务器 ${server.id} 状态失败:`, error)
           return {
-            ...server,
+            id: server.id,
+            name: server.name,
+            hostname: server.hostname,
+            ip: server.ip,
+            port: server.port,
             status: 'error',
-            environment: server.location || 'unknown'
+            location: server.location,
+            os: server.os,
+            version: server.version,
+            tags: server.tags,
+            lastConnectedAt: server.lastConnectedAt,
+            updatedAt: new Date(),
+            environment: server.location || 'unknown',
+            error: error instanceof Error ? error.message : '状态检查失败'
           }
         }
-      })
-    )
+      }))
+      serversWithStatus.push(...batchResults)
+    }
 
     console.log(`✅ 服务器状态检查完成: ${serversWithStatus.length} 个服务器`)
 

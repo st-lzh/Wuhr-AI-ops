@@ -15,12 +15,18 @@ const defaultAuthState: AuthState = {
   sessionExpiresAt: undefined
 }
 
+// 首屏必须先校验 httpOnly Cookie，不能让 AuthGuard 在校验完成前误判为未登录。
+const initialAuthState: AuthState = {
+  ...defaultAuthState,
+  loading: true
+}
+
 // 默认状态
 const defaultState: GlobalState = {
   theme: 'dark',
   user: null,
   // 认证状态
-  auth: defaultAuthState,
+  auth: initialAuthState,
   apiKeys: [],
   selectedApiKey: null,
   models: [
@@ -341,6 +347,9 @@ const loadFromStorage = (): Partial<GlobalState> | null => {
           parsed.auth.lastLoginAt = parsed.auth.lastLoginAt ? new Date(parsed.auth.lastLoginAt) : undefined
         }
       }
+
+      // 本地状态不代表服务端会话仍有效；恢复后继续等待 AuthInitializer 校验 Cookie。
+      if (parsed.auth) parsed.auth.loading = true
       
       return parsed
     }
@@ -391,4 +400,4 @@ export const useGlobalState = () => {
     throw new Error('useGlobalState 必须在 GlobalStateProvider 内部使用')
   }
   return context
-} 
+}

@@ -202,7 +202,9 @@ export class DatabaseHealthChecker {
           activeConnections: stats.activeConnections,
           idleConnections: stats.idleConnections,
           totalConnections: stats.totalConnections,
-          usagePercentage: Math.round((stats.activeConnections / stats.totalConnections) * 100)
+          usagePercentage: stats.totalConnections > 0
+            ? Math.round((stats.activeConnections / stats.totalConnections) * 100)
+            : 0
         },
         issues: healthCheck.issues
       }

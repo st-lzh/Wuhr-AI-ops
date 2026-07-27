@@ -1,12 +1,13 @@
 // 统一的聊天相关类型定义
 // 整合了之前分散在多个文件中的重复定义
+import type { CICDContextSelection } from './cicd-ai'
 
 export interface ChatMessage {
   id: string
   type: 'user' | 'ai' | 'command_rejected' | 'command_approved' // 🔥 添加命令状态类型
   content: string
   timestamp: Date
-  status?: 'sending' | 'success' | 'error'
+  status?: 'sending' | 'success' | 'error' | 'rejected'
   metadata?: {
     model?: string
     temperature?: number
@@ -21,7 +22,26 @@ export interface ChatMessage {
     executionMode?: 'remote'
     hostId?: string
     hostName?: string
+    targetHosts?: Array<{
+      id: string
+      name: string
+      ip: string
+    }>
+    networkTargets?: Array<{
+      id: string
+      name: string
+      managementIp: string
+      type: string
+      vendor: string
+      platform: string
+      readOnly: boolean
+    }>
+    batchMode?: boolean
+    targetCount?: number
+    batchLabel?: string
+    cicdContext?: CICDContextSelection
     isThinking?: boolean
+    approvalRejected?: boolean
     // 🔥 命令批准相关元数据
     command?: string
     reason?: string

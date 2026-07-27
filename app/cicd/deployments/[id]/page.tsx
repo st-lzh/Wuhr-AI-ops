@@ -37,6 +37,7 @@ import {
 } from '@ant-design/icons'
 import { useRouter } from 'next/navigation'
 import MainLayout from '../../../components/layout/MainLayout'
+import CICDAssistantButton from '../../../components/cicd/CICDAssistantButton'
 import dayjs from 'dayjs'
 
 const { Title, Text, Paragraph } = Typography
@@ -45,12 +46,13 @@ const { TextArea } = Input
 
 interface Deployment {
   id: string
+  isJenkinsDeployment?: boolean
   projectId: string
   name: string
   description?: string
   environment: 'dev' | 'test' | 'prod'
   version?: string
-  status: 'pending' | 'approved' | 'rejected' | 'scheduled' | 'deploying' | 'success' | 'failed' | 'rolled_back'
+  status: 'pending' | 'approved' | 'rejected' | 'scheduled' | 'deploying' | 'success' | 'failed' | 'cancelled' | 'rolled_back'
   buildNumber?: number
   scheduledAt?: string
   startedAt?: string
@@ -64,10 +66,9 @@ interface Deployment {
   project: {
     id: string
     name: string
-    environment: string
     repositoryUrl: string
     branch: string
-  }
+  } | null
   approvals: Array<{
     id: string
     approverId: string
@@ -103,7 +104,9 @@ const DeploymentDetailPage: React.FC<DeploymentDetailPageProps> = ({ params }) =
       if (response.ok) {
         const result = await response.json()
         if (result.success) {
-          setDeployment(result.data)
+          // 详情接口为了与其它 CI/CD 接口保持一致，在 data 内包含 deployment。
+          // 同时兼容旧版直接返回对象的数据，避免历史部署详情页崩溃。
+          setDeployment(result.data.deployment ?? result.data)
         } else {
           message.error(result.error || '加载部署详情失败')
         }
@@ -122,7 +125,7 @@ const DeploymentDetailPage: React.FC<DeploymentDetailPageProps> = ({ params }) =
   // 执行部署
   const handleExecuteDeployment = async (values: any) => {
     try {
-      const response = await fetch(`/api/cicd/deployments/${params.id}/execute`, {
+      const response = await fetch(`/api/cicd/deployments/${params.id}/${deployment?.isJenkinsDeployment ? 'execute' : 'start'}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -152,27 +155,38 @@ const DeploymentDetailPage: React.FC<DeploymentDetailPageProps> = ({ params }) =
 
   // 停止部署
   const handleStopDeployment = async () => {
-    try {
-      const response = await fetch(`/api/cicd/deployments/${params.id}/stop`, {
-        method: 'POST',
-      })
+    Modal.confirm({
+      title: '确认停止真实部署？',
+      content: '系统会关闭当前 SSH 执行通道，或调用 Jenkins 停止构建/取消队列，并把结果写入审计日志。',
+      okText: '确认停止',
+      okButtonProps: { danger: true },
+      cancelText: '取消',
+      onOk: async () => {
+        try {
+          const response = await fetch(`/api/cicd/deployments/${params.id}/stop`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ confirmed: true })
+          })
 
-      if (response.ok) {
-        const result = await response.json()
-        if (result.success) {
-          message.success('部署已停止')
-          loadDeploymentDetail()
-        } else {
-          message.error(result.error || '停止部署失败')
+          if (response.ok) {
+            const result = await response.json()
+            if (result.success) {
+              message.success('部署已停止')
+              loadDeploymentDetail()
+            } else {
+              message.error(result.error || '停止部署失败')
+            }
+          } else {
+            const errorData = await response.json().catch(() => ({}))
+            message.error(errorData.error || '停止部署失败')
+          }
+        } catch (error) {
+          console.error('停止部署失败:', error)
+          message.error('停止部署失败')
         }
-      } else {
-        const errorData = await response.json().catch(() => ({}))
-        message.error(errorData.error || '停止部署失败')
       }
-    } catch (error) {
-      console.error('停止部署失败:', error)
-      message.error('停止部署失败')
-    }
+    })
   }
 
   // 回滚部署
@@ -183,7 +197,7 @@ const DeploymentDetailPage: React.FC<DeploymentDetailPageProps> = ({ params }) =
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(values),
+        body: JSON.stringify({ ...values, confirmed: true }),
       })
 
       if (response.ok) {
@@ -216,6 +230,7 @@ const DeploymentDetailPage: React.FC<DeploymentDetailPageProps> = ({ params }) =
       deploying: { color: 'processing', icon: <PlayCircleOutlined />, text: '部署中' },
       success: { color: 'success', icon: <CheckCircleOutlined />, text: '部署成功' },
       failed: { color: 'error', icon: <CloseCircleOutlined />, text: '部署失败' },
+      cancelled: { color: 'warning', icon: <StopOutlined />, text: '已停止' },
       rolled_back: { color: 'warning', icon: <ExclamationCircleOutlined />, text: '已回滚' }
     }
 
@@ -260,6 +275,7 @@ const DeploymentDetailPage: React.FC<DeploymentDetailPageProps> = ({ params }) =
       case 'deploying': return 70
       case 'success': return 100
       case 'failed': return 100
+      case 'cancelled': return 100
       case 'rolled_back': return 100
       default: return 0
     }
@@ -323,6 +339,22 @@ const DeploymentDetailPage: React.FC<DeploymentDetailPageProps> = ({ params }) =
               {deployment.name}
             </Title>
             {renderStatusBadge(deployment.status)}
+            <CICDAssistantButton
+              context={{
+                kind: 'deployment',
+                projectId: deployment.projectId,
+                deploymentId: deployment.id
+              }}
+              intent={deployment.status === 'failed' ? 'diagnose' : 'status'}
+            />
+            <CICDAssistantButton
+              context={{
+                kind: 'deployment',
+                projectId: deployment.projectId,
+                deploymentId: deployment.id
+              }}
+              intent="risk"
+            />
           </Space>
         </div>
 
@@ -342,6 +374,8 @@ const DeploymentDetailPage: React.FC<DeploymentDetailPageProps> = ({ params }) =
             {deployment.status === 'deploying' && '部署正在进行中...'}
             {deployment.status === 'success' && '部署已成功完成'}
             {deployment.status === 'failed' && '部署失败，请检查日志'}
+            {deployment.status === 'cancelled' && '部署已停止，停止动作和结果已写入日志'}
+            {deployment.status === 'rolled_back' && '部署已执行回滚，回滚结果已写入日志'}
             {deployment.status === 'pending' && '等待审批中'}
           </div>
         </Card>
@@ -367,7 +401,7 @@ const DeploymentDetailPage: React.FC<DeploymentDetailPageProps> = ({ params }) =
                 停止部署
               </Button>
             )}
-            {['success', 'failed'].includes(deployment.status) && (
+            {['success', 'failed', 'cancelled'].includes(deployment.status) && (
               <Button
                 icon={<ExclamationCircleOutlined />}
                 onClick={() => setRollbackModalVisible(true)}
@@ -393,16 +427,20 @@ const DeploymentDetailPage: React.FC<DeploymentDetailPageProps> = ({ params }) =
               <Descriptions column={2} bordered>
                 <Descriptions.Item label="部署名称">{deployment.name}</Descriptions.Item>
                 <Descriptions.Item label="版本">{deployment.version || '-'}</Descriptions.Item>
-                <Descriptions.Item label="所属项目">{deployment.project.name}</Descriptions.Item>
+                <Descriptions.Item label="所属项目">
+                  {deployment.project?.name || 'Jenkins 任务部署'}
+                </Descriptions.Item>
                 <Descriptions.Item label="目标环境">
                   {renderEnvironmentTag(deployment.environment)}
                 </Descriptions.Item>
                 <Descriptions.Item label="仓库地址" span={2}>
-                  <a href={deployment.project.repositoryUrl} target="_blank" rel="noopener noreferrer">
-                    {deployment.project.repositoryUrl}
-                  </a>
+                  {deployment.project?.repositoryUrl ? (
+                    <a href={deployment.project.repositoryUrl} target="_blank" rel="noopener noreferrer">
+                      {deployment.project.repositoryUrl}
+                    </a>
+                  ) : '-'}
                 </Descriptions.Item>
-                <Descriptions.Item label="分支">{deployment.project.branch}</Descriptions.Item>
+                <Descriptions.Item label="分支">{deployment.project?.branch || '-'}</Descriptions.Item>
                 <Descriptions.Item label="构建号">{deployment.buildNumber || '-'}</Descriptions.Item>
                 <Descriptions.Item label="调度时间">
                   {deployment.scheduledAt ? dayjs(deployment.scheduledAt).format('YYYY-MM-DD HH:mm:ss') : '-'}
@@ -546,7 +584,7 @@ const DeploymentDetailPage: React.FC<DeploymentDetailPageProps> = ({ params }) =
             </TabPane>
 
             <TabPane tab={<span><SettingOutlined />部署配置</span>} key="config">
-              <pre className="bg-gray-50 p-3 rounded text-sm">
+              <pre className="bg-gray-50 p-3 rounded text-sm dark:bg-slate-800 dark:text-slate-200">
                 {deployment.artifacts ? JSON.stringify(deployment.artifacts, null, 2) : '无部署配置'}
               </pre>
             </TabPane>

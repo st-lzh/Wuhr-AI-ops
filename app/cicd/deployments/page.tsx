@@ -16,9 +16,9 @@ const DeploymentsPage: React.FC = () => {
         <div className="mb-6">
           <Title level={2} className="mb-2">
             <RocketOutlined className="mr-2" />
-            持续部署
+            部署管理
           </Title>
-          <Paragraph className="text-gray-600 mb-0">
+          <Paragraph type="secondary" className="mb-0">
             管理CD部署流程，配置部署主机、通知人员、审批人员和部署模板
           </Paragraph>
         </div>

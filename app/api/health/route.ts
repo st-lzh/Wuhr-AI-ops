@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getPrismaClient } from '@/lib/config/database'
 
+// 健康检查依赖运行时数据库，禁止 Next.js 在构建阶段预执行并缓存结果。
+export const dynamic = 'force-dynamic'
+
 export async function GET(request: NextRequest) {
   try {
     // 检查数据库连接

@@ -9,6 +9,12 @@ const redis = new Redis({
   password: process.env.REDIS_PASSWORD,
   enableReadyCheck: false,
   maxRetriesPerRequest: null,
+  // 路由模块会在 Next.js 构建阶段被加载，连接必须等到真正执行通知操作时再建立。
+  lazyConnect: true,
+})
+
+redis.on('error', (error) => {
+  console.error('❌ [Info Notification] Redis连接错误:', error.message)
 })
 
 export interface InfoNotificationData {

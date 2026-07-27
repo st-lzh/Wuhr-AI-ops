@@ -1,5 +1,7 @@
 import { getPrismaClient } from '../config/database'
 import { GitCredentialData, GitAuthType } from '../../app/types/access-management'
+import { decryptCredentials } from '../crypto/encryption'
+import { GitOperations } from './gitOperations'
 
 // 保持向后兼容的类型别名
 export interface GitCredentials extends GitCredentialData {
@@ -23,7 +25,7 @@ export class GitCredentialService {
         where: { id: projectId },
         select: {
           id: true,
-          userId: true,
+          gitCredentialId: true,
           repositoryUrl: true
         }
       })
@@ -32,27 +34,26 @@ export class GitCredentialService {
         return null
       }
 
-      // 尝试从git_credentials表获取用户的Git认证信息
-      const gitCredential = await prisma.gitCredential.findFirst({
-        where: {
-          userId: project.userId,
-          isActive: true,
-          // 可以根据仓库URL匹配对应的认证信息
-          OR: [
-            { platform: this.detectPlatform(project.repositoryUrl || '') },
-            { isDefault: true } // 或者使用默认认证
-          ]
-        },
-        orderBy: [
-          { isDefault: 'desc' }, // 优先使用默认认证
-          { createdAt: 'desc' } // 然后使用最新的认证
-        ]
-      })
+      // 单团队共享凭据；项目显式选择优先，否则匹配团队默认或平台凭据。
+      const gitCredential = project.gitCredentialId
+        ? await prisma.gitCredential.findFirst({
+            where: { id: project.gitCredentialId, isActive: true }
+          })
+        : await prisma.gitCredential.findFirst({
+            where: {
+              isActive: true,
+              OR: [
+                { platform: this.detectPlatform(project.repositoryUrl || '') },
+                { isDefault: true }
+              ]
+            },
+            orderBy: [{ isDefault: 'desc' }, { createdAt: 'desc' }]
+          })
 
       if (gitCredential) {
         try {
           // 解密认证信息
-          const decryptedCredentials = this.decryptCredentials(gitCredential.encryptedCredentials)
+          const decryptedCredentials = decryptCredentials(gitCredential.encryptedCredentials)
 
           // 根据认证类型优化返回的认证信息
           const credentials: GitCredentials = {
@@ -71,7 +72,7 @@ export class GitCredentialService {
             console.log('🔐 使用用户名密码认证')
           }
           // SSH密钥认证
-          else if (gitCredential.authType === 'ssh_key' && decryptedCredentials.privateKey) {
+          else if (gitCredential.authType === 'ssh' && decryptedCredentials.privateKey) {
             credentials.privateKey = decryptedCredentials.privateKey
             credentials.username = decryptedCredentials.username || 'git'
             console.log('🔐 使用SSH密钥认证')
@@ -112,48 +113,25 @@ export class GitCredentialService {
   }
 
   /**
-   * 解密认证信息JSON
-   */
-  private static decryptCredentials(encryptedCredentials: string): Partial<GitCredentials> {
-    try {
-      // 使用加密模块进行解密
-      const { decryptCredentials } = require('../crypto/encryption')
-      const credentials = decryptCredentials(encryptedCredentials)
-      return credentials
-    } catch (error) {
-      console.error('解密认证信息失败:', error)
-      return {}
-    }
-  }
-
-  /**
-   * 解密单个字段
-   * 注意：这里需要实现真正的解密逻辑
-   */
-  private static decrypt(encryptedValue?: string): string | undefined {
-    if (!encryptedValue) {
-      return undefined
-    }
-
-    // TODO: 实现真正的解密逻辑
-    // 这里暂时直接返回加密值，实际应该使用加密服务解密
-    return encryptedValue
-  }
-  
-  /**
    * 验证Git认证信息
    */
   static async validateCredentials(
     repositoryUrl: string, 
     credentials: GitCredentials
   ): Promise<boolean> {
+    const gitOps = new GitOperations()
     try {
-      // 这里可以实现Git认证验证逻辑
-      // 暂时返回true
-      return true
+      const result = await gitOps.validateRepository(repositoryUrl, {
+        credentials,
+        platform: this.detectPlatform(repositoryUrl) as any,
+        authType: credentials.type
+      })
+      return result.accessible
     } catch (error) {
       console.error('Git认证验证失败:', error)
       return false
+    } finally {
+      await gitOps.cleanup()
     }
   }
   

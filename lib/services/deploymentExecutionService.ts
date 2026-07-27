@@ -6,8 +6,25 @@ import fs from 'fs/promises'
 import path from 'path'
 import { DeploymentExecutor, DeploymentConfig } from '../deployment/deploymentExecutor'
 import { createJenkinsClient } from '../jenkins/client'
+import { NodeSSH } from 'node-ssh'
+import { decryptCredentials, revealSecret } from '../crypto/encryption'
 
 const execAsync = promisify(exec)
+
+const activeSSHConnections = new Map<string, Set<NodeSSH>>()
+const cancellationRequests = new Set<string>()
+
+function registerSSHConnection(deploymentId: string, ssh: NodeSSH) {
+  const connections = activeSSHConnections.get(deploymentId) || new Set<NodeSSH>()
+  connections.add(ssh)
+  activeSSHConnections.set(deploymentId, connections)
+}
+
+function unregisterSSHConnection(deploymentId: string, ssh: NodeSSH) {
+  const connections = activeSSHConnections.get(deploymentId)
+  connections?.delete(ssh)
+  if (connections?.size === 0) activeSSHConnections.delete(deploymentId)
+}
 
 export interface DeploymentExecutionContext {
   deploymentId: string
@@ -51,6 +68,7 @@ export class DeploymentExecutionService {
       const prisma = await this.getPrisma()
 
       console.log(`🚀 触发自动部署: ${deploymentId}`)
+	  cancellationRequests.delete(deploymentId)
 
       // 获取部署任务详细信息
       const deployment = await prisma.deployment.findUnique({
@@ -64,6 +82,7 @@ export class DeploymentExecutionService {
           version: true,
           deploymentHosts: true,
           deployScript: true,
+          config: true,
           // Jenkins相关字段
           isJenkinsDeployment: true,
           jenkinsJobId: true,
@@ -92,9 +111,9 @@ export class DeploymentExecutionService {
             select: {
               id: true,
               name: true,
-              deployScript: true,
-              rollbackScript: true,
-              config: true
+              content: true,
+              type: true,
+              version: true
             }
           },
           user: {
@@ -111,7 +130,7 @@ export class DeploymentExecutionService {
         return false
       }
 
-      if (deployment.status !== 'approved') {
+      if (!['approved', 'deploying'].includes(deployment.status)) {
         console.error('❌ 部署任务未审批通过，无法执行')
         return false
       }
@@ -177,7 +196,9 @@ export class DeploymentExecutionService {
       }
 
       // 更新部署状态为执行中
-      await this.updateDeploymentStatus(deploymentId, 'deploying', '开始执行部署')
+      if (deployment.status !== 'deploying') {
+        await this.updateDeploymentStatus(deploymentId, 'deploying', '开始执行部署')
+      }
 
       // 发送部署开始通知
       await this.sendDeploymentNotification(context, 'deploying')
@@ -185,22 +206,130 @@ export class DeploymentExecutionService {
       // 执行部署
       const result = await this.executeDeployment(context)
 
-      // 更新部署结果
-      if (result.success) {
+      // 更新部署结果。停止请求优先于执行函数随后返回的成功/失败，避免状态回跳。
+      if (cancellationRequests.has(deploymentId)) {
+        await this.updateDeploymentStatus(deploymentId, 'cancelled', '部署已由用户停止', result)
+      } else if (result.success) {
         await this.updateDeploymentStatus(deploymentId, 'success', '部署成功完成', result)
         await this.sendDeploymentNotification(context, 'success')
+        const { schedulePostDeploymentVerification } = await import('../ai/cicdReports')
+        schedulePostDeploymentVerification(deploymentId, context.user.id)
       } else {
         await this.updateDeploymentStatus(deploymentId, 'failed', result.error || '部署执行失败', result)
         await this.sendDeploymentNotification(context, 'failed')
       }
 
-      return result.success
+      return result.success && !cancellationRequests.has(deploymentId)
 
     } catch (error) {
       console.error('❌ 触发自动部署失败:', error)
-      await this.updateDeploymentStatus(deploymentId, 'failed', `部署执行异常: ${error instanceof Error ? error.message : String(error)}`)
+      if (!cancellationRequests.has(deploymentId)) {
+        await this.updateDeploymentStatus(deploymentId, 'failed', `部署执行异常: ${error instanceof Error ? error.message : String(error)}`)
+      }
       return false
+	} finally {
+	  activeSSHConnections.delete(deploymentId)
+	  cancellationRequests.delete(deploymentId)
     }
+  }
+
+  /** 中止当前进程持有的 SSH 通道；远端前台 bash 会随 SSH 通道关闭收到挂断。 */
+  cancelDeploymentExecution(deploymentId: string): boolean {
+    cancellationRequests.add(deploymentId)
+    const connections = activeSSHConnections.get(deploymentId)
+    for (const ssh of Array.from(connections || [])) ssh.dispose()
+    return Boolean(connections?.size)
+  }
+
+  /** 使用部署任务中已经审核保存的 rollbackScript 在原目标主机上真实回滚。 */
+  async rollbackDeployment(
+    deploymentId: string,
+    actorId: string,
+    targetVersion: string,
+    reason: string
+  ): Promise<DeploymentResult> {
+    const prisma = await this.getPrisma()
+    const deployment = await prisma.deployment.findUnique({ where: { id: deploymentId } })
+    if (!deployment) throw new Error('部署任务不存在')
+    if (!['success', 'failed', 'cancelled'].includes(deployment.status)) {
+      throw new Error(`当前状态 ${deployment.status} 不允许回滚`)
+    }
+    if (!deployment.rollbackScript?.trim()) throw new Error('未配置真实回滚脚本，已阻止回滚')
+    const hostIds = Array.isArray(deployment.deploymentHosts)
+      ? deployment.deploymentHosts.filter((id: unknown): id is string => typeof id === 'string')
+      : []
+    if (hostIds.length === 0) throw new Error('回滚任务没有目标主机')
+    const hosts = await prisma.server.findMany({ where: { id: { in: hostIds }, isActive: true } })
+    if (hosts.length !== hostIds.length) throw new Error('部分回滚目标主机不存在或已停用')
+
+    const startedAt = Date.now()
+    cancellationRequests.delete(deploymentId)
+    await prisma.deployment.update({
+      where: { id: deploymentId },
+      data: {
+        status: 'deploying',
+        startedAt: new Date(),
+        completedAt: null,
+        config: {
+          ...(deployment.config && typeof deployment.config === 'object' ? deployment.config : {}),
+          rollbackInProgress: true,
+          rollbackTargetVersion: targetVersion,
+          rollbackReason: reason,
+          rollbackRequestedBy: actorId,
+          rollbackStartedAt: new Date().toISOString()
+        }
+      }
+    })
+
+    const script = deployment.rollbackScript
+      .replace(/\$\{TARGET_VERSION\}/g, targetVersion)
+      .replace(/\$\{CURRENT_VERSION\}/g, deployment.version || '')
+      .replace(/\$\{DEPLOYMENT_ID\}/g, deploymentId)
+    const logs: string[] = [`\n=== 回滚开始：目标版本 ${targetVersion} ===`, `原因：${reason}`]
+    let successCount = 0
+    for (const host of hosts) {
+      if (cancellationRequests.has(deploymentId)) break
+      const result = await this.executeSSHScript(deploymentId, host, script)
+      logs.push(`\n--- ${host.name} (${host.ip}) ---\n${result.logs}`)
+      if (result.success) successCount += 1
+    }
+    const success = successCount === hosts.length && !cancellationRequests.has(deploymentId)
+    const duration = Date.now() - startedAt
+    const finalStatus = cancellationRequests.has(deploymentId) ? 'cancelled' : success ? 'rolled_back' : 'failed'
+    const finalLogs = `${deployment.logs || ''}${logs.join('\n')}\n回滚结果：${successCount}/${hosts.length} 台成功。\n`
+    await prisma.$transaction([
+      prisma.deployment.update({
+        where: { id: deploymentId },
+        data: {
+          status: finalStatus,
+          version: success ? targetVersion : deployment.version,
+          completedAt: new Date(),
+          duration,
+          logs: finalLogs,
+          config: {
+            ...(deployment.config && typeof deployment.config === 'object' ? deployment.config : {}),
+            rollbackInProgress: false,
+            rollbackTargetVersion: targetVersion,
+            rollbackReason: reason,
+            rollbackRequestedBy: actorId,
+            rollbackCompletedAt: new Date().toISOString(),
+            rollbackSuccess: success
+          }
+        }
+      }),
+      prisma.systemLog.create({
+        data: {
+          level: success ? 'info' : 'error',
+          category: 'cicd_deployment',
+          source: 'deployment-rollback',
+          userId: actorId,
+          message: `${success ? '部署回滚成功' : '部署回滚失败'}：${deployment.name}`,
+          details: { deploymentId, targetVersion, reason, successCount, hostCount: hosts.length, duration }
+        }
+      })
+    ])
+    cancellationRequests.delete(deploymentId)
+    return { success, duration, logs: finalLogs, error: success ? undefined : '部分主机回滚失败或回滚被停止' }
   }
 
   /**
@@ -225,6 +354,10 @@ export class DeploymentExecutionService {
       const deploymentResults = []
       
       for (const host of context.hosts) {
+		if (cancellationRequests.has(context.deploymentId)) {
+		  logs += '\n⛔ 收到停止请求，未再启动后续主机部署。\n'
+		  break
+		}
         console.log(`🎯 部署到主机: ${host.name} (${host.ip})`)
         logs += `\n=== 部署到主机: ${host.name} ===\n`
 
@@ -310,7 +443,14 @@ export class DeploymentExecutionService {
 
       // 检查是否有Git仓库配置（支持Jenkins部署任务和普通部署任务）
       const repositoryUrl = context.deployment.project?.repositoryUrl
-      const hasGitRepository = repositoryUrl && repositoryUrl.trim() !== ''
+      const deploymentConfig = context.deployment.config && typeof context.deployment.config === 'object'
+        ? context.deployment.config as Record<string, unknown>
+        : {}
+      // CI 已负责检出、构建和记录产物。CD 默认只执行经过审批并持久化的部署脚本，
+      // 避免每次发布再次克隆/构建；仅兼容显式选择 source 模式的旧任务。
+      const hasGitRepository = Boolean(
+        repositoryUrl?.trim() && deploymentConfig.deployMode === 'source'
+      )
 
       if (hasGitRepository) {
         logs += `📦 检测到Git仓库，使用完整CI/CD流程\n`
@@ -362,7 +502,7 @@ export class DeploymentExecutionService {
         }
       } else {
         // 没有Git仓库，直接执行部署脚本
-        logs += `📜 直接执行部署脚本（无Git仓库）\n`
+        logs += `📜 执行已审批的部署脚本（CI 构建与 CD 发布分离）\n`
 
         // 检查是否是Jenkins部署任务
         if (context.deployment.isJenkinsDeployment) {
@@ -478,7 +618,7 @@ export class DeploymentExecutionService {
       // 解密认证信息
       let credentials: any = {}
       try {
-        credentials = JSON.parse(gitCredential.encryptedCredentials)
+        credentials = decryptCredentials(gitCredential.encryptedCredentials)
       } catch (parseError) {
         console.error('❌ 解析认证信息失败:', parseError)
         return undefined
@@ -552,28 +692,9 @@ export class DeploymentExecutionService {
       logs += `🎯 目标主机: ${hostInfo.ip || hostInfo.hostname}:${hostInfo.port || 22}\n`
       logs += `👤 SSH用户: ${hostInfo.username || 'root'}\n`
 
-      // 根据认证方式执行远程命令
-      if (hostInfo.authType === 'password' && hostInfo.password) {
-        // 使用密码认证
-        logs += `🔐 使用密码认证连接远程主机\n`
-        const result = await this.executeSSHWithPassword(hostInfo, remoteScript)
-        logs += result.logs
-
-        if (!result.success) {
-          throw new Error(result.error)
-        }
-      } else if (hostInfo.authType === 'key' && hostInfo.keyPath) {
-        // 使用密钥认证
-        logs += `🔑 使用密钥认证连接远程主机\n`
-        const result = await this.executeSSHWithKey(hostInfo, remoteScript)
-        logs += result.logs
-
-        if (!result.success) {
-          throw new Error(result.error)
-        }
-      } else {
-        throw new Error(`不支持的认证方式: ${hostInfo.authType}`)
-      }
+	  const result = await this.executeSSHScript(context.deploymentId, hostInfo, remoteScript)
+	  logs += result.logs
+	  if (!result.success) throw new Error(result.error)
 
       return {
         success: true,
@@ -590,101 +711,45 @@ export class DeploymentExecutionService {
     }
   }
 
-  /**
-   * 使用密码认证执行SSH命令
-   */
-  private async executeSSHWithPassword(
+  /** 使用 node-ssh 参数化连接执行 stdin 脚本，密码不再进入 shell 命令行。 */
+  private async executeSSHScript(
+    deploymentId: string,
     hostInfo: any,
     script: string
   ): Promise<{ success: boolean; logs: string; error?: string }> {
+	const ssh = new NodeSSH()
     try {
       let logs = ''
-
       const host = hostInfo.ip || hostInfo.hostname
       const port = hostInfo.port || 22
       const username = hostInfo.username || 'root'
-
       logs += `🌐 连接到 ${username}@${host}:${port}\n`
-
-      // 使用echo和管道的方式传递脚本内容，避免转义问题
-      const encodedScript = Buffer.from(script).toString('base64')
-      const sshCommand = `sshpass -p "${hostInfo.password}" ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -p ${port} ${username}@${host} "echo '${encodedScript}' | base64 -d | bash"`
-
-      logs += `🔧 执行SSH命令（使用base64编码传输脚本）\n`
-
-      const { stdout, stderr } = await execAsync(sshCommand, {
-        timeout: 300000, // 5分钟超时
-        maxBuffer: 1024 * 1024 * 10 // 10MB缓冲区
+	  await ssh.connect({
+		host,
+		port,
+		username,
+		password: hostInfo.authType === 'password' ? revealSecret(hostInfo.password) : undefined,
+		privateKeyPath: hostInfo.authType === 'key' ? hostInfo.keyPath : undefined,
+		readyTimeout: 20_000
       })
-
-      logs += `✅ 远程命令执行完成\n`
-      logs += `📋 执行输出:\n${stdout}\n`
-
-      if (stderr && stderr.trim()) {
-        logs += `⚠️ 错误输出:\n${stderr}\n`
-      }
-
-      return {
-        success: true,
-        logs
-      }
-
+	  registerSSHConnection(deploymentId, ssh)
+	  if (cancellationRequests.has(deploymentId)) throw new Error('部署已停止')
+	  const result = await ssh.execCommand('bash -s', { stdin: script, noTrim: true })
+	  logs += `📋 执行输出:\n${result.stdout || ''}\n`
+	  if (result.stderr?.trim()) logs += `⚠️ 错误输出:\n${result.stderr}\n`
+	  if (result.code !== 0) throw new Error(`远程脚本退出码 ${result.code}${result.signal ? ` (${result.signal})` : ''}`)
+	  logs += `✅ 远程命令执行完成\n`
+	  return { success: true, logs }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error)
       return {
         success: false,
-        logs: `SSH密码认证执行失败: ${errorMessage}\n`,
+		logs: `SSH远程执行失败: ${errorMessage}\n`,
         error: errorMessage
       }
-    }
-  }
-
-  /**
-   * 使用密钥认证执行SSH命令
-   */
-  private async executeSSHWithKey(
-    hostInfo: any,
-    script: string
-  ): Promise<{ success: boolean; logs: string; error?: string }> {
-    try {
-      let logs = ''
-
-      const host = hostInfo.ip || hostInfo.hostname
-      const port = hostInfo.port || 22
-      const username = hostInfo.username || 'root'
-
-      logs += `🌐 连接到 ${username}@${host}:${port}\n`
-
-      // 使用echo和管道的方式传递脚本内容，避免转义问题
-      const encodedScript = Buffer.from(script).toString('base64')
-      const sshCommand = `ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -p ${port} -i "${hostInfo.keyPath}" ${username}@${host} "echo '${encodedScript}' | base64 -d | bash"`
-
-      logs += `🔧 执行SSH命令（使用base64编码传输脚本）\n`
-
-      const { stdout, stderr } = await execAsync(sshCommand, {
-        timeout: 300000, // 5分钟超时
-        maxBuffer: 1024 * 1024 * 10 // 10MB缓冲区
-      })
-
-      logs += `✅ 远程命令执行完成\n`
-      logs += `📋 执行输出:\n${stdout}\n`
-
-      if (stderr && stderr.trim()) {
-        logs += `⚠️ 错误输出:\n${stderr}\n`
-      }
-
-      return {
-        success: true,
-        logs
-      }
-
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error)
-      return {
-        success: false,
-        logs: `SSH密钥认证执行失败: ${errorMessage}\n`,
-        error: errorMessage
-      }
+	} finally {
+	  unregisterSSHConnection(deploymentId, ssh)
+	  ssh.dispose()
     }
   }
 
@@ -693,15 +758,18 @@ export class DeploymentExecutionService {
    */
   private prepareDeployScript(context: DeploymentExecutionContext): string {
     // 优先使用模板脚本，其次使用项目脚本
-    let script = context.template?.deployScript || 
+    let script = context.template?.content ||
                  context.deployment.deployScript || 
-                 context.deployment.project.deployScript || 
-                 '# 默认部署脚本\necho "开始部署..."\necho "部署完成"'
+                 context.deployment.project?.deployScript
+
+    if (!script?.trim()) {
+      throw new Error('未配置真实部署脚本，已阻止执行')
+    }
 
     // 替换变量
     script = script
       .replace(/\$\{DEPLOYMENT_ID\}/g, context.deploymentId)
-      .replace(/\$\{PROJECT_NAME\}/g, context.deployment.project.name)
+      .replace(/\$\{PROJECT_NAME\}/g, context.deployment.project?.name || context.deployment.name)
       .replace(/\$\{BUILD_NUMBER\}/g, context.build?.buildNumber?.toString() || '')
       .replace(/\$\{ENVIRONMENT\}/g, context.deployment.environment)
       .replace(/\$\{VERSION\}/g, context.deployment.version || '')
@@ -738,7 +806,10 @@ echo "完成时间: $(date)"
    * 创建工作目录
    */
   private async createWorkDirectory(deploymentId: string): Promise<string> {
-    const workDir = path.join(process.cwd(), 'temp', 'deployments', deploymentId)
+    // 生产镜像以非 root 用户运行，应用根目录是只读层；临时部署数据必须放到
+    // Docker 挂载且已授权的 /app/data 下，也允许通过环境变量覆盖。
+    const workRoot = process.env.DEPLOYMENT_WORK_ROOT || path.join(process.cwd(), 'data', 'temp')
+    const workDir = path.join(workRoot, 'deployments', deploymentId)
     await fs.mkdir(workDir, { recursive: true })
     return workDir
   }
@@ -773,11 +844,13 @@ echo "完成时间: $(date)"
 
       if (status === 'deploying') {
         updateData.startedAt = new Date()
-      } else if (status === 'success' || status === 'failed') {
+      } else if (status === 'success' || status === 'failed' || status === 'cancelled') {
         updateData.completedAt = new Date()
         if (result) {
           updateData.duration = result.duration
-          updateData.logs = result.logs
+          updateData.logs = status === 'cancelled'
+            ? `${result.logs || ''}\n⛔ ${message}\n`
+            : result.logs
         }
       }
 

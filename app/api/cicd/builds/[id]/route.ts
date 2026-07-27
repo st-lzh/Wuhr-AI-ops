@@ -13,6 +13,10 @@ const UpdateBuildSchema = z.object({
   artifacts: z.any().optional()
 })
 
+function canWriteCICD(user: { role: string; permissions: string[] }) {
+  return user.role === 'admin' || user.role === 'manager' || user.permissions.includes('cicd:write')
+}
+
 // 获取单个构建详情
 export async function GET(
   request: NextRequest,
@@ -24,15 +28,13 @@ export async function GET(
       return authResult.response
     }
 
-    const { user } = authResult
     const buildId = params.id
     const prisma = await getPrismaClient()
 
     // 查询构建详情
     const build = await prisma.build.findFirst({
       where: {
-        id: buildId,
-        userId: user.id
+        id: buildId
       },
       include: {
         jenkinsConfig: {
@@ -47,7 +49,9 @@ export async function GET(
             id: true,
             name: true,
             description: true,
-            isActive: true
+            isActive: true,
+            jenkinsJobName: true,
+            project: { select: { id: true, name: true } }
           }
         },
         user: {
@@ -95,6 +99,9 @@ export async function PUT(
     }
 
     const { user } = authResult
+    if (!canWriteCICD(user)) {
+      return NextResponse.json({ success: false, error: '没有构建记录写入权限' }, { status: 403 })
+    }
     const buildId = params.id
     const body = await request.json()
 
@@ -111,11 +118,10 @@ export async function PUT(
     const data = validationResult.data
     const prisma = await getPrismaClient()
 
-    // 验证构建记录是否存在且属于当前用户
+    // 构建记录属于可信团队共享资产，写操作已在入口校验权限。
     const existingBuild = await prisma.build.findFirst({
       where: {
-        id: buildId,
-        userId: user.id
+        id: buildId
       }
     })
 
@@ -160,7 +166,8 @@ export async function PUT(
         pipeline: {
           select: {
             id: true,
-            name: true
+            name: true,
+            project: { select: { id: true, name: true } }
           }
         }
       }
@@ -195,14 +202,16 @@ export async function DELETE(
     }
 
     const { user } = authResult
+    if (!canWriteCICD(user)) {
+      return NextResponse.json({ success: false, error: '没有构建记录写入权限' }, { status: 403 })
+    }
     const buildId = params.id
     const prisma = await getPrismaClient()
 
-    // 验证构建记录是否存在且属于当前用户
+    // 构建记录属于可信团队共享资产，写操作已在入口校验权限。
     const existingBuild = await prisma.build.findFirst({
       where: {
-        id: buildId,
-        userId: user.id
+        id: buildId
       }
     })
 

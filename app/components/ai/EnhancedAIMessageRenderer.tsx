@@ -34,6 +34,7 @@ interface EnhancedAIMessageRendererProps {
   content: string
   messageId: string
   isError?: boolean
+  isRejected?: boolean
   isStreaming?: boolean
   isAgentMode?: boolean
   agentSession?: AgentSession | null
@@ -96,6 +97,7 @@ const EnhancedAIMessageRenderer: React.FC<EnhancedAIMessageRendererProps> = ({
   content,
   messageId,
   isError = false,
+  isRejected = false,
   isStreaming = false,
   isAgentMode = false,
   agentSession,
@@ -236,6 +238,15 @@ const EnhancedAIMessageRenderer: React.FC<EnhancedAIMessageRendererProps> = ({
 
   // 解析执行结果类型
   const getExecutionStatus = () => {
+    if (isRejected) {
+      return {
+        status: 'rejected',
+        color: 'orange',
+        icon: <ExclamationCircleOutlined />,
+        text: '已拒绝'
+      }
+    }
+
     if (isError) {
       return {
         status: 'error',
@@ -274,7 +285,7 @@ const EnhancedAIMessageRenderer: React.FC<EnhancedAIMessageRendererProps> = ({
   return (
     <div className={`enhanced-ai-message-container ${className}`}>
       <Card
-        className={`ai-message-card ${isError ? 'error-card' : 'success-card'}`}
+        className={`ai-message-card ${isError ? 'error-card' : isRejected ? 'warning-card' : 'success-card'}`}
         size="small"
         styles={{
           body: {

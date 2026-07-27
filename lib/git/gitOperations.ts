@@ -154,7 +154,17 @@ export class GitOperations {
    */
   private async checkRepositoryAccess(url: string): Promise<boolean> {
     try {
-      console.log('🔍 检查仓库访问权限:', url)
+      const safeUrl = (() => {
+        try {
+          const parsed = new URL(url)
+          parsed.username = ''
+          parsed.password = ''
+          return parsed.toString()
+        } catch {
+          return '[非 HTTP 仓库地址]'
+        }
+      })()
+      console.log('🔍 检查仓库访问权限:', safeUrl)
 
       // 使用 git ls-remote 检查仓库访问权限
       const result = await this.git.listRemote([url])

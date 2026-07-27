@@ -46,6 +46,9 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
       colorBorder: 'rgba(71, 85, 105, 0.3)',
       colorText: '#f8fafc',
       colorTextSecondary: '#cbd5e1',
+      colorLink: '#60a5fa',
+      colorLinkHover: '#93c5fd',
+      colorLinkActive: '#3b82f6',
     },
     components: {
       Layout: {
@@ -103,6 +106,9 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
       colorBorder: '#e2e8f0',
       colorText: '#1e293b',
       colorTextSecondary: '#64748b',
+      colorLink: '#2563eb',
+      colorLinkHover: '#1d4ed8',
+      colorLinkActive: '#1e40af',
     },
     components: {
       Layout: {
@@ -144,4 +150,4 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
       {children}
     </ConfigProvider>
   )
-} 
+}

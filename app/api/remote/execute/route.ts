@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '../../../../lib/auth/apiHelpers-new'
 import { getPrismaClient } from '../../../../lib/config/database'
 import { executeSSHCommand } from '../../../../lib/ssh/client'
+import { revealSecret } from '../../../../lib/crypto/encryption'
 
 // 远程执行请求接口
 interface RemoteExecuteRequest {
@@ -108,7 +109,7 @@ export async function POST(request: NextRequest) {
       host: server.ip,
       port: server.port,
       username: server.username,
-      password: server.password || undefined,
+      password: revealSecret(server.password) || undefined,
       timeout: timeout
     }
 

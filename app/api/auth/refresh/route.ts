@@ -1,182 +1,131 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { refreshTokens, verifyRefreshToken } from '../../../../lib/auth/jwt'
+import { generateTokens, verifyRefreshToken } from '../../../../lib/auth/jwt-edge'
+import { getPrismaClient } from '../../../../lib/config/database'
 
-// 强制动态渲染
 export const dynamic = 'force-dynamic'
 
-/**
- * POST /api/auth/refresh - 刷新访问令牌
- * 
- * 使用刷新令牌获取新的访问令牌和刷新令牌对
- */
+function clearAuthCookies(response: NextResponse) {
+  response.cookies.delete('accessToken')
+  response.cookies.delete('refreshToken')
+}
+
+function cookieOptions(request: NextRequest) {
+  const isHttps = request.headers.get('x-forwarded-proto') === 'https'
+  return {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production' && isHttps,
+    sameSite: 'lax' as const,
+    path: '/'
+  }
+}
+
+/** 使用持久化会话轮换访问令牌和刷新令牌。旧令牌在事务提交后立即失效。 */
 export async function POST(request: NextRequest) {
+  const refreshToken = request.cookies.get('refreshToken')?.value
+  if (!refreshToken) {
+    return NextResponse.json({ success: false, error: '刷新令牌缺失', code: 'REFRESH_TOKEN_MISSING' }, { status: 401 })
+  }
+
   try {
-    console.log('🔄 Token刷新请求')
+    const payload = await verifyRefreshToken(refreshToken)
+    const prisma = await getPrismaClient()
+    const session = await prisma.authSession.findFirst({
+      where: {
+        refreshTokenId: payload.jti,
+        isActive: true,
+        expiresAt: { gt: new Date() }
+      },
+      include: { user: true }
+    })
 
-    // 从Cookie中获取刷新令牌
-    const refreshToken = request.cookies.get('refreshToken')?.value
-
-    if (!refreshToken) {
-      console.log('❌ 刷新令牌缺失')
-      return NextResponse.json({
-        success: false,
-        error: '刷新令牌缺失',
-        code: 'REFRESH_TOKEN_MISSING',
-        timestamp: new Date().toISOString()
-      }, { status: 401 })
-    }
-
-    // 验证刷新令牌
-    let decoded
-    try {
-      decoded = await verifyRefreshToken(refreshToken)
-    } catch (error) {
-      console.log('❌ 刷新令牌验证失败:', error instanceof Error ? error.message : '未知错误')
-      
-      // 清除无效的刷新令牌Cookie
-      const response = NextResponse.json({
-        success: false,
-        error: '刷新令牌无效或已过期',
-        code: 'INVALID_REFRESH_TOKEN',
-        timestamp: new Date().toISOString()
-      }, { status: 401 })
-      
-      response.cookies.delete('refreshToken')
-      response.cookies.delete('accessToken')
-      
+    if (!session || !session.user.isActive || session.user.approvalStatus !== 'approved') {
+      const response = NextResponse.json({ success: false, error: '会话已失效', code: 'SESSION_REVOKED' }, { status: 401 })
+      clearAuthCookies(response)
       return response
     }
 
-    // 使用刷新令牌生成新的令牌对
-    const newTokens = await refreshTokens(refreshToken)
+    const rememberMe = session.expiresAt.getTime() - session.createdAt.getTime() > 8 * 24 * 60 * 60 * 1000
+    const tokens = await generateTokens({
+      id: session.user.id,
+      username: session.user.username,
+      email: session.user.email,
+      role: session.user.role,
+      permissions: session.user.permissions || [],
+      createdAt: session.user.createdAt,
+      updatedAt: session.user.updatedAt,
+      lastLoginAt: session.user.lastLoginAt || undefined,
+      isActive: session.user.isActive
+    }, { rememberMe })
 
-    console.log('✅ Token刷新成功:', {
-      userId: decoded.userId,
-      username: decoded.username,
-      expiresAt: new Date(newTokens.expiresAt).toISOString()
-    })
+    await prisma.$transaction([
+      prisma.authSession.update({
+        where: { id: session.id },
+        data: { isActive: false, lastUsedAt: new Date() }
+      }),
+      prisma.authSession.create({
+        data: {
+          userId: session.userId,
+          refreshTokenId: tokens.refreshTokenId,
+          userAgent: request.headers.get('user-agent') || session.userAgent,
+          ipAddress: request.ip || request.headers.get('x-forwarded-for') || session.ipAddress,
+          expiresAt: new Date(tokens.refreshExpiresAt),
+          lastUsedAt: new Date()
+        }
+      })
+    ])
 
-    // 创建响应
     const response = NextResponse.json({
       success: true,
-      message: 'Token刷新成功',
       data: {
         user: {
-          id: decoded.userId,
-          username: decoded.username,
-          email: decoded.email,
-          role: decoded.role,
-          permissions: decoded.permissions
+          id: session.user.id,
+          username: session.user.username,
+          email: session.user.email,
+          role: session.user.role,
+          permissions: session.user.permissions || []
         },
-        expiresAt: newTokens.expiresAt,
-        refreshExpiresAt: newTokens.refreshExpiresAt
-      },
-      timestamp: new Date().toISOString()
+        expiresAt: new Date(tokens.expiresAt).toISOString()
+      }
     })
-
-    // 设置新的Token到HttpOnly Cookie
-    const isProduction = process.env.NODE_ENV === 'production'
-    const cookieOptions = {
-      httpOnly: true,
-      secure: isProduction,
-      sameSite: 'lax' as const,
-      path: '/'
-    }
-
-    // 设置访问令牌Cookie（15分钟过期）
-    response.cookies.set('accessToken', newTokens.accessToken, {
-      ...cookieOptions,
-      maxAge: 15 * 60 // 15分钟
+    const options = cookieOptions(request)
+    response.cookies.set('accessToken', tokens.accessToken, {
+      ...options,
+      maxAge: Math.max(0, Math.floor((tokens.expiresAt - Date.now()) / 1000))
     })
-
-    // 设置刷新令牌Cookie（7天过期）
-    response.cookies.set('refreshToken', newTokens.refreshToken, {
-      ...cookieOptions,
-      maxAge: 7 * 24 * 60 * 60 // 7天
+    response.cookies.set('refreshToken', tokens.refreshToken, {
+      ...options,
+      maxAge: Math.max(0, Math.floor((tokens.refreshExpiresAt - Date.now()) / 1000))
     })
-
     return response
-
   } catch (error) {
-    console.error('❌ Token刷新失败:', error)
-
-    // 处理错误
-    const errorMessage = error instanceof Error ? error.message : '未知错误'
-    const isTokenError = errorMessage.includes('token') || errorMessage.includes('Token') ||
-                        errorMessage.includes('TOKEN') || errorMessage.includes('refresh')
-
-    const response = NextResponse.json({
-      success: false,
-      error: isTokenError ? '令牌无效或已过期' : '服务器内部错误',
-      code: isTokenError ? 'INVALID_TOKEN' : 'INTERNAL_SERVER_ERROR',
-      timestamp: new Date().toISOString()
-    }, { status: isTokenError ? 401 : 500 })
-
-    // 如果是令牌相关错误，清除Cookie
-    if (isTokenError) {
-      response.cookies.delete('refreshToken')
-      response.cookies.delete('accessToken')
-    }
-
+    console.warn('刷新会话失败:', error instanceof Error ? error.message : error)
+    const response = NextResponse.json({ success: false, error: '令牌无效或已过期', code: 'INVALID_TOKEN' }, { status: 401 })
+    clearAuthCookies(response)
     return response
   }
 }
 
-/**
- * GET /api/auth/refresh - 检查刷新令牌状态
- * 
- * 用于检查当前刷新令牌是否有效
- */
+/** 检查刷新令牌及其数据库会话是否仍然有效。 */
 export async function GET(request: NextRequest) {
+  const refreshToken = request.cookies.get('refreshToken')?.value
+  if (!refreshToken) {
+    return NextResponse.json({ success: true, data: { valid: false, reason: 'REFRESH_TOKEN_MISSING' } })
+  }
+
   try {
-    const refreshToken = request.cookies.get('refreshToken')?.value
-
-    if (!refreshToken) {
-      return NextResponse.json({
-        success: true,
-        data: {
-          valid: false,
-          reason: 'REFRESH_TOKEN_MISSING'
-        },
-        timestamp: new Date().toISOString()
-      })
-    }
-
-    // 验证刷新令牌
-    try {
-      const decoded = await verifyRefreshToken(refreshToken)
-      
-      return NextResponse.json({
-        success: true,
-        data: {
-          valid: true,
-          expiresAt: decoded.exp * 1000,
-          user: {
-            id: decoded.userId,
-            username: decoded.username,
-            email: decoded.email,
-            role: decoded.role
-          }
-        },
-        timestamp: new Date().toISOString()
-      })
-    } catch (error) {
-      return NextResponse.json({
-        success: true,
-        data: {
-          valid: false,
-          reason: error instanceof Error ? 'INVALID_REFRESH_TOKEN' : 'UNKNOWN_ERROR'
-        },
-        timestamp: new Date().toISOString()
-      })
-    }
-
-  } catch (error) {
-    console.error('❌ 检查刷新令牌状态失败:', error)
+    const payload = await verifyRefreshToken(refreshToken)
+    const prisma = await getPrismaClient()
+    const session = await prisma.authSession.findFirst({
+      where: { refreshTokenId: payload.jti, isActive: true, expiresAt: { gt: new Date() } },
+      select: { expiresAt: true }
+    })
     return NextResponse.json({
-      success: false,
-      error: '服务器内部错误',
-      timestamp: new Date().toISOString()
-    }, { status: 500 })
+      success: true,
+      data: session
+        ? { valid: true, expiresAt: session.expiresAt.toISOString() }
+        : { valid: false, reason: 'SESSION_REVOKED' }
+    })
+  } catch {
+    return NextResponse.json({ success: true, data: { valid: false, reason: 'INVALID_REFRESH_TOKEN' } })
   }
 }

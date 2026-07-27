@@ -11,6 +11,7 @@ import {
   JenkinsJobExecuteRequest,
   JenkinsJobExecuteResponse
 } from './types'
+import { isEncryptedSecret, revealSecret } from '../crypto/encryption'
 
 export class JenkinsClient {
   private baseUrl: string
@@ -23,7 +24,7 @@ export class JenkinsClient {
 
     // 设置认证
     if (config.username && config.token) {
-      this.auth = Buffer.from(`${config.username}:${config.token}`).toString('base64')
+      this.auth = Buffer.from(`${config.username}:${revealSecret(config.token)}`).toString('base64')
     }
   }
 
@@ -305,6 +306,12 @@ export class JenkinsClient {
     }
   }
 
+  // 取消尚未分配构建号的队列项
+  async cancelQueueItem(queueId: number): Promise<void> {
+    if (!Number.isInteger(queueId) || queueId <= 0) throw new Error('无效的 Jenkins 队列 ID')
+    await this.request(`/queue/cancelItem?id=${queueId}`, { method: 'POST' })
+  }
+
   // 获取构建详情
   async getBuild(jobName: string, buildNumber: number): Promise<JenkinsBuild> {
     try {
@@ -365,10 +372,14 @@ export function createJenkinsClient(config: {
   
   if (config.authToken) {
     // 支持格式：username:token 或 直接token
-    if (config.authToken.includes(':')) {
-      [username, token] = config.authToken.split(':')
+    if (isEncryptedSecret(config.authToken)) {
+      token = revealSecret(config.authToken)
+    } else if (config.authToken.includes(':')) {
+      const separator = config.authToken.indexOf(':')
+      username = config.authToken.slice(0, separator)
+      token = revealSecret(config.authToken.slice(separator + 1))
     } else {
-      token = config.authToken
+      token = revealSecret(config.authToken)
     }
   }
 

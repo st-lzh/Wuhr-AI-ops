@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getPrismaClient } from '../../../../../lib/config/database'
 import { requireAuth } from '../../../../../lib/auth/apiHelpers-new'
-import { hasPermission } from '../../../../../lib/auth/permissions'
+import { canWriteTeamAssets } from '../../../../../lib/auth/teamAccess'
 
 export async function GET(
   request: NextRequest,
@@ -17,7 +17,6 @@ export async function GET(
     const group = await prisma.serverGroup.findFirst({
       where: {
         id: params.id,
-        userId: authResult.user.id,
         isActive: true
       },
       include: {
@@ -67,7 +66,7 @@ export async function PUT(
       return authResult.response
     }
 
-    if (!hasPermission(authResult.user.permissions, 'servers:write')) {
+    if (!canWriteTeamAssets(authResult.user, 'servers:write')) {
       return NextResponse.json(
         { success: false, error: '权限不足' },
         { status: 403 }
@@ -88,7 +87,6 @@ export async function PUT(
     const existingGroup = await prisma.serverGroup.findFirst({
       where: {
         id: params.id,
-        userId: authResult.user.id,
         isActive: true
       }
     })
@@ -103,7 +101,6 @@ export async function PUT(
     const nameConflict = await prisma.serverGroup.findFirst({
       where: {
         name: name.trim(),
-        userId: authResult.user.id,
         isActive: true,
         NOT: {
           id: params.id
@@ -137,8 +134,7 @@ export async function PUT(
       // 先将该组的所有主机的groupId设为null（解除关联）
       await tx.server.updateMany({
         where: {
-          groupId: params.id,
-          userId: authResult.user.id
+          groupId: params.id
         },
         data: {
           groupId: null
@@ -150,7 +146,6 @@ export async function PUT(
         await tx.server.updateMany({
           where: {
             id: { in: serverIds },
-            userId: authResult.user.id,
             isActive: true
           },
           data: {
@@ -211,7 +206,7 @@ export async function DELETE(
       return authResult.response
     }
 
-    if (!hasPermission(authResult.user.permissions, 'servers:write')) {
+    if (!canWriteTeamAssets(authResult.user, 'servers:write')) {
       return NextResponse.json(
         { success: false, error: '权限不足' },
         { status: 403 }
@@ -222,7 +217,6 @@ export async function DELETE(
     const group = await prisma.serverGroup.findFirst({
       where: {
         id: params.id,
-        userId: authResult.user.id,
         isActive: true
       },
       include: {

@@ -552,9 +552,9 @@ export default function ApprovalsPage() {
         <div className="mb-6">
           <Title level={2} className="mb-2">
             <ClockCircleOutlined className="mr-2" />
-            审批管理
+            审批中心
           </Title>
-          <Paragraph className="text-gray-600 mb-0">
+          <Paragraph type="secondary" className="mb-0">
             管理部署审批流程，查看待审批任务和审批历史
           </Paragraph>
         </div>
@@ -667,7 +667,7 @@ export default function ApprovalsPage() {
                     >
                       {approval.status === 'approved' ? '通过' : '拒绝'}
                     </Tag>
-                    <span className="text-gray-600">
+                    <span className="text-gray-600 dark:text-slate-300">
                       {approval.projectName} - {approval.deploymentName}
                     </span>
                   </div>

@@ -72,10 +72,9 @@ const ServerFormFields: React.FC<ServerFormFieldsProps> = ({ isEdit = false }) =
           <Col span={12}>
             <Form.Item
               name="hostname"
-              label="主机域名"
-              rules={[{ required: true, message: '请输入主机域名' }]}
+              label="主机域名（可选）"
             >
-              <Input placeholder="例如: web01.example.com" />
+              <Input placeholder="例如: web01.example.com（无域名可留空）" />
             </Form.Item>
           </Col>
         </Row>

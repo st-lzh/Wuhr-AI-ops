@@ -32,11 +32,10 @@ export async function POST(request: NextRequest) {
 
     const prisma = await getPrismaClient()
 
-    // 验证模型是否存在且属于当前用户
+    // 单个可信运维团队共享模型：默认模型是团队级唯一配置。
     const targetModel = await prisma.modelConfig.findFirst({
       where: {
         id: modelId,
-        userId: user.id,
         isActive: true
       }
     })
@@ -48,53 +47,28 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // 使用事务处理默认设置（支持切换功能）
-    let isSetAsDefault = false
+    // 始终保留一个团队默认模型，不允许通过重复点击取消。
     await prisma.$transaction(async (tx) => {
-      if (targetModel.isDefault) {
-        // 如果当前模型已经是默认，则取消默认状态
-        await tx.modelConfig.update({
-          where: {
-            id: modelId
-          },
-          data: {
-            isDefault: false
-          }
+      await tx.modelConfig.updateMany({ where: { isDefault: true }, data: { isDefault: false } })
+      await tx.modelConfig.update({ where: { id: modelId }, data: { isDefault: true } })
+      await tx.model_providers.updateMany({ where: { isDefault: true }, data: { isDefault: false } })
+      if (targetModel.providerConnectionId) {
+        await tx.model_providers.update({
+          where: { id: targetModel.providerConnectionId },
+          data: { isDefault: true }
         })
-        isSetAsDefault = false
-      } else {
-        // 如果当前模型不是默认，则设为默认并取消用户其他模型的默认状态
-        await tx.modelConfig.updateMany({
-          where: {
-            userId: user.id,
-            isDefault: true
-          },
-          data: {
-            isDefault: false
-          }
-        })
-
-        await tx.modelConfig.update({
-          where: {
-            id: modelId
-          },
-          data: {
-            isDefault: true
-          }
-        })
-        isSetAsDefault = true
       }
     })
 
-    console.log(`✅ 用户 ${user.username} ${isSetAsDefault ? '设置' : '取消'}默认模型成功: ${targetModel.displayName}`)
+    console.log(`✅ 用户 ${user.username} 设置团队默认模型成功: ${targetModel.displayName}`)
 
     return NextResponse.json({
       success: true,
-      message: isSetAsDefault ? '默认模型设置成功' : '默认模型已取消',
+      message: '团队默认模型设置成功',
       data: {
         modelId,
         modelName: targetModel.displayName,
-        isDefault: isSetAsDefault
+        isDefault: true
       }
     })
 

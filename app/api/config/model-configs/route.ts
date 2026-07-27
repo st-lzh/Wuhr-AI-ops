@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '../../../../lib/auth/apiHelpers-new'
 import { getPrismaClient } from '../../../../lib/config/database'
+import { protectSecret, revealSecret } from '../../../../lib/crypto/encryption'
+import { maskApiKey } from '../../../../lib/ai/modelProviders'
 
 // 模型配置接口
 interface ModelConfigRequest {
@@ -11,6 +13,17 @@ interface ModelConfigRequest {
   baseUrl?: string
   description?: string
   isDefault?: boolean // 新增默认模型字段
+}
+
+function modelConfigResponse(config: any) {
+  const { apiKey, ...safe } = config
+  const plaintext = revealSecret(apiKey)
+  return {
+    ...safe,
+    hasApiKey: Boolean(plaintext),
+    maskedApiKey: maskApiKey(plaintext),
+    apiKey: plaintext ? '***' : ''
+  }
 }
 
 // 获取用户的模型配置列表
@@ -35,7 +48,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      models: modelConfigs,
+      models: modelConfigs.map(modelConfigResponse),
       timestamp: new Date().toISOString(),
     })
 
@@ -101,12 +114,10 @@ export async function POST(request: NextRequest) {
     }
 
     // 检查是否已存在相同的模型名称
-    const existingConfig = await prisma.modelConfig.findUnique({
+    const existingConfig = await prisma.modelConfig.findFirst({
       where: {
-        userId_modelName: {
-          userId: user.id,
-          modelName: modelName
-        }
+        userId: user.id,
+        modelName
       }
     })
 
@@ -128,7 +139,7 @@ export async function POST(request: NextRequest) {
         modelName,
         displayName,
         provider,
-        apiKey,
+        apiKey: protectSecret(apiKey) || '',
         baseUrl,
         description,
         isDefault, // 设置默认状态
@@ -140,7 +151,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      data: newConfig,
+      data: modelConfigResponse(newConfig),
       message: '模型配置创建成功',
       timestamp: new Date().toISOString(),
     })
@@ -168,7 +179,7 @@ export async function PUT(request: NextRequest) {
 
     const { user } = authResult
     const body = await request.json()
-    const { id, ...updateData } = body
+    const { id, apiKey, ...updateData } = body
 
     if (!id) {
       return NextResponse.json(
@@ -223,6 +234,7 @@ export async function PUT(request: NextRequest) {
       where: { id },
       data: {
         ...updateData,
+        ...(apiKey && apiKey !== '***' ? { apiKey: protectSecret(apiKey) } : {}),
         updatedAt: new Date()
       }
     })
@@ -231,7 +243,7 @@ export async function PUT(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      data: updatedConfig,
+      data: modelConfigResponse(updatedConfig),
       message: '模型配置更新成功',
       timestamp: new Date().toISOString(),
     })

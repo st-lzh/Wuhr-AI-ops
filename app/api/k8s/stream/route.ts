@@ -1,6 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '../../../../lib/auth/apiHelpers-new'
 import { getPrismaClient } from '../../../../lib/config/database'
+import { ChatTargetError, resolveChatExecutionContext } from '../../../../lib/ai/batchExecution'
+import {
+  CICDContextError,
+  formatCICDContextPrompt,
+  recordCICDContextRead,
+  resolveCICDContext
+} from '../../../../lib/ai/cicdContext'
+import { resolveRuntimeModelConfig } from '../../../../lib/ai/runtimeModelConfig'
+import { resolveRuntimeToolConfig } from '../../../../lib/ai/runtimeToolConfig'
+import { resolvePersistedConversationHistory } from '../../../../lib/ai/conversationHistory'
 
 // 流式数据类型定义
 interface StreamData {
@@ -33,39 +43,44 @@ export async function POST(request: NextRequest) {
     }
 
     const prisma = await getPrismaClient()
-
-    // 获取主机信息 - 远程执行必须提供hostId
-    const hostId = config?.hostId || requestConfig?.hostId
-    if (!hostId || hostId === 'local') {
-      return NextResponse.json(
-        { success: false, error: '必须选择远程主机进行执行' },
-        { status: 400 }
-      )
-    }
-
-    const hostInfo = await prisma.server.findFirst({
-      where: {
-        id: hostId,
-        userId: user.id,
-        isActive: true
-      }
+    const runtimeModel = await resolveRuntimeModelConfig({
+      prisma,
+      userId: user.id,
+      model: config?.model || requestConfig?.model,
+      provider: config?.provider || requestConfig?.provider,
+      apiKey: config?.apiKey || requestConfig?.apiKey,
+      baseUrl: config?.baseUrl || requestConfig?.baseUrl
+    })
+    const runtimeTools = await resolveRuntimeToolConfig(prisma, user.id)
+    const history = await resolvePersistedConversationHistory({
+      userId: user.id,
+      sessionId: body.sessionId,
+      currentMessageId: body.currentMessageId
     })
 
-    if (!hostInfo) {
-      return NextResponse.json(
-        { success: false, error: `未找到主机: ${hostId}` },
-        { status: 404 }
-      )
-    }
+    const cicdContext = await resolveCICDContext(prisma, body.cicdContext || {})
+    if (cicdContext) await recordCICDContextRead(prisma, user.id, cicdContext)
+    const contextualQuery = `${formatCICDContextPrompt(cicdContext)}${actualQuery}`
+
+    const hostId = config?.hostId || requestConfig?.hostId || cicdContext?.coordinatorHostId
+    const executionContext = await resolveChatExecutionContext({
+      prisma,
+      userId: user.id,
+      coordinatorHostId: hostId,
+      targetHostIds: body.targetHostIds || config?.targetHostIds
+    })
+    const hostInfo = executionContext.coordinator
 
     console.log('📡 开始K8s模式远程kubelet-wuhrai CLI流式传输:', {
       userId: user.id,
-      queryLength: actualQuery.length,
+      queryLength: contextualQuery.length,
       provider: config?.provider || requestConfig?.provider,
       model: config?.model || requestConfig?.model,
-      hostId: hostId,
+      hostId: hostInfo.id,
       hostName: hostInfo.name,
       hostIp: hostInfo.ip,
+      batchMode: executionContext.batchMode,
+      batchTargets: executionContext.targetHostIds.length,
       mode: 'Kubernetes集群模式'
     })
 
@@ -75,19 +90,25 @@ export async function POST(request: NextRequest) {
 
     // 构建HTTP API请求 - 强制设置为K8s模式
     const httpRequest = {
-      query: actualQuery,
+      query: contextualQuery,
+      sessionId: typeof body.sessionId === 'string' ? body.sessionId : undefined,
+      history,
       isK8sMode: true, // 🔥 强制设置为K8s模式
-      customTools: body.customTools || requestConfig.customTools, // 🔧 传递自定义工具
+      customTools: runtimeTools.customTools,
+      mcpServers: config?.mcpClientEnabled === true ? runtimeTools.mcpServers : [],
       config: {
-        provider: config?.provider || requestConfig?.provider,
-        model: config?.model || requestConfig?.model || 'deepseek-chat',
-        apiKey: config?.apiKey || requestConfig?.apiKey,
-        baseUrl: config?.baseUrl || requestConfig?.baseUrl,
-        hostId: hostId,
+        provider: runtimeModel.provider,
+        model: runtimeModel.model,
+        apiKey: runtimeModel.apiKey,
+        baseUrl: runtimeModel.baseUrl,
+        hostId: hostInfo.id,
         maxIterations: 20,
         streamingOutput: true,
         isK8sMode: true, // 🔥 确保config中也设置为K8s模式
-        requireApproval: config?.requireApproval || false,
+        mcpClientEnabled: runtimeTools.mcpEnabled && config?.mcpClientEnabled === true,
+        requireApproval: config?.requireApproval || false, // 🔥 传递命令批准配置
+        batchMode: executionContext.batchMode,
+        batchHosts: executionContext.batchHosts,
         // 🔥 vLLM需要ReAct模式
         enableToolUseShim: true
       }
@@ -98,7 +119,12 @@ export async function POST(request: NextRequest) {
       customToolsCount: httpRequest.customTools?.length || 0, // 🔧 记录自定义工具数量
       config: {
         ...httpRequest.config,
-        apiKey: httpRequest.config.apiKey ? '[REDACTED]' : undefined
+        apiKey: httpRequest.config.apiKey ? '[REDACTED]' : undefined,
+        batchHosts: httpRequest.config.batchHosts.map(({ password, keyPath, ...host }) => ({
+          ...host,
+          password: password ? '[REDACTED]' : undefined,
+          keyPath: keyPath ? '[REDACTED]' : undefined
+        }))
       }
     })
 
@@ -129,7 +155,7 @@ export async function POST(request: NextRequest) {
             console.error('❌ K8s模式HTTP流式传输错误:', {
               error,
               timestamp: new Date().toISOString(),
-              hostId,
+              hostId: hostInfo.id,
               hostIp: hostInfo.ip
             })
 
@@ -187,9 +213,12 @@ export async function POST(request: NextRequest) {
               timestamp: new Date().toISOString(),
               metadata: {
                 executionMode: 'k8s-mode',
-                hostId,
+                hostId: hostInfo.id,
                 hostName: hostInfo.name,
                 hostIp: hostInfo.ip,
+                batchMode: executionContext.batchMode,
+                targetHostIds: executionContext.targetHostIds,
+                targetCount: executionContext.targetHostIds.length,
                 port: 2081
               }
             }
@@ -224,6 +253,12 @@ export async function POST(request: NextRequest) {
     })
 
   } catch (error) {
+    if (error instanceof CICDContextError) {
+      return NextResponse.json({ success: false, error: error.message }, { status: error.status })
+    }
+    if (error instanceof ChatTargetError) {
+      return NextResponse.json({ success: false, error: error.message }, { status: error.status })
+    }
     console.error('❌ K8s模式HTTP API kubelet-wuhrai流式传输失败:', error)
     
     // 返回错误流

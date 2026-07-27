@@ -1,5 +1,5 @@
 import { getPrismaClient } from '../config/database'
-import { deploymentExecutionService } from '../services/deploymentExecutionService'
+import { triggerApprovedDeployment } from '../services/deploymentTriggerService'
 
 /**
  * 部署调度器 - 处理计划部署时间功能
@@ -109,44 +109,8 @@ class DeploymentScheduler {
       console.log(`   计划时间: ${deployment.scheduledAt}`)
       console.log(`   当前时间: ${new Date()}`)
       
-      // 更新状态为执行中
-      await prisma.deployment.update({
-        where: { id: deployment.id },
-        data: { 
-          status: 'deploying',
-          startedAt: new Date(),
-          scheduledAt: null, // 清除计划时间，避免重复执行
-          logs: (deployment.logs || '') + `\n[${new Date().toISOString()}] 🕐 计划部署时间到达，开始执行部署...\n`
-        }
-      })
-      
-      // 异步触发部署执行，避免阻塞调度器
-      setImmediate(async () => {
-        try {
-          const success = await deploymentExecutionService.triggerDeployment(deployment.id)
-          if (success) {
-            console.log(`✅ 计划部署执行成功: ${deployment.name}`)
-          } else {
-            console.log(`❌ 计划部署执行失败: ${deployment.name}`)
-          }
-        } catch (error) {
-          console.error(`❌ 计划部署执行异常: ${deployment.name}`, error)
-          
-          // 更新部署状态为失败
-          try {
-            await prisma.deployment.update({
-              where: { id: deployment.id },
-              data: { 
-                status: 'failed',
-                completedAt: new Date(),
-                logs: (deployment.logs || '') + `\n[${new Date().toISOString()}] ❌ 计划部署执行失败: ${error instanceof Error ? error.message : String(error)}\n`
-              }
-            })
-          } catch (updateError) {
-            console.error('❌ 更新部署状态失败:', updateError)
-          }
-        }
-      })
+      const result = await triggerApprovedDeployment(deployment.id, deployment.user.id, prisma)
+      console.log(`${result.success ? '✅' : '❌'} 计划部署触发结果: ${result.message}`)
       
     } catch (error) {
       console.error(`❌ 执行计划部署失败: ${deployment.name}`, error)
@@ -194,16 +158,3 @@ class DeploymentScheduler {
 
 // 创建单例实例
 export const deploymentScheduler = new DeploymentScheduler()
-
-// 进程退出时自动停止调度器
-process.on('SIGINT', () => {
-  console.log('\n🛑 接收到退出信号，停止部署调度器...')
-  deploymentScheduler.stop()
-  process.exit(0)
-})
-
-process.on('SIGTERM', () => {
-  console.log('\n🛑 接收到终止信号，停止部署调度器...')
-  deploymentScheduler.stop()
-  process.exit(0)
-})

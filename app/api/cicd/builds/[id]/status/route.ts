@@ -14,15 +14,13 @@ export async function GET(
       return authResult.response
     }
 
-    const { user } = authResult
     const buildId = params.id
     const prisma = await getPrismaClient()
 
     // 获取构建信息
     const build = await prisma.build.findFirst({
       where: {
-        id: buildId,
-        userId: user.id
+        id: buildId
       },
       include: {
         pipeline: {
@@ -55,8 +53,9 @@ export async function GET(
     let shouldUpdateDatabase = false
     let updatedBuild = { ...build }
 
-    // 如果构建正在运行且有Jenkins配置，获取实时状态
-    if (build.status === 'running' && build.jenkinsConfig && build.queueId) {
+    // 队列中和运行中的构建都必须向 Jenkins 同步。旧逻辑只处理 running，
+    // 而流水线提交后初始状态是 queued，导致记录永远无法进入运行/完成状态。
+    if (['queued', 'running'].includes(build.status) && build.jenkinsConfig && build.queueId) {
       try {
         console.log('🔍 查询Jenkins构建状态...', { buildId, queueId: build.queueId })
         
@@ -70,10 +69,27 @@ export async function GET(
         try {
           const queueItem = await jenkinsClient.getQueueItem(parseInt(build.queueId))
           
-          if (queueItem.executable) {
+          if (queueItem.cancelled) {
+            updatedBuild = await prisma.build.update({
+              where: { id: buildId },
+              data: {
+                status: 'aborted',
+                result: 'ABORTED',
+                completedAt: new Date()
+              }
+            }) as any
+            shouldUpdateDatabase = true
+            jenkinsStatus = {
+              queueId: build.queueId,
+              building: false,
+              result: 'ABORTED',
+              inQueue: false
+            }
+          } else if (queueItem.executable) {
             // 构建已开始执行
             const buildNumber = queueItem.executable.number
             const buildInfo = await jenkinsClient.getBuild(build.jenkinsJobName, buildNumber)
+            const buildLogs = await jenkinsClient.getBuildLog(build.jenkinsJobName, buildNumber).catch(() => '')
             
             jenkinsStatus = {
               buildNumber,
@@ -85,25 +101,31 @@ export async function GET(
               inQueue: false
             }
 
-            // 如果构建完成，更新数据库状态
-            if (!buildInfo.building && buildInfo.result) {
-              const newStatus = buildInfo.result === 'SUCCESS' ? 'success' : 'failed'
-              const completedAt = new Date(buildInfo.timestamp + (buildInfo.duration || 0))
-              const duration = Math.floor((buildInfo.duration || 0) / 1000)
+            const terminal = !buildInfo.building && Boolean(buildInfo.result)
+            const newStatus = terminal
+              ? (buildInfo.result === 'SUCCESS' ? 'success' : buildInfo.result === 'ABORTED' ? 'aborted' : 'failed')
+              : 'running'
+            const startedAt = buildInfo.timestamp ? new Date(buildInfo.timestamp) : (build.startedAt || new Date())
+            const completedAt = terminal
+              ? new Date((buildInfo.timestamp || Date.now()) + (buildInfo.duration || 0))
+              : null
+            const duration = terminal ? Math.max(0, Math.floor((buildInfo.duration || 0) / 1000)) : null
 
-              updatedBuild = await prisma.build.update({
-                where: { id: buildId },
-                data: {
-                  status: newStatus,
-                  result: buildInfo.result,
-                  completedAt,
-                  duration
-                }
-              }) as any
-              
-              shouldUpdateDatabase = true
-              console.log('✅ 构建状态已更新:', { buildId, status: newStatus, duration })
-            }
+            updatedBuild = await prisma.build.update({
+              where: { id: buildId },
+              data: {
+                buildNumber,
+                buildUrl: buildInfo.url || queueItem.executable.url || build.buildUrl,
+                status: newStatus,
+                result: terminal ? buildInfo.result : null,
+                startedAt,
+                completedAt,
+                duration,
+                logs: buildLogs || build.logs
+              }
+            }) as any
+            shouldUpdateDatabase = true
+            console.log('✅ 构建状态已更新:', { buildId, status: newStatus, duration })
           } else {
             // 仍在队列中
             jenkinsStatus = {
@@ -146,6 +168,8 @@ export async function GET(
     let progress = 0
     if (updatedBuild.status === 'pending') {
       progress = 0
+    } else if (updatedBuild.status === 'queued') {
+      progress = 5
     } else if (updatedBuild.status === 'running') {
       if (jenkinsStatus?.estimatedDuration && jenkinsStatus?.duration) {
         progress = Math.min(95, (jenkinsStatus.duration / jenkinsStatus.estimatedDuration) * 100)

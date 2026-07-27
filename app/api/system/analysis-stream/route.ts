@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '../../../../lib/auth/apiHelpers-new'
 import { getPrismaClient } from '../../../../lib/config/database'
 import { getProviderFromModel, validateModelConfig } from '../../../config/kubelet-wuhrai-providers'
+import { revealSecret } from '../../../../lib/crypto/encryption'
 
 // 流式数据类型定义
 interface StreamData {
@@ -89,7 +90,7 @@ export async function POST(request: NextRequest) {
       }
 
       finalModel = userSelection.selectedModel.modelName
-      finalApiKey = userSelection.selectedModel.apiKey
+      finalApiKey = revealSecret(userSelection.selectedModel.apiKey)
       finalBaseUrl = userSelection.selectedModel.baseUrl || undefined
       finalProvider = provider || getProviderFromModel(finalModel)
     }

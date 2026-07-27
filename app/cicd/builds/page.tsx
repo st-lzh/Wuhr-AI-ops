@@ -18,7 +18,7 @@ const BuildsPage: React.FC = () => {
             <BuildOutlined className="mr-2" />
             构建历史
           </Title>
-          <Paragraph className="text-gray-600 mb-0">
+          <Paragraph type="secondary" className="mb-0">
             查看构建历史记录、构建日志和状态监控
           </Paragraph>
         </div>

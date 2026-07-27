@@ -2,10 +2,16 @@ import * as jwt from 'jsonwebtoken'
 import { generateUUID } from './uuid-edge'
 import { AuthTokens, User, JWTPayload, AuthError, AUTH_ERRORS, AuthConfig } from './types'
 
-// JWT配置 - 从环境变量获取，提供默认值用于开发
+const DEVELOPMENT_JWT_SECRET = 'wuhr-ai-ops-development-only-secret-change-me'
+
+// 兼容旧调用的 Node 版本；密钥策略与 Edge 实现保持一致。
 const getJWTConfig = (): AuthConfig => {
+  const configuredSecret = process.env.JWT_SECRET?.trim()
+  if (!configuredSecret && process.env.NODE_ENV === 'production') {
+    throw new AuthError('生产环境必须配置 JWT_SECRET', 'JWT_SECRET_MISSING', 500)
+  }
   return {
-    jwtSecret: process.env.JWT_SECRET || 'dev-secret-key-change-in-production',
+    jwtSecret: configuredSecret || DEVELOPMENT_JWT_SECRET,
     accessTokenExpiry: process.env.JWT_EXPIRES_IN || '2h',
     refreshTokenExpiry: process.env.REFRESH_TOKEN_EXPIRY || '7d',
     bcryptRounds: parseInt(process.env.BCRYPT_ROUNDS || '12')
@@ -81,6 +87,7 @@ export async function generateTokens(user: User): Promise<AuthTokens> {
     return {
       accessToken,
       refreshToken,
+      refreshTokenId,
       expiresAt: accessPayload.exp * 1000, // 转换为毫秒
       refreshExpiresAt: refreshPayload.exp * 1000
     }
@@ -334,6 +341,7 @@ export async function createTokens(userInfo: { userId: string; username: string;
     tokens.refreshToken = jwt.sign(refreshPayload, config.jwtSecret, {
       algorithm: 'HS256'
     })
+    tokens.refreshTokenId = refreshPayload.jti!
     tokens.refreshExpiresAt = refreshPayload.exp * 1000
   }
 
@@ -376,4 +384,4 @@ export async function verifyToken(token: string, type: 'access' | 'refresh'): Pr
     // 静默处理token验证失败
     return null
   }
-} 
+}

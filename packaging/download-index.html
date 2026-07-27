@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>Wuhr AI Ops 国内下载</title>
+  <style>
+    :root { font-family: Inter, "PingFang SC", "Microsoft YaHei", sans-serif; color: #e8edf7; background: #07101f; }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; background: radial-gradient(circle at 12% 8%, #173e65 0, transparent 35%), #07101f; }
+    main { width: min(980px, calc(100% - 32px)); margin: 0 auto; padding: 64px 0; }
+    .eyebrow { color: #66d8ff; font-size: 13px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
+    h1 { margin: 12px 0 10px; font-size: clamp(34px, 6vw, 58px); line-height: 1.08; }
+    .lead { max-width: 720px; color: #aab7cc; font-size: 17px; line-height: 1.8; }
+    .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; margin: 34px 0; }
+    .card { padding: 24px; border: 1px solid #29425f; border-radius: 18px; background: rgba(10, 25, 45, .88); box-shadow: 0 18px 50px rgba(0,0,0,.24); }
+    .card h2 { margin: 0 0 8px; font-size: 21px; }
+    .meta { color: #8192aa; font-size: 14px; }
+    .card p { min-height: 52px; color: #b7c2d5; line-height: 1.65; }
+    .actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
+    a.button { display: inline-flex; align-items: center; min-height: 42px; padding: 0 16px; border-radius: 10px; color: #07101f; background: #67dcff; font-weight: 750; text-decoration: none; }
+    a.secondary { color: #dbe7f7; background: #172d47; }
+    section.note { padding: 24px; border: 1px solid #24364e; border-radius: 16px; background: rgba(7, 17, 31, .76); }
+    section.note h2 { margin-top: 0; }
+    code { padding: 2px 6px; border-radius: 6px; color: #bdeeff; background: #0d2138; }
+    pre { overflow-x: auto; padding: 16px; border-radius: 12px; color: #d5efff; background: #030a13; line-height: 1.55; }
+    footer { margin-top: 28px; color: #718299; font-size: 13px; }
+    footer a { color: #8bdfff; }
+    @media (max-width: 720px) { main { padding-top: 38px; } .grid { grid-template-columns: 1fr; } .card p { min-height: auto; } }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="eyebrow">China Download Mirror</div>
+    <h1>Wuhr AI Ops v1.0.0</h1>
+    <p class="lead">国内下载镜像支持断点续传。完整平台包包含双架构离线 Docker 镜像和四平台 Agent；Agent 独立包只包含编译后二进制与系统服务安装器，不包含后端源码。</p>
+
+    <div class="grid">
+      <article class="card">
+        <h2>完整平台安装包</h2>
+        <div class="meta">约 967 MB · Linux amd64 / arm64</div>
+        <p>前端平台、PostgreSQL、Redis 离线镜像，Linux/macOS 四架构 Agent，以及一键安装、诊断和卸载脚本。</p>
+        <div class="actions">
+          <a class="button" href="./wuhr-ai-ops-1.0.0.tar.gz">下载平台包</a>
+          <a class="button secondary" href="./wuhr-ai-ops-1.0.0.tar.gz.sha256">SHA-256</a>
+        </div>
+      </article>
+
+      <article class="card">
+        <h2>Agent 独立安装包</h2>
+        <div class="meta">约 44 MB · Linux / macOS · amd64 / arm64</div>
+        <p>仅含编译后的 Agent、systemd/OpenRC/SysV/launchd 安装器、诊断和卸载脚本，适合受管主机单独安装。</p>
+        <div class="actions">
+          <a class="button" href="./wuhr-agent-1.0.0.tar.gz">下载 Agent 包</a>
+          <a class="button secondary" href="./wuhr-agent-1.0.0.tar.gz.sha256">SHA-256</a>
+        </div>
+      </article>
+    </div>
+
+    <section class="note">
+      <h2>安装前先校验</h2>
+      <p>完整平台默认监听 <code>3000</code>，Agent 默认监听 <code>2081</code>。校验失败时不要解压或安装。</p>
+      <pre>sha256sum -c wuhr-ai-ops-1.0.0.tar.gz.sha256
+tar -xzf wuhr-ai-ops-1.0.0.tar.gz
+cd wuhr-ai-ops-1.0.0
+sudo ./install.sh all</pre>
+    </section>
+
+    <footer>
+      GitHub 备用来源：<a href="https://github.com/st-lzh/Wuhr-AI-ops/releases/tag/v1.0.0">st-lzh/Wuhr-AI-ops v1.0.0</a>
+    </footer>
+  </main>
+</body>
+</html>

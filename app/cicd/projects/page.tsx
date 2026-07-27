@@ -29,6 +29,8 @@ import MainLayout from '../../components/layout/MainLayout'
 import { usePermissions } from '../../hooks/usePermissions'
 import { CICDProjectWithDetails } from '../../types/cicd'
 import CreateProjectWizard from '../../components/cicd/CreateProjectWizard'
+import CICDAssistantButton from '../../components/cicd/CICDAssistantButton'
+import CICDAIReportButton from '../../components/cicd/CICDAIReportButton'
 import EnhancedProjectEditForm from '../../../components/cicd/EnhancedProjectEditForm'
 import type { ColumnsType } from 'antd/es/table'
 
@@ -249,6 +251,17 @@ const ProjectsPage: React.FC = () => {
       key: 'actions',
       render: (_, record) => (
         <Space size="small">
+          <CICDAssistantButton
+            context={{ kind: 'project', projectId: record.id }}
+            intent="risk"
+            size="small"
+            iconOnly
+          />
+          <CICDAIReportButton
+            context={{ kind: 'project', projectId: record.id }}
+            reportType="project_health"
+            iconOnly
+          />
           {canWrite && (
             <>
               <Tooltip title="编辑">
@@ -310,9 +323,9 @@ const ProjectsPage: React.FC = () => {
         <div className="mb-6">
           <Title level={2} className="mb-2">
             <ProjectOutlined className="mr-2" />
-            持续集成
+            项目管理
           </Title>
-          <Paragraph className="text-gray-600 mb-0">
+          <Paragraph type="secondary" className="mb-0">
             管理CI构建流程，配置代码仓库、构建设置和通知人员
           </Paragraph>
         </div>

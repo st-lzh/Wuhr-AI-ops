@@ -14,6 +14,10 @@ const PipelineSchema = z.object({
   stages: z.any().optional()
 })
 
+function canWriteCICD(user: { role: string; permissions: string[] }) {
+  return user.role === 'admin' || user.role === 'manager' || user.permissions.includes('cicd:write')
+}
+
 // 获取流水线列表
 export async function GET(request: NextRequest) {
   try {
@@ -22,7 +26,6 @@ export async function GET(request: NextRequest) {
       return authResult.response
     }
 
-    const { user } = authResult
     const { searchParams } = new URL(request.url)
     const page = parseInt(searchParams.get('page') || '1')
     const limit = parseInt(searchParams.get('limit') || '10')
@@ -32,9 +35,8 @@ export async function GET(request: NextRequest) {
     const prisma = await getPrismaClient()
 
     // 构建查询条件
-    const where: any = {
-      userId: user.id
-    }
+    // 单个可信运维团队共享流水线资产，读取不按创建人隔离。
+    const where: any = {}
 
     if (projectId) {
       where.projectId = projectId
@@ -106,6 +108,9 @@ export async function POST(request: NextRequest) {
     }
 
     const { user } = authResult
+    if (!canWriteCICD(user)) {
+      return NextResponse.json({ success: false, error: '没有流水线写入权限' }, { status: 403 })
+    }
     const body = await request.json()
 
     // 验证输入数据
@@ -121,11 +126,10 @@ export async function POST(request: NextRequest) {
     const data = validationResult.data
     const prisma = await getPrismaClient()
 
-    // 验证项目是否存在且属于当前用户
+    // 项目属于可信团队共享资产，创建人仅用于审计。
     const project = await prisma.cICDProject.findFirst({
       where: {
-        id: data.projectId,
-        userId: user.id
+        id: data.projectId
       }
     })
 
@@ -140,8 +144,7 @@ export async function POST(request: NextRequest) {
     const existingPipeline = await prisma.pipeline.findFirst({
       where: {
         name: data.name,
-        projectId: data.projectId,
-        userId: user.id
+        projectId: data.projectId
       }
     })
 

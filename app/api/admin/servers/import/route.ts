@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '../../../../../lib/auth/apiHelpers-new'
-import { hasPermission } from '../../../../../lib/auth/permissions'
+import { canWriteTeamAssets } from '../../../../../lib/auth/teamAccess'
 import { getPrismaClient } from '../../../../../lib/config/database'
-import bcrypt from 'bcryptjs'
+import { protectSecret } from '../../../../../lib/crypto/encryption'
 
 // 强制动态渲染，解决构建时的request.headers问题
 export const dynamic = 'force-dynamic'
@@ -30,7 +30,7 @@ export async function POST(request: NextRequest) {
       return authResult.response
     }
 
-    if (!hasPermission(authResult.user.permissions, 'servers:write')) {
+    if (!canWriteTeamAssets(authResult.user, 'servers:write')) {
       return NextResponse.json(
         { success: false, error: '权限不足' },
         { status: 403 }
@@ -56,7 +56,7 @@ export async function POST(request: NextRequest) {
 
     // 获取用户现有的服务器，用于检查重复
     const existingServers = await prisma.server.findMany({
-      where: { userId, isActive: true },
+      where: { isActive: true },
       select: { name: true, ip: true, hostname: true }
     })
 
@@ -66,7 +66,7 @@ export async function POST(request: NextRequest) {
 
     // 获取用户的所有主机组，用于名称匹配
     const userGroups = await prisma.serverGroup.findMany({
-      where: { userId, isActive: true },
+      where: { isActive: true },
       select: { id: true, name: true }
     })
     
@@ -137,17 +137,14 @@ export async function POST(request: NextRequest) {
             }
           }
         } else if (serverData.groupId) {
-          // 如果提供了 groupId，验证是否属于当前用户
+          // 如果提供了 groupId，验证该团队主机组是否存在
           const group = await prisma.serverGroup.findFirst({
-            where: { id: serverData.groupId, userId, isActive: true }
+            where: { id: serverData.groupId, isActive: true }
           })
           if (group) {
             groupId = serverData.groupId
           }
         }
-
-        // 加密密码
-        const hashedPassword = await bcrypt.hash(serverData.password, 10)
 
         // 创建服务器记录
         await prisma.server.create({
@@ -157,7 +154,7 @@ export async function POST(request: NextRequest) {
             ip: serverData.ip,
             port: serverData.port || 22,
             username: serverData.username,
-            password: hashedPassword,
+            password: protectSecret(serverData.password),
             os: serverData.os || 'Linux',
             location: serverData.location || '',
             description: serverData.description || '',

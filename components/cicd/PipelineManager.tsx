@@ -38,6 +38,8 @@ import {
 } from '@ant-design/icons'
 import type { ColumnsType } from 'antd/es/table'
 import dayjs from 'dayjs'
+import CICDAssistantButton from '../../app/components/cicd/CICDAssistantButton'
+import CICDAIReportButton from '../../app/components/cicd/CICDAIReportButton'
 
 const { Title, Text } = Typography
 const { Option } = Select
@@ -386,6 +388,17 @@ const PipelineManager: React.FC = () => {
               }}
             />
           </Tooltip>
+          <CICDAssistantButton
+            context={{ kind: 'pipeline', projectId: record.projectId, pipelineId: record.id }}
+            intent="optimize"
+            size="small"
+            iconOnly
+          />
+          <CICDAIReportButton
+            context={{ kind: 'pipeline', projectId: record.projectId, pipelineId: record.id }}
+            reportType="pipeline_optimization"
+            iconOnly
+          />
           <Tooltip title="编辑">
             <Button
               type="text"

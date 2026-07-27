@@ -5,7 +5,11 @@ import { hashPassword } from '../auth/password'
 
 // 默认管理员账户
 export async function createDefaultAdmin(): Promise<User> {
-  const adminPassword = process.env.DEFAULT_ADMIN_PASSWORD || 'Admin123!'
+  const configuredPassword = process.env.DEFAULT_ADMIN_PASSWORD?.trim()
+  if (!configuredPassword && process.env.NODE_ENV === 'production') {
+    throw new Error('生产环境初始化管理员前必须配置 DEFAULT_ADMIN_PASSWORD')
+  }
+  const adminPassword = configuredPassword || 'Admin123!'
   const hashedPassword = await hashPassword(adminPassword)
   
   return {
@@ -181,4 +185,4 @@ export const migrations: MigrationTask[] = [
       console.log('回滚数据库结构...')
     }
   }
-] 
+]

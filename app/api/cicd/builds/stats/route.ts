@@ -13,7 +13,6 @@ export async function GET(request: NextRequest) {
       return authResult.response
     }
 
-    const { user } = authResult
     const { searchParams } = new URL(request.url)
     const timeRange = searchParams.get('timeRange') || '30d' // 默认30天
     const pipelineId = searchParams.get('pipelineId')
@@ -41,7 +40,6 @@ export async function GET(request: NextRequest) {
 
     // 构建查询条件
     const where: any = {
-      userId: user.id,
       createdAt: {
         gte: startDate
       }
@@ -93,47 +91,50 @@ export async function GET(request: NextRequest) {
       : 0
 
     // 获取每日构建趋势（最近30天）
-    const dailyTrend = await prisma.$queryRaw`
-      SELECT 
-        DATE(created_at) as date,
+    // 注意：Prisma 把 Build model 映射到 builds 表，列名是 camelCase（userId / createdAt / pipelineId / jenkinsConfigId）
+    // 用 $queryRawUnsafe 手动拼 SQL + 参数化绑定 user.id / startDate，避免 dev 下 Prisma.sql 跨模块 instanceof 失效
+    const dailyTrendSql = `
+      SELECT
+        DATE("createdAt") as date,
         COUNT(*) as total,
         SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END) as success,
         SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed
-      FROM "Build"
-      WHERE user_id = ${user.id}
-        AND created_at >= ${startDate}
-        ${pipelineId ? `AND pipeline_id = '${pipelineId}'` : ''}
-        ${jenkinsConfigId ? `AND jenkins_config_id = '${jenkinsConfigId}'` : ''}
-      GROUP BY DATE(created_at)
+      FROM "builds"
+      WHERE "createdAt" >= $1
+        ${pipelineId ? `AND "pipelineId" = '${pipelineId.replace(/'/g, "''")}'` : ''}
+        ${jenkinsConfigId ? `AND "jenkinsConfigId" = '${jenkinsConfigId.replace(/'/g, "''")}'` : ''}
+      GROUP BY DATE("createdAt")
       ORDER BY date DESC
       LIMIT 30
-    ` as Array<{
+    `
+    const dailyTrend = await prisma.$queryRawUnsafe(dailyTrendSql, startDate) as Array<{
       date: string
       total: bigint
       success: bigint
       failed: bigint
     }>
 
-    // 获取构建时长分布
-    const durationDistribution = await prisma.$queryRaw`
-      SELECT 
-        CASE 
-          WHEN duration < 60 THEN '< 1分钟'
-          WHEN duration < 300 THEN '1-5分钟'
-          WHEN duration < 900 THEN '5-15分钟'
-          WHEN duration < 1800 THEN '15-30分钟'
-          ELSE '> 30分钟'
-        END as duration_range,
-        COUNT(*) as count
-      FROM "Build"
-      WHERE user_id = ${user.id}
-        AND created_at >= ${startDate}
-        AND duration IS NOT NULL
-        AND status IN ('success', 'failed', 'aborted', 'unstable')
-        ${pipelineId ? `AND pipeline_id = '${pipelineId}'` : ''}
-        ${jenkinsConfigId ? `AND jenkins_config_id = '${jenkinsConfigId}'` : ''}
+    // 获取构建时长分布（用子查询包一层，避免 PostgreSQL 在 GROUP BY 不认 CASE 别名）
+    const durationDistSql = `
+      SELECT duration_range, COUNT(*) as count
+      FROM (
+        SELECT
+          CASE
+            WHEN duration < 60 THEN '< 1分钟'
+            WHEN duration < 300 THEN '1-5分钟'
+            WHEN duration < 900 THEN '5-15分钟'
+            WHEN duration < 1800 THEN '15-30分钟'
+            ELSE '> 30分钟'
+          END as duration_range
+        FROM "builds"
+        WHERE "createdAt" >= $1
+          AND duration IS NOT NULL
+          AND status IN ('success', 'failed', 'aborted', 'unstable')
+          ${pipelineId ? `AND "pipelineId" = '${pipelineId.replace(/'/g, "''")}'` : ''}
+          ${jenkinsConfigId ? `AND "jenkinsConfigId" = '${jenkinsConfigId.replace(/'/g, "''")}'` : ''}
+      ) sub
       GROUP BY duration_range
-      ORDER BY 
+      ORDER BY
         CASE duration_range
           WHEN '< 1分钟' THEN 1
           WHEN '1-5分钟' THEN 2
@@ -141,7 +142,8 @@ export async function GET(request: NextRequest) {
           WHEN '15-30分钟' THEN 4
           WHEN '> 30分钟' THEN 5
         END
-    ` as Array<{
+    `
+    const durationDistribution = await prisma.$queryRawUnsafe(durationDistSql, startDate) as Array<{
       duration_range: string
       count: bigint
     }>
@@ -171,23 +173,24 @@ export async function GET(request: NextRequest) {
     })
 
     // 获取最活跃的流水线
-    const topPipelines = await prisma.$queryRaw`
-      SELECT 
+    // 注意：Pipeline 映射到 pipelines，Build 映射到 builds，列名都是 camelCase（需双引号）
+    const topPipelinesSql = `
+      SELECT
         p.id,
         p.name,
         COUNT(b.id) as build_count,
         SUM(CASE WHEN b.status = 'success' THEN 1 ELSE 0 END) as success_count,
         AVG(b.duration) as avg_duration
-      FROM "Pipeline" p
-      LEFT JOIN "Build" b ON p.id = b.pipeline_id
-      WHERE p.user_id = ${user.id}
-        AND b.created_at >= ${startDate}
-        ${pipelineId ? `AND p.id = '${pipelineId}'` : ''}
+      FROM "pipelines" p
+      LEFT JOIN "builds" b ON p.id = b."pipelineId"
+      WHERE b."createdAt" >= $1
+        ${pipelineId ? `AND p.id = '${pipelineId.replace(/'/g, "''")}'` : ''}
       GROUP BY p.id, p.name
       HAVING COUNT(b.id) > 0
       ORDER BY build_count DESC
       LIMIT 10
-    ` as Array<{
+    `
+    const topPipelines = await prisma.$queryRawUnsafe(topPipelinesSql, startDate) as Array<{
       id: string
       name: string
       build_count: bigint

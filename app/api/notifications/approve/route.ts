@@ -2,9 +2,10 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '../../../../lib/auth/apiHelpers-new'
 import ApprovalRecordService from '../../../services/approvalRecordService'
 import { getPrismaClient } from '../../../../lib/config/database'
-import { executeDeployment } from '../../../../lib/deployment/deploymentExecutor'
 import { executeJenkinsJob } from '../../../../lib/jenkins/executionService'
 import { jenkinsNotificationService } from '../../../../lib/notifications/jenkinsNotificationService'
+import { broadcastRealtimeNotification } from '../../../../lib/notifications/realtimeBroadcastService'
+import { triggerApprovedDeployment } from '../../../../lib/services/deploymentTriggerService'
 
 // 处理审批操作
 export async function POST(request: NextRequest) {
@@ -314,121 +315,55 @@ export async function POST(request: NextRequest) {
         }
       })
 
+      // 审批任务处理后，将对应的持久化通知标记为已读，避免通知中心残留失效入口。
+      await prisma.infoNotification.updateMany({
+        where: {
+          userId: user.id,
+          type: 'deployment_approval',
+          isRead: false,
+          metadata: { path: ['approvalId'], equals: approvalId }
+        },
+        data: { isRead: true, readAt: new Date() }
+      })
+
       console.log('✅ 部署任务状态已更新:', {
         deploymentId: approval.deploymentId,
         oldStatus: approval.deployment.status,
         newStatus: newDeploymentStatus
       })
 
-      // 广播部署状态更新通知
+      // 向审批人和申请人广播状态变化，其他页面可立即刷新角标和部署状态。
       try {
-        await fetch(`${process.env.NEXTAUTH_URL || 'http://localhost:3001'}/api/notifications/broadcast`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
+        const recipientIds = new Set([user.id, approval.deployment.userId])
+        await Promise.all(Array.from(recipientIds).map(userId =>
+          broadcastRealtimeNotification({
             type: 'deployment_status_update',
             deploymentId: approval.deploymentId,
             status: newDeploymentStatus,
+            userId,
             data: {
               deploymentName: approval.deployment.name,
               approverName: user.username,
               timestamp: new Date().toISOString()
             }
           })
-        })
+        ))
         console.log('📡 部署状态更新广播已发送')
       } catch (broadcastError) {
         console.error('❌ 发送状态更新广播失败:', broadcastError)
       }
 
-      // 如果审批通过且有审批人员配置，自动开始部署
-      if (newDeploymentStatus === 'approved' && approval.deployment.approvalUsers && Array.isArray(approval.deployment.approvalUsers) && approval.deployment.approvalUsers.length > 0) {
-        try {
-          console.log('🚀 审批通过，开始自动部署:', approval.deploymentId)
-
-          // 调用部署启动API
-          const deployStartResponse = await fetch(`${process.env.NEXTAUTH_URL || 'http://localhost:3001'}/api/cicd/deployments/${approval.deploymentId}/start`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': request.headers.get('Authorization') || ''
-            }
-          })
-
-          if (deployStartResponse.ok) {
-            console.log('✅ 自动部署启动成功')
-          } else {
-            console.error('❌ 自动部署启动失败:', await deployStartResponse.text())
-          }
-        } catch (autoDeployError) {
-          console.error('❌ 自动部署启动异常:', autoDeployError)
-          // 不影响审批流程，继续执行
-        }
-      }
-
-      // 如果审批通过且所有审批都完成，自动开始部署
+      // 所有审批通过后只调用统一触发器一次；生产质量门禁也在该入口执行。
+      let deploymentTrigger: Awaited<ReturnType<typeof triggerApprovedDeployment>> | null = null
       if (newDeploymentStatus === 'approved') {
-        console.log('🚀 开始自动部署流程:', approval.deploymentId)
-
-        // 异步触发真实部署流程，不阻塞审批响应
-        setTimeout(async () => {
-          try {
-            const prisma = await getPrismaClient()
-
-            // 更新部署状态为部署中
-            await prisma.deployment.update({
-              where: { id: approval.deploymentId },
-              data: {
-                status: 'deploying',
-                startedAt: new Date(),
-                logs: '审批通过，自动开始部署...\n'
-              }
-            })
-
-            console.log('🚀 开始真实部署流程:', approval.deploymentId)
-
-            // 执行真实部署
-            try {
-              const deploymentResult = await executeDeployment(approval.deploymentId)
-
-              // 更新部署结果
-              await prisma.deployment.update({
-                where: { id: approval.deploymentId },
-                data: {
-                  status: deploymentResult.success ? 'success' : 'failed',
-                  completedAt: new Date(),
-                  duration: deploymentResult.duration,
-                  logs: deploymentResult.logs
-                }
-              })
-
-              console.log(`✅ 真实部署${deploymentResult.success ? '成功' : '失败'}:`, approval.deploymentId)
-
-              if (!deploymentResult.success) {
-                console.error('❌ 部署失败原因:', deploymentResult.error)
-              }
-
-            } catch (deploymentError) {
-              console.error('❌ 部署执行异常:', deploymentError)
-
-              // 更新为失败状态
-              await prisma.deployment.update({
-                where: { id: approval.deploymentId },
-                data: {
-                  status: 'failed',
-                  completedAt: new Date(),
-                  duration: 0,
-                  logs: '审批通过，自动开始部署...\n❌ 部署执行异常: ' +
-                    (deploymentError instanceof Error ? deploymentError.message : '未知错误')
-                }
-              })
-            }
-
-          } catch (error) {
-            console.error('❌ 自动部署启动异常:', error)
-          }
-        }, 1000) // 1秒后开始部署
+        deploymentTrigger = await triggerApprovedDeployment(approval.deploymentId, user.id, prisma)
       }
+
+      const responseMessage = action === 'reject'
+        ? 'CI/CD任务审批拒绝'
+        : pendingApprovals.length > 0
+          ? `审批通过，仍有 ${pendingApprovals.length} 人待审批`
+          : deploymentTrigger?.message || 'CI/CD任务审批通过'
 
       return NextResponse.json({
         success: true,
@@ -436,7 +371,8 @@ export async function POST(request: NextRequest) {
           type: 'cicd_approval',
           result: updatedApproval,
           deployment: updatedDeployment,
-          message: `CI/CD任务${action === 'approve' ? '审批通过' : '审批拒绝'}${newDeploymentStatus === 'approved' ? '，即将开始部署' : ''}`
+          trigger: deploymentTrigger,
+          message: responseMessage
         }
       })
 

@@ -397,7 +397,7 @@ export default function ServerGroupsPage() {
           </Tooltip>
           <Popconfirm
             title="确认删除"
-            description={`确定要删除主机组 "${record.name}" 吗？${(record.serverCount ?? 0) > 0 ? '注意：组内还有主机，删除后主机将变为未分组状态。' : ''}`}
+            description={`确定要删除主机组 "${record.name}" 吗？`}
             onConfirm={() => handleDelete(record.id)}
             okText="确定"
             cancelText="取消"
@@ -425,10 +425,10 @@ export default function ServerGroupsPage() {
             <div>
               <h1 className="text-2xl font-bold text-gray-800 dark:text-white flex items-center">
                 <TeamOutlined className="mr-2" />
-                主机组管理
+                主机分组
               </h1>
               <p className="text-gray-600 dark:text-gray-400 mt-1">
-                管理服务器分组，便于批量操作和权限管理
+                为环境和业务域维护稳定集合；AI 助手输入 @组名 可一次选择组内全部主机
               </p>
             </div>
             <PermissionButton

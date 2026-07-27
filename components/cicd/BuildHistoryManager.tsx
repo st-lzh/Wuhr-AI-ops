@@ -38,6 +38,8 @@ import {
 } from '@ant-design/icons'
 import type { ColumnsType } from 'antd/es/table'
 import dayjs from 'dayjs'
+import CICDAssistantButton from '../../app/components/cicd/CICDAssistantButton'
+import CICDAIReportButton from '../../app/components/cicd/CICDAIReportButton'
 
 const { Title, Text, Paragraph } = Typography
 const { Option } = Select
@@ -62,14 +64,14 @@ interface Build {
     id: string
     name: string
     serverUrl: string
-    project: {
-      id: string
-      name: string
-    }
   }
   pipeline?: {
     id: string
     name: string
+    project: {
+      id: string
+      name: string
+    }
   }
   user: {
     id: string
@@ -195,7 +197,7 @@ const BuildHistoryManager: React.FC = () => {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          parameters: build.parameters
+          buildParameters: build.parameters
         }),
       })
 
@@ -273,7 +275,7 @@ const BuildHistoryManager: React.FC = () => {
             <Text className="text-gray-500">{record.jenkinsJobName}</Text>
           </div>
           <div className="text-sm text-gray-400">
-            项目: {record.jenkinsConfig.project.name}
+            项目: {record.pipeline?.project.name || '未关联项目'}
           </div>
           {record.pipeline && (
             <div className="text-sm text-gray-400">
@@ -325,6 +327,27 @@ const BuildHistoryManager: React.FC = () => {
               onClick={() => handleViewLogs(record)}
             />
           </Tooltip>
+          <CICDAssistantButton
+            context={{
+              kind: 'build',
+              projectId: record.pipeline?.project.id,
+              pipelineId: record.pipeline?.id,
+              buildId: record.id
+            }}
+            intent={record.status === 'failed' ? 'diagnose' : 'status'}
+            size="small"
+            iconOnly
+          />
+          <CICDAIReportButton
+            context={{
+              kind: 'build',
+              projectId: record.pipeline?.project.id,
+              pipelineId: record.pipeline?.id,
+              buildId: record.id
+            }}
+            reportType="build_diagnosis"
+            iconOnly
+          />
           {record.buildUrl && (
             <Tooltip title="Jenkins页面">
               <Button
@@ -562,13 +585,13 @@ const BuildHistoryManager: React.FC = () => {
             </TabPane>
             
             <TabPane tab="参数配置" key="parameters">
-              <pre className="bg-gray-50 p-3 rounded text-sm">
+              <pre className="bg-gray-50 p-3 rounded text-sm dark:bg-slate-800 dark:text-slate-200">
                 {selectedBuild.parameters ? JSON.stringify(selectedBuild.parameters, null, 2) : '无参数配置'}
               </pre>
             </TabPane>
             
             <TabPane tab="构建产物" key="artifacts">
-              <pre className="bg-gray-50 p-3 rounded text-sm">
+              <pre className="bg-gray-50 p-3 rounded text-sm dark:bg-slate-800 dark:text-slate-200">
                 {selectedBuild.artifacts ? JSON.stringify(selectedBuild.artifacts, null, 2) : '无构建产物'}
               </pre>
             </TabPane>

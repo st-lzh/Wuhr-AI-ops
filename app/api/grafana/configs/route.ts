@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '../../../../lib/auth/apiHelpers-new'
 import { getPrismaClient } from '../../../../lib/config/database'
-import { encrypt, decrypt } from '../../../../lib/crypto/encryption'
+import { encrypt } from '../../../../lib/crypto/encryption'
+import { canWriteTeamAssets } from '../../../../lib/auth/teamAccess'
 
 // GET - 获取Grafana配置列表
 export async function GET(request: NextRequest) {
@@ -10,12 +11,9 @@ export async function GET(request: NextRequest) {
     if (!authResult.success) {
       return authResult.response
     }
-    const user = authResult.user
-
     const prisma = await getPrismaClient()
     
     const configs = await prisma.grafanaConfig.findMany({
-      where: { userId: user.id },
       select: {
         id: true,
         name: true,
@@ -57,6 +55,9 @@ export async function POST(request: NextRequest) {
       return authResult.response
     }
     const user = authResult.user
+    if (!canWriteTeamAssets(user, 'grafana:write')) {
+      return NextResponse.json({ success: false, error: '没有监控接入写入权限' }, { status: 403 })
+    }
 
     const body = await request.json()
     const { 
@@ -86,7 +87,6 @@ export async function POST(request: NextRequest) {
     // 检查是否已存在相同名称的配置
     const existingConfig = await prisma.grafanaConfig.findFirst({
       where: {
-        userId: user.id,
         name: name
       }
     })
@@ -102,7 +102,6 @@ export async function POST(request: NextRequest) {
     if (isActive) {
       await prisma.grafanaConfig.updateMany({
         where: { 
-          userId: user.id,
           isActive: true 
         },
         data: { isActive: false }
@@ -168,6 +167,9 @@ export async function PUT(request: NextRequest) {
       return authResult.response
     }
     const user = authResult.user
+    if (!canWriteTeamAssets(user, 'grafana:write')) {
+      return NextResponse.json({ success: false, error: '没有监控接入写入权限' }, { status: 403 })
+    }
 
     const body = await request.json()
     const { 
@@ -195,12 +197,7 @@ export async function PUT(request: NextRequest) {
     const prisma = await getPrismaClient()
 
     // 检查配置是否存在且属于当前用户
-    const existingConfig = await prisma.grafanaConfig.findFirst({
-      where: {
-        id,
-        userId: user.id
-      }
-    })
+    const existingConfig = await prisma.grafanaConfig.findUnique({ where: { id } })
 
     if (!existingConfig) {
       return NextResponse.json({
@@ -213,7 +210,6 @@ export async function PUT(request: NextRequest) {
     if (isActive) {
       await prisma.grafanaConfig.updateMany({
         where: { 
-          userId: user.id,
           isActive: true,
           id: { not: id }
         },
@@ -277,6 +273,9 @@ export async function DELETE(request: NextRequest) {
       return authResult.response
     }
     const user = authResult.user
+    if (!canWriteTeamAssets(user, 'grafana:write')) {
+      return NextResponse.json({ success: false, error: '没有监控接入写入权限' }, { status: 403 })
+    }
 
     const { searchParams } = new URL(request.url)
     const configId = searchParams.get('id')
@@ -291,12 +290,7 @@ export async function DELETE(request: NextRequest) {
     const prisma = await getPrismaClient()
 
     // 检查配置是否存在且属于当前用户
-    const existingConfig = await prisma.grafanaConfig.findFirst({
-      where: {
-        id: configId,
-        userId: user.id
-      }
-    })
+    const existingConfig = await prisma.grafanaConfig.findUnique({ where: { id: configId } })
 
     if (!existingConfig) {
       return NextResponse.json({

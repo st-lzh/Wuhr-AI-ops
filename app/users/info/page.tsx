@@ -684,7 +684,7 @@ export default function UserInfoPage() {
         <div className="flex justify-between items-center">
           <div>
             <Title level={2} className="!mb-2">
-              用户信息
+              用户列表
             </Title>
             <Text type="secondary">
               管理系统中的所有用户信息和状态

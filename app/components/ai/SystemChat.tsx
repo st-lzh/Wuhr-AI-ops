@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useRef, useEffect, useCallback } from 'react'
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import styles from './SystemChat.module.css'
 import {
   Card,
@@ -23,8 +23,7 @@ import {
   Modal,
   List,
   Empty,
-  Spin,
-  Radio
+  Spin
 } from 'antd'
 import {
   SendOutlined,
@@ -51,7 +50,9 @@ import {
   DesktopOutlined,
   ToolOutlined,
   CodeOutlined,
-  SecurityScanOutlined
+  SecurityScanOutlined,
+  RocketOutlined,
+  BookOutlined
 } from '@ant-design/icons'
 import { useAgentChat } from '../../hooks/useAgentChat'
 import { detectMode, getModeSuggestionText } from '../../../lib/utils/modeDetection'
@@ -71,6 +72,14 @@ interface ModelConfig {
   isDefault: boolean
 }
 
+interface KnowledgeReference {
+  id: string
+  title: string
+  description?: string
+  tags: string[]
+  content?: string
+}
+
 
 
 import FileUpload from './FileUpload'
@@ -78,16 +87,32 @@ import type { FileInfo } from './FileUpload'
 import EnhancedAIMessageRenderer from './EnhancedAIMessageRenderer'
 import UserMessageRenderer from './UserMessageRenderer'
 import { isMultimodalModel } from '../../utils/modelUtils'
-import MCPToolsToggle from '../config/MCPToolsToggle'
+import MCPToolsToggle, { type MCPToolSelection } from '../config/MCPToolsToggle'
 import CustomToolsToggle from '../config/CustomToolsToggle'
 import SecurityToggle from '../config/SecurityToggle'
+import DecisionLogDrawer from './DecisionLogDrawer'
+import HostMentionInput, { ChatTargetCluster, ChatTargetDevice, ChatTargetHost, HostTargetSelection } from './HostMentionInput'
+import DeliveryContextPanel, { catalogToMentionOptions } from './DeliveryContextPanel'
+import type { CICDCatalog, CICDContextSelection, CICDMentionOption } from '../../types/cicd-ai'
+import { useTheme } from '../../hooks/useGlobalState'
 
 
-const { TextArea } = Input
 const { Text, Title } = Typography
 const { Panel } = Collapse
 
+const CICD_INTENT_PROMPTS: Record<string, string> = {
+  diagnose: '/故障分析 请基于当前交付对象的真实状态、日志和时间线定位根因，并给出按优先级排序的修复建议。',
+  risk: '/风险评估 请检查当前交付对象的配置、审批、环境和最近执行记录，给出发布风险、证据与建议。',
+  status: '/状态检查 请汇总当前交付对象的真实状态、关键时间、审批进度和下一步建议。',
+  optimize: '请分析当前持续集成流水线的阶段、触发器、参数和最近构建记录，找出稳定性与效率瓶颈，并给出可落地的优化方案。'
+}
+
+const PANEL_SUMMARY_TAG_CLASS = 'm-0 min-w-0 max-w-[104px] overflow-hidden text-ellipsis whitespace-nowrap text-xs'
+const HEADER_ACTION_BUTTON_CLASS = '!flex !h-9 !w-full !min-w-0 !items-center !justify-center !rounded-lg !px-2 !text-xs !font-medium'
+
 const SystemChat: React.FC = () => {
+  const { isDark } = useTheme()
+
   // 使用增强的Agent Chat hook
   const {
     currentSession,
@@ -140,10 +165,10 @@ const SystemChat: React.FC = () => {
   const [customToolsConfig, setCustomToolsConfig] = useState<{enabled: boolean, tools: any[]}>({ enabled: false, tools: [] })
 
   // 🔧 MCP工具配置状态
-  const [mcpToolsEnabled, setMcpToolsEnabled] = useState<boolean>(false)
+  const [mcpToolsConfig, setMcpToolsConfig] = useState<{enabled: boolean, servers: any[]}>({ enabled: false, servers: [] })
 
   // 🔧 安全控制配置状态
-  const [securityEnabled, setSecurityEnabled] = useState<boolean>(false)
+  const [securityEnabled, setSecurityEnabled] = useState<boolean>(true)
 
 
   // 认证状态（现在通过httpOnly cookie自动处理）
@@ -291,8 +316,14 @@ const SystemChat: React.FC = () => {
   const [showHistory, setShowHistory] = useState(false)
   const [historySearchQuery, setHistorySearchQuery] = useState('')
   const [uploadedFiles, setUploadedFiles] = useState<FileInfo[]>([])
+  const [knowledgeDocuments, setKnowledgeDocuments] = useState<KnowledgeReference[]>([])
+  const [selectedKnowledgeIds, setSelectedKnowledgeIds] = useState<string[]>([])
   const [historyRefreshKey, setHistoryRefreshKey] = useState(0)
   const [isK8sMode, setIsK8sMode] = useState(false)
+
+  // AI 决策记录抽屉（展示当前会话相关的 lesson + 最近 outcomes）
+  // 用户体验：点头部按钮打开，关闭不影响 chat 主流
+  const [decisionLogOpen, setDecisionLogOpen] = useState(false)
 
   // 主机配置状态
   const [hostConfig, setHostConfig] = useState({
@@ -305,19 +336,268 @@ const SystemChat: React.FC = () => {
   // 服务器列表状态
   const [servers, setServers] = useState<any[]>([])
   const [serverGroups, setServerGroups] = useState<any[]>([])
+  const [networkDevices, setNetworkDevices] = useState<ChatTargetDevice[]>([])
+  const [k8sClusters, setK8sClusters] = useState<ChatTargetCluster[]>([])
+  const [networkGroups, setNetworkGroups] = useState<any[]>([])
   const [loadingServers, setLoadingServers] = useState(false)
   const [selectedGroupId, setSelectedGroupId] = useState<string>('')
+  const [targetSelections, setTargetSelections] = useState<HostTargetSelection[]>([])
+  const [cicdContext, setCicdContext] = useState<CICDContextSelection>({})
+  const [cicdCatalog, setCicdCatalog] = useState<CICDCatalog>({ projects: [], pipelines: [], deployments: [], builds: [] })
+
+  const selectedGroup = useMemo(
+    () => serverGroups.find(group => group.id === selectedGroupId),
+    [selectedGroupId, serverGroups]
+  )
+  const mentionedTargetHostIds = useMemo<string[]>(
+    () => Array.from(new Set(targetSelections.flatMap(selection => selection.hostIds))),
+    [targetSelections]
+  )
+  const mentionedNetworkDeviceIds = useMemo<string[]>(
+    () => Array.from(new Set(targetSelections.flatMap(selection => selection.deviceIds || []))),
+    [targetSelections]
+  )
+  const effectiveNetworkDevices = useMemo(() => {
+    const byId = new Map(networkDevices.map(device => [device.id, device]))
+    return mentionedNetworkDeviceIds.map(id => byId.get(id)).filter(Boolean) as ChatTargetDevice[]
+  }, [mentionedNetworkDeviceIds, networkDevices])
+  const hasNetworkTarget = effectiveNetworkDevices.length > 0
+  const groupTargetHostIds = useMemo<string[]>(
+    () => hostSelectionMode === 'group' && selectedGroup
+      ? (selectedGroup.servers || []).map((server: any) => server.id)
+      : [],
+    [hostSelectionMode, selectedGroup]
+  )
+  // 输入框中的显式 @ 选择优先于右侧面板，避免把未预期的主机混入批量任务。
+  const effectiveTargetHostIds: string[] = mentionedTargetHostIds.length > 0
+    ? mentionedTargetHostIds
+    : groupTargetHostIds
+  const effectiveTargetHosts = useMemo(() => {
+    const allHosts = [...servers, ...(selectedGroup?.servers || [])]
+    const byId = new Map(allHosts.map((server: any) => [server.id, server]))
+    return effectiveTargetHostIds.map(id => byId.get(id)).filter(Boolean)
+  }, [effectiveTargetHostIds, selectedGroup, servers])
+  const isBatchExecution = effectiveTargetHostIds.length > 1
+  const hasCICDContext = !!(cicdContext.projectId || cicdContext.pipelineId || cicdContext.deploymentId || cicdContext.buildId)
+  const deliveryContextCount = [
+    cicdContext.projectId,
+    cicdContext.pipelineId,
+    cicdContext.deploymentId,
+    cicdContext.buildId
+  ].filter(Boolean).length
+  const deliveryContextPrimaryName = cicdContext.deploymentName
+    || cicdContext.buildName
+    || cicdContext.pipelineName
+    || cicdContext.projectName
+    || '已选择'
+  const deliveryContextSummary = hasCICDContext && deliveryContextCount > 1
+    ? `${deliveryContextPrimaryName} +${deliveryContextCount - 1}`
+    : deliveryContextPrimaryName
+  const deliveryContextTitle = [
+    cicdContext.projectName,
+    cicdContext.pipelineName,
+    cicdContext.deploymentName,
+    cicdContext.buildName
+  ].filter(Boolean).join(' / ') || deliveryContextPrimaryName
+  const cicdMentionOptions = useMemo(
+    () => catalogToMentionOptions(cicdCatalog),
+    [cicdCatalog]
+  )
+  const selectedCICDMentions = useMemo(
+    () => cicdMentionOptions.filter(option =>
+      option.id === cicdContext.projectId
+      || option.id === cicdContext.pipelineId
+      || option.id === cicdContext.deploymentId
+      || option.id === cicdContext.buildId
+    ),
+    [cicdContext.buildId, cicdContext.deploymentId, cicdContext.pipelineId, cicdContext.projectId, cicdMentionOptions]
+  )
+  const approvalCoordinator = useMemo(() => {
+    // @ 单台主机时直接调用这台主机上的 Agent；只有真正批量时才允许
+    // 右侧选中的主机或默认主机充当统一协调节点。
+    if (effectiveTargetHosts.length === 1) return effectiveTargetHosts[0]
+    return servers.find(server => server.id === hostConfig.selectedServerId)
+      || servers.find(server => server.isDefault)
+      || effectiveTargetHosts[0]
+  }, [effectiveTargetHosts, hostConfig.selectedServerId, servers])
+  const hasExecutionTarget = effectiveTargetHostIds.length > 0 || !!hostConfig.selectedServerId
+  const hasConversationTarget = hasExecutionTarget || hasCICDContext || hasNetworkTarget
+
+  const handleTargetSelectionsChange = useCallback((next: HostTargetSelection[]) => {
+    const hasCluster = next.some(item => item.type === 'cluster')
+    const hasNonCluster = next.some(item => item.type !== 'cluster')
+    if (hasCluster && hasNonCluster) {
+      const selectingCluster = next[next.length - 1]?.type === 'cluster'
+      message.warning('一次对话不能混合集群和其他资源，已按最后选择的资源类型切换。')
+      setTargetSelections(next.filter(item => selectingCluster ? item.type === 'cluster' : item.type !== 'cluster'))
+      if (selectingCluster) setIsK8sMode(true)
+      return
+    }
+    const hasHost = next.some(item => item.hostIds.length > 0)
+    const hasDevice = next.some(item => (item.deviceIds?.length || 0) > 0)
+    if (hasHost && hasDevice) {
+      const newest = next[next.length - 1]
+      const selectingDevice = (newest.deviceIds?.length || 0) > 0
+      message.warning('一次对话不能混合服务器和网络设备，已按最后选择的资源类型切换。')
+      setTargetSelections(next.filter(item => selectingDevice ? (item.deviceIds?.length || 0) > 0 : item.hostIds.length > 0))
+      return
+    }
+    setTargetSelections(next)
+    if (hasCluster) setIsK8sMode(true)
+  }, [])
+
+  const handleCICDMentionSelect = useCallback((selection: CICDMentionOption) => {
+    if (selection.type === 'project') {
+      const project = cicdCatalog.projects.find(item => item.id === selection.id)
+      setCicdContext({
+        kind: 'project',
+        projectId: selection.id,
+        projectName: project?.name || selection.label
+      })
+      return
+    }
+
+    if (selection.type === 'deployment') {
+      const deployment = cicdCatalog.deployments.find(item => item.id === selection.id)
+      const project = cicdCatalog.projects.find(item => item.id === deployment?.projectId)
+      setCicdContext({
+        kind: 'deployment',
+        projectId: deployment?.projectId || undefined,
+        projectName: project?.name || deployment?.projectName || undefined,
+        deploymentId: selection.id,
+        deploymentName: deployment?.name || selection.label
+      })
+      return
+    }
+
+    if (selection.type === 'pipeline') {
+      const pipeline = cicdCatalog.pipelines.find(item => item.id === selection.id)
+      const project = cicdCatalog.projects.find(item => item.id === pipeline?.projectId)
+      setCicdContext({
+        kind: 'pipeline',
+        projectId: pipeline?.projectId || undefined,
+        projectName: project?.name || pipeline?.projectName || undefined,
+        pipelineId: selection.id,
+        pipelineName: pipeline?.name || selection.label
+      })
+      return
+    }
+
+    const build = cicdCatalog.builds.find(item => item.id === selection.id)
+    const project = cicdCatalog.projects.find(item => item.id === build?.projectId)
+    setCicdContext({
+      kind: 'build',
+      projectId: build?.projectId || undefined,
+      projectName: project?.name || build?.projectName || undefined,
+      pipelineId: build?.pipelineId || undefined,
+      pipelineName: build?.pipelineName || undefined,
+      buildId: selection.id,
+      buildName: build?.name || selection.label
+    })
+  }, [cicdCatalog])
+
+  const handleCICDMentionRemove = useCallback((selection: CICDMentionOption) => {
+    setCicdContext(current => {
+      if (selection.type === 'project') return {}
+      if (selection.type === 'pipeline') {
+        return current.projectId ? {
+          kind: 'project',
+          projectId: current.projectId,
+          projectName: current.projectName
+        } : {}
+      }
+      if (selection.type === 'deployment') {
+        return current.pipelineId ? {
+          kind: 'pipeline',
+          projectId: current.projectId,
+          projectName: current.projectName,
+          pipelineId: current.pipelineId,
+          pipelineName: current.pipelineName
+        } : current.projectId ? {
+          kind: 'project',
+          projectId: current.projectId,
+          projectName: current.projectName
+        } : {}
+      }
+      return current.pipelineId ? {
+        kind: 'pipeline',
+        projectId: current.projectId,
+        projectName: current.projectName,
+        pipelineId: current.pipelineId,
+        pipelineName: current.pipelineName
+      } : current.projectId ? {
+        kind: 'project',
+        projectId: current.projectId,
+        projectName: current.projectName
+      } : {}
+    })
+  }, [])
+
+  const handleCICDOperationClick = useCallback((operation: string) => {
+    setInputValue(current => current.trim()
+      ? `${operation} ${current.trim()}`
+      : `${operation} `
+    )
+    requestAnimationFrame(() => textAreaRef.current?.focus())
+  }, [])
 
   // kubelet-wuhrai检查状态
   const [kubeletCheckLoading, setKubeletCheckLoading] = useState(false)
 
   const textAreaRef = useRef<any>(null)
+  const cicdDeepLinkAppliedRef = useRef(false)
+
+  const handleCICDCatalogChange = useCallback((catalog: CICDCatalog) => {
+    setCicdCatalog(catalog)
+    setCicdContext(current => {
+      const project = catalog.projects.find(item => item.id === current.projectId)
+      const pipeline = catalog.pipelines.find(item => item.id === current.pipelineId)
+      const deployment = catalog.deployments.find(item => item.id === current.deploymentId)
+      const build = catalog.builds.find(item => item.id === current.buildId)
+      return {
+        ...current,
+        projectName: project?.name || current.projectName,
+        pipelineName: pipeline?.name || build?.pipelineName || current.pipelineName,
+        deploymentName: deployment?.name || current.deploymentName,
+        buildName: build?.name || current.buildName
+      }
+    })
+  }, [])
+
+  // CI/CD 页面通过只包含数据库 ID 的深链接进入助手；名称和快照仍由服务端目录与解析器补齐。
+  useEffect(() => {
+    if (cicdDeepLinkAppliedRef.current || typeof window === 'undefined') return
+    cicdDeepLinkAppliedRef.current = true
+
+    // 兼容旧查询参数链接；新链接使用 hash，避免认证重定向时丢失上下文。
+    const queryParams = new URLSearchParams(window.location.search)
+    const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ''))
+    const hasQueryContext = ['projectId', 'pipelineId', 'deploymentId', 'buildId']
+      .some(key => queryParams.has(key))
+    const params = hasQueryContext ? queryParams : hashParams
+    const projectId = params.get('projectId') || undefined
+    const pipelineId = params.get('pipelineId') || undefined
+    const deploymentId = params.get('deploymentId') || undefined
+    const buildId = params.get('buildId') || undefined
+    if (!projectId && !pipelineId && !deploymentId && !buildId) return
+
+    setCicdContext({
+      kind: buildId ? 'build' : deploymentId ? 'deployment' : pipelineId ? 'pipeline' : 'project',
+      projectId,
+      pipelineId,
+      deploymentId,
+      buildId
+    })
+    const intent = params.get('intent') || 'status'
+    setInputValue(CICD_INTENT_PROMPTS[intent] || CICD_INTENT_PROMPTS.status)
+    requestAnimationFrame(() => textAreaRef.current?.focus())
+  }, [])
 
   // 获取服务器列表
   const fetchServers = async () => {
     setLoadingServers(true)
     try {
-      const response = await fetch('/api/admin/servers', {
+      const response = await fetch('/api/admin/servers?limit=100', {
         credentials: 'include', // 包含httpOnly cookie
         headers: {
           'Content-Type': 'application/json',
@@ -332,8 +612,12 @@ const SystemChat: React.FC = () => {
           const formattedServers = serverList.map((server: any) => ({
             id: server.id,
             name: server.name,
+            hostname: server.hostname,
             ip: server.ip || server.hostname, // 使用ip字段，如果没有则使用hostname
             status: server.status || 'offline', // 直接使用数据库中的状态
+            tags: Array.isArray(server.tags) ? server.tags : [],
+            groupId: server.groupId,
+            groupName: server.group?.name,
             port: server.port || 22,
             username: server.username,
             datacenter: server.location, // 使用location字段作为datacenter
@@ -376,6 +660,68 @@ const SystemChat: React.FC = () => {
     } catch (error) {
       console.error('获取主机组列表失败:', error)
     }
+  }
+
+  // 获取网络设备和设备组。凭据字段由后端脱敏，浏览器只接收 @ 选择所需元数据。
+  const fetchNetworkTargets = async () => {
+    try {
+      const [devicesResponse, groupsResponse] = await Promise.all([
+        fetch('/api/network/devices', { credentials: 'include', cache: 'no-store' }),
+        fetch('/api/network/groups', { credentials: 'include', cache: 'no-store' })
+      ])
+      if (!devicesResponse.ok || !groupsResponse.ok) return
+      const [devicesPayload, groupsPayload] = await Promise.all([devicesResponse.json(), groupsResponse.json()])
+      if (!devicesPayload.success || !groupsPayload.success) return
+      const groups = groupsPayload.data || []
+      setNetworkGroups(groups)
+      setNetworkDevices((devicesPayload.data || []).map((device: any) => ({
+        id: device.id,
+        name: device.name,
+        managementIp: device.managementIp,
+        status: device.status || 'unknown',
+        type: device.type,
+        vendor: device.vendor,
+        platform: device.platform,
+        tags: Array.isArray(device.tags) ? device.tags : [],
+        groupId: device.groupId,
+        groupName: groups.find((group: any) => group.id === device.groupId)?.name,
+        readOnly: device.readOnly === true
+      })))
+    } catch (error) {
+      console.warn('获取网络设备目标失败:', error)
+    }
+  }
+
+  const fetchK8sClusters = async () => {
+    try {
+      const response = await fetch('/api/k8s/clusters', { credentials: 'include', cache: 'no-store' })
+      const payload = await response.json()
+      if (response.ok && payload.success) setK8sClusters(payload.data || [])
+    } catch (error) {
+      console.warn('获取 Kubernetes 集群目标失败:', error)
+    }
+  }
+
+  const fetchKnowledgeDocuments = async () => {
+    try {
+      const response = await fetch('/api/knowledge/documents', { credentials: 'include', cache: 'no-store' })
+      const payload = await response.json()
+      if (response.ok && payload.success) setKnowledgeDocuments(payload.data || [])
+    } catch (error) {
+      console.warn('获取知识文档失败:', error)
+    }
+  }
+
+  const handleKnowledgeSelection = async (ids: string[]) => {
+    setSelectedKnowledgeIds(ids)
+    const missing = ids.filter(id => !knowledgeDocuments.find(item => item.id === id)?.content)
+    if (missing.length === 0) return
+    const loaded = await Promise.all(missing.map(async id => {
+      const response = await fetch(`/api/knowledge/documents/${id}`, { credentials: 'include', cache: 'no-store' })
+      const payload = await response.json()
+      return response.ok && payload.success ? payload.data as KnowledgeReference : null
+    }))
+    setKnowledgeDocuments(current => current.map(item => loaded.find(detail => detail?.id === item.id) || item))
   }
 
   // 快捷键处理
@@ -427,6 +773,10 @@ const SystemChat: React.FC = () => {
       // 🔥 清理服务器和模型相关状态
       setServers([])
       setServerGroups([])
+      setNetworkDevices([])
+      setNetworkGroups([])
+      setKnowledgeDocuments([])
+      setSelectedKnowledgeIds([])
       setAvailableModels([])
       setSelectedModelId('')
       setCurrentModelConfig(null)
@@ -720,6 +1070,12 @@ const SystemChat: React.FC = () => {
       console.log('🔄 正在获取主机组列表...')
       await fetchServerGroups()
     }
+    if (networkDevices.length === 0) {
+      await fetchNetworkTargets()
+    }
+    if (k8sClusters.length === 0) {
+      await fetchK8sClusters()
+    }
   }, []) // 🔥 修复：移除依赖数组中的状态，避免无限循环
   
   // 延迟加载模型数据 - 修复无限循环问题
@@ -740,7 +1096,8 @@ const SystemChat: React.FC = () => {
         // 先确保基础数据已加载，再加载默认配置
         await Promise.all([
           loadHostData(),
-          loadModelData()
+          loadModelData(),
+          fetchKnowledgeDocuments()
         ])
         
         // 然后加载默认配置
@@ -755,18 +1112,9 @@ const SystemChat: React.FC = () => {
 
   // 监听主机配置变化，更新聊天配置 - 只使用远程执行
   useEffect(() => {
-    let hostId: string | undefined = undefined
-
-    // 优先使用主机组，其次使用单个主机
-    if (selectedGroupId) {
-      hostId = selectedGroupId
-    } else if (hostConfig.selectedServerId) {
-      hostId = hostConfig.selectedServerId
-    }
-
-    // 更新聊天配置
-    updateConfig({ hostId })
-  }, [selectedGroupId, hostConfig.selectedServerId, updateConfig])
+    // hostId 始终是运行后端 Agent 的协调节点，主机组 ID 不能冒充主机 ID。
+    updateConfig({ hostId: approvalCoordinator?.id })
+  }, [approvalCoordinator?.id, updateConfig])
 
 
 
@@ -911,9 +1259,13 @@ const SystemChat: React.FC = () => {
       return
     }
 
-    // 检查是否已选择主机（单个主机或主机组）
-    if (!hostConfig.selectedServerId && !selectedGroupId) {
-      message.error('请先选择一个远程主机或主机组')
+    // 支持右侧单机选择，以及输入框 @ /主机组选择的一台或多台目标。
+    if (!hasConversationTarget) {
+      message.error('请使用 @ 选择主机或网络设备，或使用 # 选择交付对象')
+      return
+    }
+    if (hasNetworkTarget && !approvalCoordinator) {
+      message.error('网络设备对话仍需要一台默认主机作为 AI 协调节点，请先在主机管理中设置默认主机')
       return
     }
 
@@ -921,7 +1273,9 @@ const SystemChat: React.FC = () => {
 
     // 智能模式检测
     const currentMode = isK8sMode ? 'k8s' : 'linux'
-    const modeDetectionResult = detectMode(inputValue, currentMode)
+    const modeDetectionResult = hasNetworkTarget
+      ? { detectedMode: 'linux', suggestedMode: 'linux', confidence: 0, reason: '网络设备使用独立执行工具' } as any
+      : detectMode(inputValue, currentMode)
     
     // 如果检测到模式不匹配且置信度足够高，询问用户是否切换
     const suggestionText = getModeSuggestionText(modeDetectionResult, currentMode)
@@ -987,6 +1341,16 @@ const SystemChat: React.FC = () => {
       }
     }
 
+    const selectedKnowledge = selectedKnowledgeIds
+      .map(id => knowledgeDocuments.find(item => item.id === id))
+      .filter((item): item is KnowledgeReference => Boolean(item?.content))
+    if (selectedKnowledge.length > 0) {
+      const knowledgeContext = selectedKnowledge.map(item =>
+        `[知识库来源：${item.title}]\n${(item.content || '').slice(0, 30000)}`
+      ).join('\n\n')
+      finalMessage = `${finalMessage}\n\n以下是团队知识库的已选参考资料。请区分资料事实与实时检查结果，并在结论中标注来源文档：\n${knowledgeContext}`
+    }
+
     // 构建请求配置,使用数据库中的模型配置
     console.log('🔍 [SystemChat] 当前模型配置:', {
       hasConfig: !!currentModelConfig,
@@ -1002,22 +1366,54 @@ const SystemChat: React.FC = () => {
       apiKey: currentModelConfig.apiKey,
       baseUrl: currentModelConfig.baseUrl,
       provider: currentModelConfig.provider,
-      hostId: selectedGroupId || hostConfig.selectedServerId, // 使用主机组或单个主机
-      isK8sMode: isK8sMode, // 添加K8s模式标识
+      hostId: approvalCoordinator?.id,
+      targetHostIds: effectiveTargetHostIds,
+      targetHosts: effectiveTargetHosts.map((host: any) => ({
+        id: host.id,
+        name: host.name,
+        ip: host.ip
+      })),
+      batchLabel: targetSelections.length > 0
+        ? targetSelections.map(selection => `@${selection.label}`).join('、')
+        : selectedGroup?.name,
+      networkDeviceIds: mentionedNetworkDeviceIds,
+      networkTargets: effectiveNetworkDevices.map(device => ({
+        id: device.id,
+        name: device.name,
+        managementIp: device.managementIp,
+        type: device.type,
+        vendor: device.vendor,
+        platform: device.platform,
+        readOnly: device.readOnly
+      })),
+      networkBatchLabel: hasNetworkTarget
+        ? targetSelections.filter(item => (item.deviceIds?.length || 0) > 0).map(item => `@${item.label}`).join('、')
+        : undefined,
+      cicdContext,
+      isK8sMode: hasNetworkTarget ? false : isK8sMode,
       // 🔧 添加自定义工具
-      customTools: customToolsConfig.enabled ? customToolsConfig.tools : []
+      customTools: customToolsConfig.enabled ? customToolsConfig.tools : [],
+      mcpToolsEnabled: mcpToolsConfig.enabled,
+      mcpServers: mcpToolsConfig.enabled ? mcpToolsConfig.servers : []
     }
 
     console.log('🚀 [SystemChat] 发送请求配置:', {
       model: requestConfig.model,
       provider: requestConfig.provider,
       hasApiKey: !!requestConfig.apiKey,
-      apiKeyPreview: requestConfig.apiKey ? requestConfig.apiKey.substring(0, 10) + '...' : '(无)',
+      apiKeyPreview: requestConfig.apiKey ? '[REDACTED]' : '(无)',
       baseUrl: requestConfig.baseUrl,
       hostId: requestConfig.hostId,
+      targetCount: requestConfig.targetHostIds.length,
+      networkTargetCount: requestConfig.networkDeviceIds.length,
+      cicdContext: requestConfig.cicdContext,
       isK8sMode: requestConfig.isK8sMode
     })
 
+    const selectedCluster = targetSelections.find(selection => selection.type === 'cluster')
+    if (selectedCluster) {
+      finalMessage = `[目标 Kubernetes 集群：${selectedCluster.label}；所有 kubectl/helm 命令必须显式使用 context=${selectedCluster.clusterContext}，默认 namespace=${selectedCluster.defaultNamespace}]\n\n${finalMessage}`
+    }
     await sendMessage(finalMessage, requestConfig)
 
     // 删除：不需要显示"消息已发送"提示
@@ -1119,6 +1515,22 @@ const SystemChat: React.FC = () => {
     const commandDescription = getCommandDescription(cmd)
     setInputValue(commandDescription)
     textAreaRef.current?.focus()
+  }
+
+  // MCP 菜单只负责明确用户意图，不自动发送或执行工具。
+  const handleMCPToolClick = (tool: MCPToolSelection) => {
+    const instruction = `请使用 MCP 工具「${tool.serverName}/${tool.toolName}」`
+    setInputValue(currentValue => currentValue.trim()
+      ? `${currentValue.trimEnd()}\n${instruction}：`
+      : `${instruction}：`
+    )
+    requestAnimationFrame(() => {
+      textAreaRef.current?.focus()
+      const textarea = textAreaRef.current?.resizableTextArea?.textArea
+      const cursor = textarea?.value?.length || 0
+      textarea?.setSelectionRange(cursor, cursor)
+    })
+    message.success(`已加载 MCP 工具：${tool.toolName}`)
   }
 
   // 文件上传处理
@@ -1451,20 +1863,50 @@ const SystemChat: React.FC = () => {
         const mcpResponse = await fetch('/api/config/mcp-tools')
         const mcpData = await mcpResponse.json()
         if (mcpData.success) {
-          setMcpToolsEnabled(mcpData.data?.enabled || false)
+          setMcpToolsConfig({
+            enabled: mcpData.data?.enabled || false,
+            servers: Array.isArray(mcpData.data?.servers) ? mcpData.data.servers : []
+          })
         }
 
         // 加载安全控制配置
         const securityResponse = await fetch('/api/config/security')
         const securityData = await securityResponse.json()
         if (securityData.success) {
-          setSecurityEnabled(securityData.data?.enabled || false)
+          setSecurityEnabled(securityData.data?.enabled ?? true)
         }
       } catch (error) {
         console.error('加载配置失败:', error)
       }
     }
+
+    const handleSecurityConfigUpdated = (event: Event) => {
+      setSecurityEnabled((event as CustomEvent).detail?.enabled ?? true)
+    }
+    const handleMCPConfigUpdated = (event: Event) => {
+      const nextConfig = (event as CustomEvent).detail
+      setMcpToolsConfig({
+        enabled: nextConfig?.enabled ?? false,
+        servers: Array.isArray(nextConfig?.servers) ? nextConfig.servers : []
+      })
+    }
+    const handleCustomToolsConfigUpdated = (event: Event) => {
+      const nextConfig = (event as CustomEvent).detail
+      setCustomToolsConfig({
+        enabled: nextConfig?.enabled ?? false,
+        tools: Array.isArray(nextConfig?.tools) ? nextConfig.tools : []
+      })
+    }
+
     loadConfigs()
+    window.addEventListener('security-config-updated', handleSecurityConfigUpdated)
+    window.addEventListener('mcp-config-updated', handleMCPConfigUpdated)
+    window.addEventListener('custom-tools-config-updated', handleCustomToolsConfigUpdated)
+    return () => {
+      window.removeEventListener('security-config-updated', handleSecurityConfigUpdated)
+      window.removeEventListener('mcp-config-updated', handleMCPConfigUpdated)
+      window.removeEventListener('custom-tools-config-updated', handleCustomToolsConfigUpdated)
+    }
   }, [])
 
   // 🔧 根据toolName（id）查找displayName的辅助函数
@@ -1561,22 +2003,9 @@ const SystemChat: React.FC = () => {
                         className="agent-stream-display"
                         autoCollapse={!(isStreaming && index === messages.length - 1)} // 🔥 流式中不折叠，完成后默认折叠
                         customToolName={msgHasCustomTool ? msgCustomToolName || undefined : undefined}
-                        hostInfo={(() => {
-                          // 🔥 获取当前选择的服务器IP和kubelet-wuhrai端口(2081)
-                          if (hostSelectionMode === 'single' && hostConfig.selectedServerId) {
-                            const selectedServer = servers.find(s => s.id === hostConfig.selectedServerId)
-                            if (selectedServer) {
-                              return { ip: selectedServer.ip, port: 2081 }
-                            }
-                          } else if (hostSelectionMode === 'group' && selectedGroupId) {
-                            const selectedGroup = serverGroups.find(g => g.id === selectedGroupId)
-                            if (selectedGroup && selectedGroup.servers && selectedGroup.servers.length > 0) {
-                              const firstServer = selectedGroup.servers[0]
-                              return { ip: firstServer.ip, port: 2081 }
-                            }
-                          }
-                          return undefined
-                        })()}
+                        hostInfo={approvalCoordinator
+                          ? { ip: approvalCoordinator.ip, port: 2081 }
+                          : undefined}
                       />
                     </div>
                   ) : null
@@ -1594,6 +2023,7 @@ const SystemChat: React.FC = () => {
                       content={msg.content}
                       messageId={msg.id}
                       isError={isError}
+                      isRejected={msg.status === 'rejected' || msg.metadata?.approvalRejected === true}
                       isStreaming={false}
                       isAgentMode={showAgentMode && isAgentMode}
                       agentSession={getMessageAgentSession(msg.id)}
@@ -1622,21 +2052,21 @@ const SystemChat: React.FC = () => {
           <Col xs={24} lg={18} className="h-full flex flex-col">
           <Card
             title={
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-3">
-                  <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-green-500 rounded-lg flex items-center justify-center">
+              <div className="flex min-w-0 flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+                <div className="flex min-w-0 items-center gap-3">
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500 to-emerald-500 shadow-sm shadow-blue-500/20">
                     <RobotOutlined className="text-white" />
                   </div>
-                  <div>
-                    <Title level={4} className="!text-white !mb-0">
+                  <div className="min-w-0">
+                    <Title level={4} className={`!mb-0 ${isDark ? '!text-white' : '!text-slate-900'}`}>
                       Wuhr AI
                     </Title>
-                    <div className="flex items-center space-x-2">
-                      <Text className="text-gray-400 text-sm">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <Text className={`truncate text-sm ${isDark ? 'text-gray-400' : 'text-slate-500'}`}>
                         {currentModelConfig?.displayName || '未选择模型'} · K8s + Linux
                       </Text>
                       <div className={`
-                        px-2 py-0.5 rounded-full text-xs font-semibold
+                        shrink-0 rounded-full border px-2 py-0.5 text-xs font-semibold
                         ${isK8sMode 
                           ? 'bg-blue-500/20 text-blue-400 border border-blue-500/40' 
                           : 'bg-green-500/20 text-green-400 border border-green-500/40'
@@ -1647,101 +2077,144 @@ const SystemChat: React.FC = () => {
                       </div>
                     </div>
                   </div>
+                  <div className={`flex h-8 shrink-0 items-center rounded-lg border px-3 ${
+                    isDark ? 'border-white/10 bg-white/[0.04]' : 'border-slate-200 bg-slate-50'
+                  }`}>
+                    <Badge
+                      status={isLoading ? 'processing' : isConfigValid() ? 'success' : 'error'}
+                      text={
+                        <Text className={isDark ? 'text-gray-300' : 'text-slate-600'}>
+                          {isLoading ? '处理中...' : isConfigValid() ? '就绪' : '未配置'}
+                        </Text>
+                      }
+                    />
+                  </div>
                 </div>
-                
-                <Space>
-                  <Badge
-                    status={isLoading ? 'processing' : isConfigValid() ? 'success' : 'error'}
-                    text={
-                      <Text className="text-gray-300">
-                        {isLoading ? '处理中...' : isConfigValid() ? '就绪' : '未配置'}
-                      </Text>
-                    }
-                  />
-                  
-                  <Button
-                    icon={<PlusOutlined />}
-                    onClick={async () => {
-                      console.log('🔄 [SystemChat] 用户点击新会话按钮，清理组件状态')
-                      
-                      // 🔥 清理SystemChat组件的本地状态
-                      setInputValue('')
-                      setUploadedFiles([])
-                      setShowFileUpload(false)
-                      setAgentStreamData([]) // 清理Agent流式数据
-                      setShowAgentStream(false)
-                      
-                      // 🔥 清理sessionStorage中的连接测试标记
-                      try {
-                        const keys = Object.keys(sessionStorage)
-                        keys.forEach(key => {
-                          if (key.startsWith('connection_test_') || key.startsWith('agent_') || key.startsWith('chat_')) {
-                            sessionStorage.removeItem(key)
-                          }
-                        })
-                      } catch (error) {
-                        console.warn('清理sessionStorage失败:', error)
-                      }
-                      
-                      // 🔥 调用hook的startNewSession（已经增强了状态清理）
-                      await startNewSession()
-                      
-                      console.log('✅ [SystemChat] 新会话创建完成，所有状态已清理')
-                    }}
-                    disabled={isLoading}
-                  >
-                    新会话
-                  </Button>
-                  
-                  <Button
-                    icon={<HistoryOutlined />}
-                    onClick={async () => {
-                      // 只有在点击历史按钮时才加载历史会话
-                      console.log('📚 [SystemChat] 用户主动打开历史面板，开始加载历史会话')
-                      try {
-                        const allSessions = await getSessions()
-                        setHistorySessions(Array.isArray(allSessions) ? allSessions : [])
-                        setShowHistory(true)
-                      } catch (error) {
-                        console.error('加载历史会话失败:', error)
-                        setHistorySessions([])
-                        message.error('加载历史会话失败')
-                      }
-                    }}
-                  >
-                    历史
-                  </Button>
-                  
-                  <Dropdown
-                    menu={{ items: exportMenuItems }}
-                    disabled={!currentSession || messages.length === 0}
-                  >
-                    <Button icon={<DownloadOutlined />}>
-                      导出
+
+                <div className={`grid w-full grid-cols-3 gap-1.5 rounded-xl border p-1.5 sm:grid-cols-5 xl:w-auto ${
+                  isDark ? 'border-white/10 bg-black/20' : 'border-slate-200 bg-slate-50/90'
+                }`}>
+
+                  {/* AI 决策记录抽屉：展示本次会话相关的 lesson + 最近 skill outcomes */}
+                  <Tooltip title="查看本会话相关的 AI 资产（lessons / outcomes）">
+                    <Button
+                      size="small"
+                      icon={<BulbOutlined className="text-amber-500" />}
+                      onClick={() => setDecisionLogOpen(true)}
+                      className={HEADER_ACTION_BUTTON_CLASS}
+                    >
+                      决策记录
                     </Button>
-                  </Dropdown>
-                  
-                  <Button
-                    icon={<ClearOutlined />}
-                    onClick={() => {
-                      console.log('🧹 [SystemChat] 用户点击清除消息，清理相关状态')
-                      
-                      // 🔥 清理消息和相关状态
-                      clearMessages()
-                      setAgentStreamData([]) // 清理Agent流式数据
-                      setShowAgentStream(false)
-                      
-                      console.log('✅ [SystemChat] 消息清除完成')
-                    }}
-                    disabled={messages.length === 0}
-                  >
-                    清除
-                  </Button>
-                </Space>
+                  </Tooltip>
+
+                  <Tooltip title="创建一个全新的 AI 会话">
+                    <Button
+                      type="primary"
+                      size="small"
+                      icon={<PlusOutlined />}
+                      onClick={async () => {
+                        console.log('🔄 [SystemChat] 用户点击新会话按钮，清理组件状态')
+
+                        // 🔥 清理SystemChat组件的本地状态
+                        setInputValue('')
+                        setUploadedFiles([])
+                        setShowFileUpload(false)
+                        setAgentStreamData([]) // 清理Agent流式数据
+                        setShowAgentStream(false)
+
+                        // 🔥 清理sessionStorage中的连接测试标记
+                        try {
+                          const keys = Object.keys(sessionStorage)
+                          keys.forEach(key => {
+                            if (key.startsWith('connection_test_') || key.startsWith('agent_') || key.startsWith('chat_')) {
+                              sessionStorage.removeItem(key)
+                            }
+                          })
+                        } catch (error) {
+                          console.warn('清理sessionStorage失败:', error)
+                        }
+
+                        // 🔥 调用hook的startNewSession（已经增强了状态清理）
+                        await startNewSession()
+
+                        console.log('✅ [SystemChat] 新会话创建完成，所有状态已清理')
+                      }}
+                      disabled={isLoading}
+                      className={HEADER_ACTION_BUTTON_CLASS}
+                    >
+                      新建会话
+                    </Button>
+                  </Tooltip>
+
+                  <Tooltip title="查看和恢复历史会话">
+                    <Button
+                      size="small"
+                      icon={<HistoryOutlined />}
+                      onClick={async () => {
+                        // 只有在点击历史按钮时才加载历史会话
+                        console.log('📚 [SystemChat] 用户主动打开历史面板，开始加载历史会话')
+                        try {
+                          const allSessions = await getSessions()
+                          setHistorySessions(Array.isArray(allSessions) ? allSessions : [])
+                          setShowHistory(true)
+                        } catch (error) {
+                          console.error('加载历史会话失败:', error)
+                          setHistorySessions([])
+                          message.error('加载历史会话失败')
+                        }
+                      }}
+                      className={HEADER_ACTION_BUTTON_CLASS}
+                    >
+                      会话历史
+                    </Button>
+                  </Tooltip>
+
+                  <Tooltip title={messages.length === 0 ? '当前没有可导出的消息' : '导出当前会话'}>
+                    <Dropdown
+                      menu={{ items: exportMenuItems }}
+                      disabled={!currentSession || messages.length === 0}
+                    >
+                      <Button
+                        size="small"
+                        icon={<DownloadOutlined />}
+                        disabled={!currentSession || messages.length === 0}
+                        className={HEADER_ACTION_BUTTON_CLASS}
+                      >
+                        导出会话
+                      </Button>
+                    </Dropdown>
+                  </Tooltip>
+
+                  <Tooltip title={messages.length === 0 ? '当前没有可清空的消息' : '清空当前会话消息'}>
+                    <Button
+                      danger
+                      size="small"
+                      icon={<ClearOutlined />}
+                      onClick={() => {
+                        console.log('🧹 [SystemChat] 用户点击清除消息，清理相关状态')
+
+                        // 🔥 清理消息和相关状态
+                        clearMessages()
+                        setAgentStreamData([]) // 清理Agent流式数据
+                        setShowAgentStream(false)
+
+                        console.log('✅ [SystemChat] 消息清除完成')
+                      }}
+                      disabled={messages.length === 0}
+                      className={HEADER_ACTION_BUTTON_CLASS}
+                    >
+                      清空消息
+                    </Button>
+                  </Tooltip>
+                </div>
               </div>
             }
             className="glass-card flex-1 flex flex-col"
-            styles={{ body: { padding: 0, height: 'calc(100vh - 170px)', display: 'flex', flexDirection: 'column' } }}
+            styles={{
+              header: { padding: '12px 16px' },
+              title: { width: '100%', overflow: 'visible', whiteSpace: 'normal' },
+              body: { padding: 0, minHeight: 0, flex: 1, display: 'flex', flexDirection: 'column' }
+            }}
           >
             {/* 消息列表 */}
             <div className={`flex-1 overflow-y-auto p-4 space-y-4 min-h-0 ${styles.messageContainer}`}>
@@ -1800,6 +2273,27 @@ const SystemChat: React.FC = () => {
 
             {/* 输入区域 */}
             <div className="border-t border-gray-700/30 pt-3 px-4 pb-4">
+              {knowledgeDocuments.length > 0 && (
+                <div className="mb-3 flex min-w-0 items-center gap-2">
+                  <BookOutlined className="shrink-0 text-blue-400" />
+                  <Select
+                    mode="multiple"
+                    value={selectedKnowledgeIds}
+                    onChange={handleKnowledgeSelection}
+                    maxCount={3}
+                    maxTagCount="responsive"
+                    allowClear
+                    className="min-w-0 flex-1"
+                    placeholder="引用团队知识（最多 3 篇）"
+                    optionFilterProp="label"
+                    options={knowledgeDocuments.map(item => ({
+                      value: item.id,
+                      label: item.title,
+                      title: item.description || item.title
+                    }))}
+                  />
+                </div>
+              )}
               {/* 文件上传区域 */}
               {showFileUpload && (
                 <div className="mb-4">
@@ -1807,7 +2301,7 @@ const SystemChat: React.FC = () => {
                     onFileAnalyzed={handleFileAnalyzed}
                     onFileContentChange={handleFileContentChange}
                     maxFiles={5}
-                    maxFileSize={10}
+                    maxFileSize={0.2}
                   />
                 </div>
               )}
@@ -1849,19 +2343,20 @@ const SystemChat: React.FC = () => {
               )}
 
               <div className="flex space-x-3">
-                <TextArea
-                  ref={textAreaRef}
+                <HostMentionInput
+                  inputRef={textAreaRef}
                   value={inputValue}
-                  onChange={(e) => setInputValue(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                      e.preventDefault()
-                      handleSendMessage()
-                    }
-                  }}
-                  placeholder="输入您的问题或命令... (支持 /help, @file, !command)"
-                  autoSize={{ minRows: 1, maxRows: 4 }}
-                  className="flex-1"
+                  onChange={setInputValue}
+                  servers={servers as ChatTargetHost[]}
+                  devices={networkDevices}
+                  clusters={k8sClusters}
+                  selections={targetSelections}
+                  onSelectionsChange={handleTargetSelectionsChange}
+                  deliveryOptions={cicdMentionOptions}
+                  deliverySelections={selectedCICDMentions}
+                  onDeliverySelect={handleCICDMentionSelect}
+                  onDeliveryRemove={handleCICDMentionRemove}
+                  onSubmit={handleSendMessage}
                   disabled={isLoading}
                 />
 
@@ -1901,13 +2396,11 @@ const SystemChat: React.FC = () => {
                   </Tooltip>
 
                   <div className="flex space-x-2">
-                    <Tooltip title="文件上传功能暂时不可用">
+                    <Tooltip title="上传文本、日志或 YAML 作为本次会话上下文（单文件 200KB）">
                       <Button
                         icon={<CloudUploadOutlined />}
                         onClick={() => setShowFileUpload(!showFileUpload)}
                         type={showFileUpload ? 'primary' : 'default'}
-                        disabled={true}
-                        style={{ opacity: 0.5 }}
                       />
                     </Tooltip>
 
@@ -1934,11 +2427,11 @@ const SystemChat: React.FC = () => {
                         type="text"
                         icon={<SendOutlined />}
                         onClick={handleSendMessage}
-                        disabled={!inputValue.trim() || !currentModelConfig || (!hostConfig.selectedServerId && !selectedGroupId)}
+                        disabled={!inputValue.trim() || !currentModelConfig || !hasConversationTarget}
                         loading={isLoading}
                         className="hover:bg-blue-500/10"
                         style={{
-                          color: (!inputValue.trim() || !currentModelConfig || (!hostConfig.selectedServerId && !selectedGroupId)) ? undefined : '#1890ff',
+                          color: (!inputValue.trim() || !currentModelConfig || !hasConversationTarget) ? undefined : '#1890ff',
                           border: '1px solid #d9d9d9'
                         }}
                       >
@@ -1958,12 +2451,21 @@ const SystemChat: React.FC = () => {
                   <Tag color={config.enableStreaming ? 'blue' : 'gray'} className="text-xs">
                     {config.enableStreaming ? '流式传输' : '标准模式'}
                   </Tag>
-                  <Tag color="purple" className="text-xs">
-                    远程执行
+                  <Tag color={hasExecutionTarget ? 'purple' : 'default'} className="text-xs">
+                    {hasNetworkTarget
+                      ? `网络设备 ${effectiveNetworkDevices.length}台`
+                      : isBatchExecution
+                        ? `批量执行 ${effectiveTargetHostIds.length}台`
+                        : hasExecutionTarget ? '单机执行' : '未选目标'}
                   </Tag>
+                  {hasCICDContext && (
+                    <Tag color="geekblue" className="text-xs">
+                      交付对象
+                    </Tag>
+                  )}
 
                   {/* 高级功能配置标签 - 仅在启用时显示 */}
-                  {mcpToolsEnabled && (
+                  {mcpToolsConfig.enabled && (
                     <Tag color="purple" className="text-xs">
                       MCP工具
                     </Tag>
@@ -2004,7 +2506,7 @@ const SystemChat: React.FC = () => {
             title={
               <div className="flex items-center space-x-2">
                 <SettingOutlined className="text-blue-500" />
-                <span className="text-white">配置面板</span>
+                <span className="text-white">会话设置</span>
               </div>
             }
             className="glass-card h-full"
@@ -2018,7 +2520,7 @@ const SystemChat: React.FC = () => {
             }}
           >
             <Collapse
-              defaultActiveKey={['host-config', 'model-config']}
+              defaultActiveKey={['model-config']}
               ghost
               expandIconPosition="end"
               onChange={(activeKeys) => {
@@ -2031,213 +2533,176 @@ const SystemChat: React.FC = () => {
                 }
               }}
             >
-              {/* 主机配置面板 */}
+              {/* 目标资源面板：@ 是主要入口，统一展示主机和网络设备。 */}
               <Panel
                 header={
-                  <div className="flex items-center space-x-2">
-                    <ApiOutlined className="text-blue-400" />
-                    <span className="text-gray-300">主机配置</span>
+                  <div className="flex min-w-0 w-full items-center justify-between gap-2 pr-2">
+                    <div className="flex shrink-0 items-center space-x-2">
+                      <ApiOutlined className="text-blue-400" />
+                      <span className="text-gray-300">目标资源</span>
+                    </div>
+                    <Tag color={hasNetworkTarget ? 'geekblue' : isBatchExecution ? 'purple' : hasExecutionTarget ? 'blue' : 'default'} className={PANEL_SUMMARY_TAG_CLASS}>
+                      {hasNetworkTarget
+                        ? `${effectiveNetworkDevices.length}台设备`
+                        : isBatchExecution
+                          ? `${effectiveTargetHostIds.length}台主机`
+                          : hasExecutionTarget ? '单机' : '未选择'}
+                    </Tag>
                   </div>
                 }
                 key="host-config"
               >
-                <div className="px-4 space-y-4">
-                  {/* 远程主机配置 */}
-                  <div className="space-y-3">
-                    <Text className="text-gray-300 block">选择远程主机</Text>
-
-                    {/* 主机模式切换 */}
-                    <div>
-                      <Radio.Group
-                        value={hostSelectionMode}
-                        onChange={async (e) => {
-                          const mode = e.target.value
-                          console.log('🔄 切换主机选择模式:', mode, '当前模式:', hostSelectionMode)
-                          console.log('🔄 当前数据状态 - servers:', servers.length, 'serverGroups:', serverGroups.length)
-                          setHostSelectionMode(mode)
-                          if (mode === 'single') {
-                            // 切换到单机模式时清空主机组选择
-                            console.log('🔄 切换到单机模式，清空主机组选择')
-                            setSelectedGroupId('')
-                            // 确保服务器数据已加载
-                            if (servers.length === 0) {
-                              console.log('🔄 单机模式：服务器数据为空，重新获取...')
-                              await fetchServers()
-                            }
-                          } else {
-                            // 切换到主机组模式时清空单机选择
-                            console.log('🔄 切换到主机组模式，清空单机选择')
-                            setHostConfig(prev => ({
-                              ...prev,
-                              selectedServerId: '',
-                              connectionStatus: 'disconnected'
-                            }))
-                            // 确保主机组数据已加载
-                            if (serverGroups.length === 0) {
-                              console.log('🔄 主机组模式：主机组数据为空，重新获取...')
-                              await fetchServerGroups()
-                            }
-                          }
-                        }}
-                        className="mb-3"
-                        size="small"
-                      >
-                        <Radio.Button value="single">主机</Radio.Button>
-                        <Tooltip title="主机组批量执行功能开发中，当前仅支持选择单台主机">
-                          <Radio.Button value="group" disabled style={{ cursor: 'not-allowed' }}>
-                            主机组
-                          </Radio.Button>
-                        </Tooltip>
-                      </Radio.Group>
-                      <Text className="text-gray-400 text-xs block mt-1">
-                        💡 主机组批量执行功能正在开发中，敬请期待
-                      </Text>
-                    </div>
-
-                    {/* 根据模式显示对应的选择器 */}
-                    <div key={`select-container-${hostSelectionMode}-${servers.length}-${serverGroups.length}`}>
-                      {hostSelectionMode === 'single' ? (
-                        // 单机选择
-                        <div key="single-host-container">
-                          <Select
-                            key={`single-host-select-${hostSelectionMode}-${servers.length}`}
-                            value={hostSelectionMode === 'single' ? hostConfig.selectedServerId : undefined}
-                            onChange={async (value) => {
-                              console.log('🔄 单机模式选择变化:', value)
-                              const prevServerId = hostConfig.selectedServerId
-
-                              setHostConfig(prev => ({
-                                ...prev,
-                                selectedServerId: value
-                              }))
-                            }}
-                            className="w-full"
-                            placeholder="选择主机"
-                            loading={loadingServers}
-                            labelRender={(option) => {
-                              const server = servers.find(s => s.id === option.value)
-                              if (!server) return option.label
-                              return (
-                                <div className="flex items-center space-x-2">
-                                  <span>{server.name}</span>
-                                  {server.isDefault && (
-                                    <Tag color="gold" className="text-xs">默认</Tag>
-                                  )}
-                                </div>
-                              )
-                            }}
-                            options={servers.map(server => ({
-                              label: server.name,
-                              value: server.id,
-                              disabled: server.status !== 'online'
-                            }))}
-                            optionRender={(option) => {
-                              const server = servers.find(s => s.id === option.value)
-                              if (!server) return option.label
-                              return (
-                                <div className="flex items-center justify-between">
-                                  <div className="flex items-center space-x-2">
-                                    <span>{server.name}</span>
-                                    {server.isDefault && (
-                                      <Tag color="gold" className="text-xs">默认</Tag>
-                                    )}
-                                  </div>
-                                  <div className="flex items-center space-x-2">
-                                    <Badge
-                                      status={server.status === 'online' ? 'success' : 'error'}
-                                      text={server.status === 'online' ? '在线' : '离线'}
-                                    />
-                                  </div>
-                                </div>
-                              )
-                            }}
-                          />
-                          {servers.length === 0 && !loadingServers && (
-                            <div className="text-xs text-gray-400 mt-1">暂无可用主机</div>
-                          )}
+                <div className="space-y-3 px-4">
+                  {(targetSelections.length > 0 || groupTargetHostIds.length > 0) && (
+                  <div className="rounded border border-gray-600/60 p-3">
+                    {targetSelections.length > 0 ? (
+                      <>
+                        <div className="flex flex-wrap gap-1">
+                          {targetSelections.map(selection => (
+                            <Tag key={selection.key} color={selection.type === 'host' ? 'blue' : selection.type.startsWith('device') ? 'geekblue' : 'purple'} className="m-0 text-xs">
+                              @{selection.label} · {selection.deviceIds?.length || selection.hostIds.length}台
+                            </Tag>
+                          ))}
                         </div>
-                      ) : (
-                        // 主机组选择
-                        <div key="group-host-container">
-                          <Select
-                            key={`group-select-${hostSelectionMode}-${serverGroups.length}`}
-                            value={hostSelectionMode === 'group' ? selectedGroupId : undefined}
-                            onChange={(value) => {
-                              console.log('🔄 主机组模式选择变化:', value)
-                              setSelectedGroupId(value)
-                            }}
-                            className="w-full"
-                            placeholder="选择主机组"
-                            allowClear
-                            labelRender={(option) => {
-                              const group = serverGroups.find(g => g.id === option.value)
-                              if (!group) return option.label
-                              return (
-                                <div className="flex items-center space-x-2">
-                                  <span>{group.name}</span>
-                                  {group.isDefault && (
-                                    <Tag color="gold" className="text-xs">默认</Tag>
-                                  )}
-                                </div>
-                              )
-                            }}
-                            options={serverGroups.map(group => ({
-                              label: group.name,
-                              value: group.id
-                            }))}
-                            optionRender={(option) => {
-                              const group = serverGroups.find(g => g.id === option.value)
-                              if (!group) return option.label
-                              return (
-                                <div className="flex items-center justify-between">
-                                  <div className="flex items-center space-x-2">
-                                    <Badge color={group.color || '#1890ff'} />
-                                    <span>{group.name}</span>
-                                    {group.isDefault && (
-                                      <Tag color="gold" className="text-xs">默认</Tag>
-                                    )}
-                                  </div>
-                                  <Text className="text-xs text-gray-400">({group.serverCount || 0}台)</Text>
-                                </div>
-                              )
-                            }}
-                          />
-                          {serverGroups.length === 0 && (
-                            <div className="text-xs text-gray-400 mt-1">暂无可用主机组</div>
-                          )}
+                        <div className="mt-2 text-right">
+                          <Button type="link" size="small" className="h-auto p-0 text-xs" onClick={() => setTargetSelections([])}>
+                            清除目标
+                          </Button>
                         </div>
+                      </>
+                    ) : groupTargetHostIds.length > 0 ? (
+                      <div>
+                        <Tag color="purple" className="m-0 text-xs">
+                          @{selectedGroup?.name || '默认主机组'} · {groupTargetHostIds.length}台
+                        </Tag>
+                        <div className="mt-2 text-right">
+                          <Button
+                            type="link"
+                            size="small"
+                            className="h-auto p-0 text-xs"
+                            onClick={() => {
+                              setSelectedGroupId('')
+                              setHostSelectionMode('single')
+                            }}
+                          >
+                            清除分组
+                          </Button>
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
+                  )}
+
+                  <div>
+                    <div className="mb-2 flex items-center justify-between">
+                      <Text className="block text-sm text-gray-300">协调主机</Text>
+                      {approvalCoordinator && (
+                        <Badge status={approvalCoordinator.status === 'online' ? 'success' : 'error'} text={approvalCoordinator.status === 'online' ? '在线' : '离线'} />
                       )}
                     </div>
-
-                    {/* kubelet状态检查 - 仅在单机模式下显示 */}
-                    {hostSelectionMode === 'single' && hostConfig.selectedServerId && (
-                        <div className="space-y-3">
-                          {/* kubelet-wuhrai状态检查 */}
-                          {(
-                            <div className="flex items-center justify-between p-2 bg-transparent rounded border border-gray-600/30">
-                              <Text className="text-gray-200 text-sm">kubelet-wuhrai状态</Text>
-                              <Button
-                                size="small"
-                                loading={kubeletCheckLoading}
-                                onClick={() => checkKubeletWuhrai(hostConfig.selectedServerId)}
-                                className="bg-transparent hover:bg-blue-600/10 border border-blue-600/50 text-blue-400 hover:text-blue-300 px-2 h-6"
-                                disabled={kubeletCheckLoading}
-                              >
-                                {kubeletCheckLoading ? '检查中' : '检查'}
-                              </Button>
+                    <Select
+                      value={hostConfig.selectedServerId || undefined}
+                      onChange={(value) => {
+                        setHostConfig({ selectedServerId: value })
+                        if (effectiveTargetHostIds.length === 0) {
+                          setHostSelectionMode('single')
+                          setSelectedGroupId('')
+                        }
+                      }}
+                      className="w-full"
+                      placeholder={(isBatchExecution || hasNetworkTarget) ? '自动选择协调主机' : '选择默认主机'}
+                      loading={loadingServers}
+                      showSearch
+                      optionFilterProp="label"
+                      options={servers.map(server => ({
+                        label: `${server.name} ${server.ip}`,
+                        value: server.id,
+                        disabled: server.status !== 'online'
+                      }))}
+                      optionRender={(option) => {
+                        const server = servers.find(item => item.id === option.value)
+                        if (!server) return option.label
+                        return (
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="min-w-0">
+                              <div className="truncate">{server.name}{server.isDefault ? ' · 默认' : ''}</div>
+                              <div className="truncate text-xs text-gray-500">{server.ip}</div>
                             </div>
-                          )}
-                        </div>
+                            <Badge status={server.status === 'online' ? 'success' : 'error'} />
+                          </div>
+                        )
+                      }}
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-between rounded border border-blue-500/20 bg-blue-500/5 px-3 py-2">
+                    <Text className="text-xs text-gray-400">使用 @ 可随时更换目标</Text>
+                    <Space size={4}>
+                      {approvalCoordinator && (
+                        <Button
+                          type="text"
+                          size="small"
+                          loading={kubeletCheckLoading}
+                          onClick={() => checkKubeletWuhrai(approvalCoordinator.id)}
+                          className="h-6 px-2 text-xs text-blue-400"
+                        >
+                          {kubeletCheckLoading ? '检查中' : '检查 Agent'}
+                        </Button>
                       )}
-                    </div>
+                    <Button
+                      type="link"
+                      size="small"
+                      className="h-auto p-0 text-xs"
+                      onClick={() => textAreaRef.current?.focus()}
+                    >
+                        选择目标
+                    </Button>
+                    </Space>
+                  </div>
                 </div>
               </Panel>
 
               <Panel
                 header={
-                  <div className="flex items-center space-x-2">
-                    <RobotOutlined className="text-green-500" />
-                    <span className="text-gray-300">模型配置</span>
+                  <div className="flex min-w-0 w-full items-center justify-between gap-2 pr-2">
+                    <div className="flex shrink-0 items-center space-x-2">
+                      <RocketOutlined className="text-indigo-400" />
+                      <span className="text-gray-300">交付对象</span>
+                    </div>
+                    <Tag
+                      color={hasCICDContext ? 'geekblue' : 'default'}
+                      className={PANEL_SUMMARY_TAG_CLASS}
+                      title={hasCICDContext ? deliveryContextTitle : '未选择'}
+                    >
+                      {hasCICDContext ? deliveryContextSummary : '未选择'}
+                    </Tag>
+                  </div>
+                }
+                key="delivery-context"
+              >
+                <DeliveryContextPanel
+                  value={cicdContext}
+                  onChange={setCicdContext}
+                  onCatalogChange={handleCICDCatalogChange}
+                  onOperationClick={handleCICDOperationClick}
+                  onFocusInput={() => textAreaRef.current?.focus()}
+                />
+              </Panel>
+
+              <Panel
+                header={
+                  <div className="flex min-w-0 w-full items-center justify-between gap-2 pr-2">
+                    <div className="flex shrink-0 items-center space-x-2">
+                      <RobotOutlined className="text-green-500" />
+                      <span className="text-gray-300">模型配置</span>
+                    </div>
+                    <Tag
+                      color={currentModelConfig ? 'green' : 'default'}
+                      className={PANEL_SUMMARY_TAG_CLASS}
+                      title={currentModelConfig?.displayName || '未配置'}
+                    >
+                      {currentModelConfig?.displayName || '未配置'}
+                    </Tag>
                   </div>
                 }
                 key="model-config"
@@ -2274,7 +2739,7 @@ const SystemChat: React.FC = () => {
                             description={
                               <span className="text-gray-400">
                                 暂无可用模型<br/>
-                                请先在<a href="/config/models" className="text-blue-400">模型管理</a>中添加模型配置
+                                请先在<a href="/config/models" className="text-blue-400">模型接入</a>中添加模型配置
                               </span>
                             }
                           />
@@ -2323,9 +2788,14 @@ const SystemChat: React.FC = () => {
               {/* 安全控制面板 */}
               <Panel
                 header={
-                  <div className="flex items-center space-x-2">
-                    <SecurityScanOutlined className="text-red-500" />
-                    <span className="text-gray-300">安全控制</span>
+                  <div className="flex min-w-0 w-full items-center justify-between gap-2 pr-2">
+                    <div className="flex shrink-0 items-center space-x-2">
+                      <SecurityScanOutlined className="text-red-500" />
+                      <span className="text-gray-300">安全控制</span>
+                    </div>
+                    <Tag color={securityEnabled ? 'red' : 'default'} className={PANEL_SUMMARY_TAG_CLASS}>
+                      {securityEnabled ? '已开启' : '已关闭'}
+                    </Tag>
                   </div>
                 }
                 key="security-control"
@@ -2336,22 +2806,32 @@ const SystemChat: React.FC = () => {
               {/* MCP工具配置面板 */}
               <Panel
                 header={
-                  <div className="flex items-center space-x-2">
-                    <ToolOutlined className="text-purple-500" />
-                    <span className="text-gray-300">MCP工具</span>
+                  <div className="flex min-w-0 w-full items-center justify-between gap-2 pr-2">
+                    <div className="flex shrink-0 items-center space-x-2">
+                      <ToolOutlined className="text-purple-500" />
+                      <span className="text-gray-300">MCP工具</span>
+                    </div>
+                    <Tag color={mcpToolsConfig.enabled ? 'purple' : 'default'} className={PANEL_SUMMARY_TAG_CLASS}>
+                      {mcpToolsConfig.enabled ? '已开启' : '已关闭'}
+                    </Tag>
                   </div>
                 }
                 key="mcp-tools"
               >
-                <MCPToolsToggle />
+                <MCPToolsToggle onToolClick={handleMCPToolClick} />
               </Panel>
 
               {/* 自定义工具配置面板 */}
               <Panel
                 header={
-                  <div className="flex items-center space-x-2">
-                    <CodeOutlined className="text-cyan-500" />
-                    <span className="text-gray-300">自定义工具</span>
+                  <div className="flex min-w-0 w-full items-center justify-between gap-2 pr-2">
+                    <div className="flex shrink-0 items-center space-x-2">
+                      <CodeOutlined className="text-cyan-500" />
+                      <span className="text-gray-300">自定义工具</span>
+                    </div>
+                    <Tag color={customToolsConfig.enabled ? 'cyan' : 'default'} className={PANEL_SUMMARY_TAG_CLASS}>
+                      {customToolsConfig.enabled ? '已开启' : '已关闭'}
+                    </Tag>
                   </div>
                 }
                 key="custom-tools"
@@ -2362,9 +2842,14 @@ const SystemChat: React.FC = () => {
               {/* 高级参数面板 */}
               <Panel
                 header={
-                  <div className="flex items-center space-x-2">
-                    <ThunderboltOutlined className="text-orange-500" />
-                    <span className="text-gray-300">高级参数</span>
+                  <div className="flex min-w-0 w-full items-center justify-between gap-2 pr-2">
+                    <div className="flex shrink-0 items-center space-x-2">
+                      <ThunderboltOutlined className="text-orange-500" />
+                      <span className="text-gray-300">高级参数</span>
+                    </div>
+                    <Tag color="orange" className={PANEL_SUMMARY_TAG_CLASS} title={`Temperature ${config.temperature.toFixed(1)}`}>
+                      T {config.temperature.toFixed(1)}
+                    </Tag>
                   </div>
                 }
                 key="advanced"
@@ -2590,8 +3075,15 @@ const SystemChat: React.FC = () => {
           />
         </div>
       </Modal>
+
+      {/* AI 决策记录抽屉：当前会话执行流程 + 持久化 lesson/outcome */}
+      <DecisionLogDrawer
+        open={decisionLogOpen}
+        onClose={() => setDecisionLogOpen(false)}
+        messages={messages}
+      />
     </>
   )
 }
 
-export default SystemChat 
+export default SystemChat

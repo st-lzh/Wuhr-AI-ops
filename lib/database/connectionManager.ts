@@ -73,9 +73,6 @@ export class DatabaseConnectionManager {
         // 获取数据库连接
         prisma = await getPrismaClient()
         
-        // 更新连接统计
-        this.updateConnectionStats()
-        
         // 执行操作
         const operationPromise = operation(prisma)
         
@@ -181,19 +178,34 @@ export class DatabaseConnectionManager {
   private startConnectionMonitoring(): void {
     setInterval(() => {
       this.updateConnectionStats()
-      this.logConnectionStats()
-      this.checkConnectionHealth()
+        .then(() => {
+          this.logConnectionStats()
+          this.checkConnectionHealth()
+        })
+        .catch(error => console.warn('读取数据库连接池状态失败:', error))
     }, 30000) // 每30秒检查一次
   }
 
-  private updateConnectionStats(): void {
-    // 这里可以添加实际的连接池状态获取逻辑
-    // 目前使用模拟数据
+  private async updateConnectionStats(): Promise<void> {
+    const prisma = await getPrismaClient()
+    const rows = await prisma.$queryRaw<Array<{
+      active_connections: bigint
+      idle_connections: bigint
+      total_connections: bigint
+    }>>`
+      SELECT
+        count(*) FILTER (WHERE state = 'active') AS active_connections,
+        count(*) FILTER (WHERE state = 'idle') AS idle_connections,
+        count(*) AS total_connections
+      FROM pg_stat_activity
+      WHERE datname = current_database()
+    `
+    const row = rows[0]
     this.connectionStats = {
-      activeConnections: this.operationTimeouts.size,
-      idleConnections: Math.max(0, 20 - this.operationTimeouts.size),
-      totalConnections: 20,
-      pendingRequests: 0,
+      activeConnections: Number(row?.active_connections || 0),
+      idleConnections: Number(row?.idle_connections || 0),
+      totalConnections: Number(row?.total_connections || 0),
+      pendingRequests: connectionLeakDetector.getLeakStats().activeOperations,
       lastUpdate: new Date()
     }
   }
@@ -251,6 +263,7 @@ export class DatabaseConnectionManager {
     stats: ConnectionPoolStats
     issues: string[]
   }> {
+    await this.updateConnectionStats()
     const stats = this.getConnectionStats()
     const issues: string[] = []
     

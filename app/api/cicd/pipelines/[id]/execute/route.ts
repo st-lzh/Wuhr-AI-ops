@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '../../../../../../lib/auth/apiHelpers-new'
 import { getPrismaClient } from '../../../../../../lib/config/database'
 import { z } from 'zod'
+import { createJenkinsClient } from '../../../../../../lib/jenkins/client'
 
 // 强制动态渲染
 export const dynamic = 'force-dynamic'
@@ -25,6 +26,9 @@ export async function POST(
     }
 
     const { user } = authResult
+    if (user.role !== 'admin' && user.role !== 'manager' && !user.permissions.includes('cicd:write')) {
+      return NextResponse.json({ success: false, error: '没有流水线执行权限' }, { status: 403 })
+    }
     const pipelineId = params.id
     const body = await request.json()
 
@@ -47,7 +51,7 @@ export async function POST(
     const pipeline = await prisma.pipeline.findFirst({
       where: {
         id: pipelineId,
-        userId: user.id
+        isActive: true
       },
       include: {
         project: {
@@ -99,37 +103,78 @@ export async function POST(
       triggeredAt: new Date().toISOString()
     }
 
-    console.log('⚠️ Jenkins配置已独立，使用本地执行模式')
+    const jenkinsConfig = await prisma.jenkinsConfig.findFirst({
+      where: { isActive: true },
+      orderBy: { updatedAt: 'desc' }
+    })
+
+    if (!jenkinsConfig) {
+      return NextResponse.json({
+        success: false,
+        error: '没有可用的 Jenkins 配置，流水线未执行'
+      }, { status: 400 })
+    }
 
     try {
-      // 更新流水线状态（Pipeline模型没有构建状态字段，这里只更新时间戳）
-      await prisma.pipeline.update({
-        where: { id: pipelineId },
-        data: {
-          updatedAt: new Date()
-        }
+      const client = createJenkinsClient({
+        jobUrl: jenkinsConfig.serverUrl,
+        authToken: jenkinsConfig.username && jenkinsConfig.apiToken
+          ? `${jenkinsConfig.username}:${jenkinsConfig.apiToken}`
+          : jenkinsConfig.apiToken || undefined
+      })
+      const queued = await client.buildJob({
+        jobName: pipeline.jenkinsJobName,
+        parameters: executionParameters
       })
 
-      // 模拟执行过程
-      console.log('🔧 执行本地构建流程...')
-      
-      // 模拟一些执行时间
-      await new Promise(resolve => setTimeout(resolve, 2000))
+      const build = await prisma.$transaction(async tx => {
+        const created = await tx.build.create({
+          data: {
+            jenkinsConfigId: jenkinsConfig.id,
+            pipelineId: pipeline.id,
+            buildNumber: nextBuildNumber,
+            jenkinsJobName: pipeline.jenkinsJobName,
+            status: 'queued',
+            queueId: String(queued.queueId),
+            buildUrl: queued.queueUrl,
+            parameters: executionParameters,
+            userId: user.id
+          }
+        })
+        await tx.pipeline.update({ where: { id: pipelineId }, data: { updatedAt: new Date() } })
+        await tx.systemLog.create({
+          data: {
+            level: 'info',
+            category: 'cicd_pipeline',
+            message: `流水线已进入 Jenkins 队列：${pipeline.name} #${nextBuildNumber}`,
+            source: 'cicd-api',
+            userId: user.id,
+            details: {
+              pipelineId,
+              buildId: created.id,
+              queueId: queued.queueId,
+              queueUrl: queued.queueUrl,
+              executionParameters
+            }
+          }
+        })
+        return created
+      })
 
-      // 流水线执行成功（Pipeline模型没有构建状态字段）
-      console.log('✅ 流水线执行成功')
-
-      console.log('✅ 流水线执行完成:', pipelineId)
+      console.log('✅ 流水线已进入 Jenkins 队列:', { pipelineId, buildId: build.id, queueId: queued.queueId })
 
       return NextResponse.json({
         success: true,
         data: {
           pipelineId: pipeline.id,
+          buildId: build.id,
           buildNumber: nextBuildNumber,
-          status: 'success',
+          status: 'queued',
+          queueId: queued.queueId,
+          queueUrl: queued.queueUrl,
           executionParameters
         },
-        message: '流水线执行成功'
+        message: '流水线已提交到 Jenkins 队列'
       })
 
     } catch (error) {
@@ -172,7 +217,7 @@ export async function GET(
     const pipeline = await prisma.pipeline.findFirst({
       where: {
         id: pipelineId,
-        userId: user.id
+        isActive: true
       },
       select: {
         id: true,

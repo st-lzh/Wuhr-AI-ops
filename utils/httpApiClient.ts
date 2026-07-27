@@ -7,7 +7,17 @@
 // HTTP API请求接口
 export interface HTTPQueryRequest {
   query: string
+  sessionId?: string
+  history?: Array<{ role: 'user' | 'assistant'; content: string }>
   isK8sMode?: boolean // 🔥 关键：添加K8s模式参数
+  customTools?: any[]
+  mcpServers?: Array<{
+    name: string
+    command?: string
+    args?: string[]
+    env?: Record<string, string>
+    url?: string
+  }>
   config?: {
     provider?: string
     model?: string
@@ -17,6 +27,24 @@ export interface HTTPQueryRequest {
     maxIterations?: number
     streamingOutput?: boolean
     isK8sMode?: boolean // 🔥 关键：config中也要包含
+    mcpClientEnabled?: boolean
+    requireApproval?: boolean
+    batchMode?: boolean
+    batchHosts?: Array<{
+      id: string
+      name: string
+      hostname?: string
+      ip: string
+      port: number
+      username: string
+      password?: string
+      keyPath?: string
+      authType: string
+      tags?: string[]
+    }>
+    networkDeviceIds?: string[]
+    networkBatchLabel?: string
+    networkActor?: string
   }
 }
 
@@ -69,6 +97,15 @@ export interface HTTPApiClientConfig {
   maxRetryDelay?: number
   enableAutoReconnect?: boolean
   reconnectAttempts?: number
+}
+
+/**
+ * 后端 admin API key 注入：启用 --http-auth 后所有 /api/* 必须带这个 header
+ * 仅 server-side 可用（process.env.IMPROVE_API_KEY 不带 NEXT_PUBLIC_ 前缀，不会泄到浏览器）
+ */
+function authHeader(): Record<string, string> {
+  const key = typeof process !== 'undefined' ? process.env?.IMPROVE_API_KEY : undefined
+  return key ? { 'X-API-Key': key } : {}
 }
 
 /**
@@ -130,6 +167,7 @@ export class HTTPApiClient {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
+        ...authHeader(),
       },
     })
 
@@ -154,6 +192,7 @@ export class HTTPApiClient {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        ...authHeader(),
       },
       body: JSON.stringify(request),
     })
@@ -189,6 +228,7 @@ export class HTTPApiClient {
       headers: {
         'Content-Type': 'application/json',
         'Accept': 'text/event-stream',
+        ...authHeader(),
       },
       body: JSON.stringify(request),
     }, 20 * 60 * 1000) // 🔥 20分钟超时用于流式请求

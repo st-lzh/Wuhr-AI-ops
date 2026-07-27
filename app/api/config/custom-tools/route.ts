@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { 
   requireAuth, 
   successResponse, 
@@ -6,6 +6,8 @@ import {
   serverErrorResponse
 } from '../../../../lib/auth/apiHelpers'
 import { getPrismaClient } from '../../../../lib/config/database'
+import { canWriteTeamAssets, resolveTeamConfigOwnerId } from '../../../../lib/auth/teamAccess'
+import { maskEnvironment, protectEnvironment } from '../../../../lib/crypto/environmentSecrets'
 
 // 强制动态渲染
 export const dynamic = 'force-dynamic'
@@ -39,13 +41,8 @@ interface CustomToolsConfig {
   logLevel: 'debug' | 'info' | 'warn' | 'error'
 }
 
-// 默认自定义工具配置
-const DEFAULT_CUSTOM_TOOLS_CONFIG: CustomToolsConfig = {
-  enabled: false,
-  tools: [],
-  defaultTimeout: 30000,
-  maxConcurrency: 5,
-  logLevel: 'info'
+function maskTools(tools: CustomTool[]): CustomTool[] {
+  return tools.map(tool => ({ ...tool, env: maskEnvironment(tool.env) }))
 }
 
 // 示例自定义工具
@@ -149,59 +146,6 @@ const EXAMPLE_TOOLS: CustomTool[] = [
   }
 ]
 
-// 从kubelet-wuhrai获取自定义工具配置
-async function getKubeletWuhraiCustomToolsConfig(): Promise<CustomToolsConfig> {
-  try {
-    // 检测是否在构建环境中，如果是则直接返回默认配置
-    if (process.env.NODE_ENV === 'production' && process.env.NEXT_PHASE === 'phase-production-build') {
-      console.log('📦 构建环境检测到，跳过kubelet-wuhrai连接')
-      return {
-        ...DEFAULT_CUSTOM_TOOLS_CONFIG,
-        tools: EXAMPLE_TOOLS
-      }
-    }
-    
-    // 尝试从kubelet-wuhrai API获取自定义工具状态
-    const response = await fetch('http://47.99.137.248:2081/api/config/custom-tools', {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      signal: AbortSignal.timeout(3000) // 减少超时时间到3秒
-    })
-
-    if (response.ok) {
-      const result = await response.json()
-
-      // 后端返回格式: {success: true, data: {enabled, tools}}
-      if (result.success && result.data) {
-        const backendConfig = result.data
-        return {
-          enabled: backendConfig.enabled || false,
-          tools: backendConfig.tools || EXAMPLE_TOOLS,
-          defaultTimeout: backendConfig.defaultTimeout || 30000,
-          maxConcurrency: backendConfig.maxConcurrency || 5,
-          logLevel: backendConfig.logLevel || 'info'
-        }
-      }
-    }
-
-    // 如果kubelet-wuhrai不支持或未启用，返回示例配置
-    return {
-      ...DEFAULT_CUSTOM_TOOLS_CONFIG,
-      tools: EXAMPLE_TOOLS
-    }
-
-  } catch (error) {
-    // 静默处理连接错误，这在构建时是正常的
-    console.log('kubelet-wuhrai连接失败，使用默认自定义工具配置')
-    return {
-      ...DEFAULT_CUSTOM_TOOLS_CONFIG,
-      tools: EXAMPLE_TOOLS
-    }
-  }
-}
-
 // 验证工具配置
 function validateCustomTool(tool: any): string[] {
   const errors: string[] = []
@@ -270,18 +214,21 @@ export async function GET(request: NextRequest) {
 
     const { user } = authResult
     const prisma = await getPrismaClient()
+    const teamOwnerId = await resolveTeamConfigOwnerId(prisma, user.id)
     
     // 从数据库获取用户的自定义工具配置
     let dbConfig = await prisma.customToolsConfig.findUnique({
-      where: { userId: user.id }
+      where: { userId: teamOwnerId }
     })
     
     // 如果用户没有配置，创建默认配置
     if (!dbConfig) {
       dbConfig = await prisma.customToolsConfig.create({
         data: {
-          userId: user.id,
+          userId: teamOwnerId,
           enabled: false,
+          // 新团队从空清单开始；工具必须由管理员显式创建并真实测试，
+          // 不再自动写入可能与运行环境不匹配的演示命令。
           tools: [],
           defaultTimeout: 30000,
           maxConcurrency: 5,
@@ -290,21 +237,15 @@ export async function GET(request: NextRequest) {
       })
     }
 
-    // 从kubelet-wuhrai获取实际配置（作为补充）
-    const kubeletConfig = await getKubeletWuhraiCustomToolsConfig()
-
-    // 合并数据库配置和示例工具
+    // 数据库是唯一配置源；运行时由聊天请求把已启用工具传给 Agent。
     const config: CustomToolsConfig = {
       enabled: dbConfig.enabled,
-      tools: Array.isArray(dbConfig.tools) ? (dbConfig.tools as unknown as CustomTool[]) : [],
+      tools: Array.isArray(dbConfig.tools)
+        ? maskTools(dbConfig.tools as unknown as CustomTool[])
+        : [],
       defaultTimeout: dbConfig.defaultTimeout,
       maxConcurrency: dbConfig.maxConcurrency,
       logLevel: dbConfig.logLevel as any
-    }
-
-    // 如果数据库中没有工具配置，使用示例工具
-    if (config.tools.length === 0 && kubeletConfig.tools.length > 0) {
-      config.tools = kubeletConfig.tools
     }
 
     return successResponse({
@@ -329,7 +270,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json()
-    console.log('💾 保存自定义工具配置:', body)
+    console.log('💾 保存自定义工具配置')
 
     // 验证配置格式
     if (!body || typeof body.enabled !== 'boolean') {
@@ -337,11 +278,24 @@ export async function POST(request: NextRequest) {
     }
 
     const { user } = authResult
+    if (!canWriteTeamAssets(user, 'config:write')) {
+      return errorResponse('权限不足', '需要自定义工具配置权限', 403)
+    }
     const prisma = await getPrismaClient()
+    const teamOwnerId = await resolveTeamConfigOwnerId(prisma, user.id)
+    const existingConfig = await prisma.customToolsConfig.findUnique({ where: { userId: teamOwnerId } })
+    const previousTools = Array.isArray(existingConfig?.tools)
+      ? existingConfig.tools as unknown as CustomTool[]
+      : []
+    const incomingTools = Array.isArray(body.tools) ? body.tools as CustomTool[] : []
+    const protectedTools = incomingTools.map(tool => {
+      const previous = previousTools.find(item => item.id === tool.id)
+      return { ...tool, env: protectEnvironment(tool.env, previous?.env) }
+    })
 
     const config: CustomToolsConfig = {
       enabled: body.enabled,
-      tools: body.tools || [],
+      tools: protectedTools,
       defaultTimeout: body.defaultTimeout || 30000,
       maxConcurrency: body.maxConcurrency || 5,
       logLevel: body.logLevel || 'info'
@@ -361,7 +315,7 @@ export async function POST(request: NextRequest) {
 
     // 保存到数据库（使用upsert确保更新或创建）
     const savedConfig = await prisma.customToolsConfig.upsert({
-      where: { userId: user.id },
+      where: { userId: teamOwnerId },
       update: {
         enabled: config.enabled,
         tools: config.tools as any,
@@ -370,7 +324,7 @@ export async function POST(request: NextRequest) {
         logLevel: config.logLevel
       },
       create: {
-        userId: user.id,
+        userId: teamOwnerId,
         enabled: config.enabled,
         tools: config.tools as any,
         defaultTimeout: config.defaultTimeout,
@@ -383,7 +337,7 @@ export async function POST(request: NextRequest) {
 
     return successResponse({
       message: '自定义工具配置保存成功',
-      config: config,
+      config: { ...config, tools: maskTools(config.tools) },
       totalTools: config.tools.length,
       activeTools: config.tools.filter(t => t.isActive).length
     })

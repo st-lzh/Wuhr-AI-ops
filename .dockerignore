@@ -12,10 +12,8 @@ dist/
 build/
 
 # Environment files
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
+.env
+.env.*
 # Allow .env.docker for Docker builds
 !.env.docker
 
@@ -135,4 +133,7 @@ docs/
 
 # Scripts (保留install-docker.sh)
 scripts/
+!scripts/
+scripts/*
+!scripts/deployment-scheduler-worker.cjs
 # install-docker.sh

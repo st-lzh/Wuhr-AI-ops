@@ -18,7 +18,7 @@ const PipelinesPage: React.FC = () => {
             <BranchesOutlined className="mr-2" />
             流水线管理
           </Title>
-          <Paragraph className="text-gray-600 mb-0">
+          <Paragraph type="secondary" className="mb-0">
             管理CI/CD流水线，配置自动化构建和部署流程
           </Paragraph>
         </div>

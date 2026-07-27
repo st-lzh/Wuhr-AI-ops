@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '../../../../lib/auth/apiHelpers-new'
 import { getPrismaClient } from '../../../../lib/config/database'
-import { decrypt } from '../../../../lib/crypto/encryption'
+import { revealSecret } from '../../../../lib/crypto/encryption'
 
 // GET - 获取Grafana仪表板列表
 export async function GET(request: NextRequest) {
@@ -10,8 +10,6 @@ export async function GET(request: NextRequest) {
     if (!authResult.success) {
       return authResult.response
     }
-    const user = authResult.user
-
     const { searchParams } = new URL(request.url)
     const configId = searchParams.get('configId')
 
@@ -27,8 +25,7 @@ export async function GET(request: NextRequest) {
     // 获取Grafana配置
     const config = await prisma.grafanaConfig.findFirst({
       where: {
-        id: configId,
-        userId: user.id
+        id: configId
       }
     })
 
@@ -45,10 +42,10 @@ export async function GET(request: NextRequest) {
     let authHeaders: Record<string, string> = {}
     
     if (config.apiKey) {
-      const decryptedApiKey = decrypt(config.apiKey)
+      const decryptedApiKey = revealSecret(config.apiKey)
       authHeaders['Authorization'] = `Bearer ${decryptedApiKey}`
     } else if (config.username && config.password) {
-      const decryptedPassword = decrypt(config.password)
+      const decryptedPassword = revealSecret(config.password)
       const credentials = Buffer.from(`${config.username}:${decryptedPassword}`).toString('base64')
       authHeaders['Authorization'] = `Basic ${credentials}`
     }
@@ -166,8 +163,6 @@ export async function POST(request: NextRequest) {
     if (!authResult.success) {
       return authResult.response
     }
-    const user = authResult.user
-
     const body = await request.json()
     const { configId, dashboardUid } = body
 
@@ -183,8 +178,7 @@ export async function POST(request: NextRequest) {
     // 获取Grafana配置
     const config = await prisma.grafanaConfig.findFirst({
       where: {
-        id: configId,
-        userId: user.id
+        id: configId
       }
     })
 
@@ -201,10 +195,10 @@ export async function POST(request: NextRequest) {
     let authHeaders: Record<string, string> = {}
     
     if (config.apiKey) {
-      const decryptedApiKey = decrypt(config.apiKey)
+      const decryptedApiKey = revealSecret(config.apiKey)
       authHeaders['Authorization'] = `Bearer ${decryptedApiKey}`
     } else if (config.username && config.password) {
-      const decryptedPassword = decrypt(config.password)
+      const decryptedPassword = revealSecret(config.password)
       const credentials = Buffer.from(`${config.username}:${decryptedPassword}`).toString('base64')
       authHeaders['Authorization'] = `Basic ${credentials}`
     }

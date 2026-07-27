@@ -106,7 +106,7 @@ export interface Deployment {
   description?: string
   environment: string
   version?: string
-  status: 'pending' | 'approved' | 'rejected' | 'scheduled' | 'deploying' | 'success' | 'failed' | 'rolled_back'
+  status: 'pending' | 'approved' | 'rejected' | 'scheduled' | 'deploying' | 'success' | 'failed' | 'cancelled' | 'rolled_back'
   buildNumber?: number
   deployScript?: string
   rollbackScript?: string

@@ -5,6 +5,24 @@ import { databaseHealthChecker } from '../../../../../lib/database/healthChecker
 import { connectionLeakDetector } from '../../../../../lib/database/leakDetector'
 import { getPrismaClient } from '../../../../../lib/config/database'
 
+// 递归把对象/数组里的 BigInt 转成 Number/String，避免 JSON.stringify 抛
+// （PostgreSQL count(*) 等聚合返回 BigInt，pg_stat_activity 也常见）
+function safeBigInt(v: any): any {
+  if (typeof v === 'bigint') {
+    // 安全整数范围内用 Number，超出用 String（不会丢精度）
+    return v <= BigInt(Number.MAX_SAFE_INTEGER) && v >= BigInt(Number.MIN_SAFE_INTEGER)
+      ? Number(v)
+      : v.toString()
+  }
+  if (Array.isArray(v)) return v.map(safeBigInt)
+  if (v && typeof v === 'object' && !(v instanceof Date)) {
+    const out: any = {}
+    for (const k in v) out[k] = safeBigInt(v[k])
+    return out
+  }
+  return v
+}
+
 // 获取数据库健康状态
 export async function GET(request: NextRequest) {
   try {
@@ -68,8 +86,8 @@ export async function GET(request: NextRequest) {
     const dbSize = await prisma.$queryRaw`
       SELECT 
         pg_size_pretty(pg_database_size(current_database())) as database_size,
-        pg_size_pretty(pg_total_relation_size('public.User')) as user_table_size,
-        pg_size_pretty(pg_total_relation_size('public.ChatSession')) as chat_session_table_size
+        pg_size_pretty(pg_total_relation_size('public.users')) as user_table_size,
+        pg_size_pretty(pg_total_relation_size('public.chat_sessions')) as chat_session_table_size
     ` as any[]
 
     const response = {
@@ -102,7 +120,7 @@ export async function GET(request: NextRequest) {
     }
 
     console.log('✅ 数据库健康检查完成')
-    return NextResponse.json(response)
+    return NextResponse.json(safeBigInt(response))
 
   } catch (error) {
     console.error('❌ 数据库健康检查失败:', error)

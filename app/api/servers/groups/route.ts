@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getPrismaClient } from '../../../../lib/config/database'
 import { requireAuth } from '../../../../lib/auth/apiHelpers-new'
-import { hasPermission } from '../../../../lib/auth/permissions'
+import { canWriteTeamAssets } from '../../../../lib/auth/teamAccess'
 
 export async function GET(request: NextRequest) {
   try {
@@ -13,7 +13,6 @@ export async function GET(request: NextRequest) {
     const prisma = await getPrismaClient()
     const groups = await prisma.serverGroup.findMany({
       where: {
-        userId: authResult.user.id,
         isActive: true
       },
       include: {
@@ -71,7 +70,7 @@ export async function POST(request: NextRequest) {
       return authResult.response
     }
 
-    if (!hasPermission(authResult.user.permissions, 'servers:write')) {
+    if (!canWriteTeamAssets(authResult.user, 'servers:write')) {
       return NextResponse.json(
         { success: false, error: '权限不足' },
         { status: 403 }
@@ -92,7 +91,6 @@ export async function POST(request: NextRequest) {
     const existingGroup = await prisma.serverGroup.findFirst({
       where: {
         name: name.trim(),
-        userId: authResult.user.id,
         isActive: true
       }
     })
@@ -123,7 +121,6 @@ export async function POST(request: NextRequest) {
         await tx.server.updateMany({
           where: {
             id: { in: serverIds },
-            userId: authResult.user.id,  // 确保只更新当前用户的主机
             isActive: true
           },
           data: {

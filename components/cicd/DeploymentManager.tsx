@@ -46,6 +46,8 @@ import UserSelector from '../../app/components/common/UserSelector'
 import ServerSelector from '../../app/components/common/ServerSelector'
 import TemplateSelector from '../../app/components/common/TemplateSelector'
 import Link from 'next/link'
+import CICDAssistantButton from '../../app/components/cicd/CICDAssistantButton'
+import CICDAIReportButton from '../../app/components/cicd/CICDAIReportButton'
 
 const { Title, Text } = Typography
 const { Option } = Select
@@ -53,6 +55,7 @@ const { TextArea } = Input
 
 interface Deployment {
   id: string
+  isJenkinsDeployment?: boolean
   projectId: string
   name: string
   description?: string
@@ -65,6 +68,12 @@ interface Deployment {
   completedAt?: string
   duration?: number
   logs?: string
+  deployScript?: string
+  rollbackScript?: string
+  templateId?: string
+  deploymentHosts?: string[]
+  notificationUsers?: string[]
+  approvalUsers?: string[]
   userId: string
   createdAt: string
   updatedAt: string
@@ -385,7 +394,7 @@ const DeploymentManager: React.FC<DeploymentManagerProps> = ({ projectId }) => {
     try {
       console.log(`🚀 开始执行部署: ${deployment.name}`)
 
-      const response = await fetch(`/api/cicd/deployments/${deployment.id}/execute`, {
+      const response = await fetch(`/api/cicd/deployments/${deployment.id}/${deployment.isJenkinsDeployment ? 'execute' : 'start'}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -451,7 +460,7 @@ const DeploymentManager: React.FC<DeploymentManagerProps> = ({ projectId }) => {
         try {
           console.log(`🔧 手动执行部署: ${deployment.name}`)
 
-          const response = await fetch(`/api/cicd/deployments/${deployment.id}/execute`, {
+          const response = await fetch(`/api/cicd/deployments/${deployment.id}/${deployment.isJenkinsDeployment ? 'execute' : 'start'}`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json'
@@ -700,6 +709,32 @@ const DeploymentManager: React.FC<DeploymentManagerProps> = ({ projectId }) => {
               />
             </Tooltip>
 
+            <CICDAssistantButton
+              context={{
+                kind: 'deployment',
+                projectId: record.projectId,
+                deploymentId: record.id
+              }}
+              intent={record.status === 'failed' ? 'diagnose' : 'status'}
+              size="small"
+              iconOnly
+            />
+
+            {['approved', 'scheduled'].includes(record.status) && (
+              <CICDAIReportButton
+                context={{ kind: 'deployment', projectId: record.projectId, deploymentId: record.id }}
+                reportType="pre_deploy_risk"
+                iconOnly
+              />
+            )}
+            {['success', 'failed', 'rolled_back'].includes(record.status) && (
+              <CICDAIReportButton
+                context={{ kind: 'deployment', projectId: record.projectId, deploymentId: record.id }}
+                reportType="post_deploy_verification"
+                iconOnly
+              />
+            )}
+
             {/* 手动执行按钮 - 只在审批通过时显示 */}
             {canManualExecute && (
               <Tooltip title="手动执行部署">
@@ -762,7 +797,7 @@ const DeploymentManager: React.FC<DeploymentManagerProps> = ({ projectId }) => {
               <Button
                 type="text"
                 icon={<EditOutlined />}
-                disabled={record.status === 'deploying'}
+                disabled={!['pending', 'rejected', 'failed'].includes(record.status)}
                 onClick={() => {
                   setEditingDeployment(record)
 
@@ -1041,6 +1076,27 @@ const DeploymentManager: React.FC<DeploymentManagerProps> = ({ projectId }) => {
           </Form.Item>
 
           <Form.Item
+            name="deployScript"
+            label="部署脚本"
+            tooltip="可选；优先级低于部署模板，高于项目默认脚本。支持 ${DEPLOYMENT_ID}、${PROJECT_NAME}、${ENVIRONMENT}、${VERSION}。"
+          >
+            <TextArea rows={5} className="font-mono" placeholder="可留空使用部署模板或项目默认脚本" />
+          </Form.Item>
+
+          <Form.Item noStyle shouldUpdate={(previous, current) => previous.environment !== current.environment}>
+            {({ getFieldValue }) => (
+              <Form.Item
+                name="rollbackScript"
+                label="回滚脚本"
+                rules={[{ required: getFieldValue('environment') === 'prod', message: '生产环境必须配置可执行的回滚脚本' }]}
+                tooltip="真实回滚会在原目标主机执行此脚本。支持 ${TARGET_VERSION}、${CURRENT_VERSION}、${DEPLOYMENT_ID}。"
+              >
+                <TextArea rows={5} className="font-mono" placeholder="生产环境必填，例如恢复上一镜像并执行健康检查" />
+              </Form.Item>
+            )}
+          </Form.Item>
+
+          <Form.Item
             name="deploymentHosts"
             label="部署主机"
             rules={[{ required: true, message: '请选择部署主机' }]}
@@ -1162,6 +1218,26 @@ const DeploymentManager: React.FC<DeploymentManagerProps> = ({ projectId }) => {
           </Form.Item>
 
           <Divider orientation="left">部署配置</Divider>
+
+          <Form.Item
+            name="deployScript"
+            label="部署脚本"
+            tooltip="修改待审批任务的脚本后，审批记录会重新生成。"
+          >
+            <TextArea rows={5} className="font-mono" placeholder="可留空使用部署模板或项目默认脚本" />
+          </Form.Item>
+
+          <Form.Item noStyle shouldUpdate={(previous, current) => previous.environment !== current.environment}>
+            {({ getFieldValue }) => (
+              <Form.Item
+                name="rollbackScript"
+                label="回滚脚本"
+                rules={[{ required: getFieldValue('environment') === 'prod', message: '生产环境必须配置可执行的回滚脚本' }]}
+              >
+                <TextArea rows={5} className="font-mono" placeholder="生产环境必填" />
+              </Form.Item>
+            )}
+          </Form.Item>
 
           <Form.Item
             name="deploymentHosts"

@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
-import { Layout, Menu, Avatar, Switch, Dropdown, Badge, message, Modal } from 'antd'
+import { Layout, Menu, Avatar, Switch, Dropdown, Badge, message, Modal, Grid } from 'antd'
 import {
   DashboardOutlined,
   RobotOutlined,
@@ -19,6 +19,12 @@ import {
   DeploymentUnitOutlined,
   ControlOutlined,
   FileTextOutlined,
+  BulbOutlined,
+  GlobalOutlined,
+  ScheduleOutlined,
+  AlertOutlined,
+  SafetyCertificateOutlined,
+  ClusterOutlined,
 } from '@ant-design/icons'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
@@ -42,11 +48,13 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
   const [notificationCount, setNotificationCount] = useState(0) // 初始为0，从API获取实时数据
   const [unreadCount, setUnreadCount] = useState(0) // 未读通知数量
   const [openKeys, setOpenKeys] = useState<string[]>([])
+  const screens = Grid.useBreakpoint()
   const { theme, toggleTheme, isDark } = useTheme()
   const pathname = usePathname()
   const {
     canAccessAI,
     canAccessServers,
+    canAccessNetwork,
     canAccessCICD,
     canAccessApprovals,
     canAccessMonitoring,
@@ -55,6 +63,7 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
     canAccessUsers,
     canAccessPermissions,
     canAccessConfig,
+    canAccessImprove,
     isAuthenticated,
     user
   } = usePermissions()
@@ -63,6 +72,9 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
   const getDefaultOpenKeys = () => {
     // 定义接入管理的所有子页面路径
     const integrationPages = [
+      '/integration',       // 接入总览、代码接入和任务接入
+      '/integration/alerts',
+      '/integration/artifacts',
       '/monitor',           // Grafana配置
       '/servers/logs'       // ELK日志
     ]
@@ -70,25 +82,34 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
     // 定义用户管理的所有子页面路径
     const userPages = [
       '/users',             // 用户管理相关页面
+      '/admin/roles',       // 角色管理页面
       '/cicd/approvals',    // 审批管理页面
-      '/notifications'      // 通知管理页面
+      '/notifications',     // 通知管理页面
+      '/governance/credentials'
     ]
 
     // 定义CI&CD管理的所有子页面路径
     const cicdPages = [
+      '/cicd',                    // 交付管理及兼容入口
       '/cicd/projects',           // 持续集成
       '/cicd/deployments',        // 持续部署
       '/cicd/jenkins-deployments', // Jenkins部署任务
       '/cicd/templates',          // 模板管理
       '/cicd/builds',             // 构建管理
       '/cicd/pipelines',          // 流水线管理
+      '/cicd/ai-reports',         // AI 持久化报告
       '/cicd/logs',               // 日志管理
       '/cicd/tasks'               // 任务管理
     ]
 
     if (pathname.startsWith('/ai')) return ['/ai']
+    if (pathname.startsWith('/improve')) return ['/improve']
+    if (pathname.startsWith('/knowledge')) return ['/improve']
     if (pathname.startsWith('/config')) return ['/config']
     if (pathname.startsWith('/servers') && !pathname.startsWith('/servers/logs')) return ['/servers']
+    if (pathname.startsWith('/network')) return ['/network']
+    if (pathname.startsWith('/operations')) return ['/operations']
+    if (pathname.startsWith('/governance')) return ['/users']
 
     // 检查是否在用户管理的任何子页面
     if (userPages.some(page => pathname.startsWith(page))) {
@@ -112,6 +133,11 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
   useEffect(() => {
     setOpenKeys(getDefaultOpenKeys())
   }, [pathname])
+
+  // 中小屏自动收起侧栏，避免固定侧栏挤压驾驶舱和表格内容。
+  useEffect(() => {
+    if (screens.xl === false) setCollapsed(true)
+  }, [screens.xl])
 
   // 处理菜单展开状态变化
   const handleOpenChange = (keys: string[]) => {
@@ -175,7 +201,7 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
     items.push({
       key: '/',
       icon: <DashboardOutlined />,
-      label: <Link href="/">仪表盘</Link>,
+      label: <Link href="/">仪表总览</Link>,
     })
 
     // AI助手
@@ -183,7 +209,38 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
       items.push({
         key: '/ai/system',
         icon: <RobotOutlined />,
-        label: <Link href="/ai/system">AI 助手</Link>,
+        label: <Link href="/ai/system">智能助手</Link>,
+      })
+    }
+
+    // AI 资产（self-improving 教训库 / 执行历史 / 技能 / 记忆）
+    if (canAccessImprove('read')) {
+      items.push({
+        key: '/improve',
+        icon: <BulbOutlined />,
+        label: '智能资产',
+        children: [
+          {
+            key: '/improve/lessons',
+            label: <Link href="/improve/lessons">经验教训</Link>,
+          },
+          {
+            key: '/improve/outcomes',
+            label: <Link href="/improve/outcomes">执行记录</Link>,
+          },
+          {
+            key: '/improve/skills',
+            label: <Link href="/improve/skills">技能管理</Link>,
+          },
+          {
+            key: '/improve/memory',
+            label: <Link href="/improve/memory">记忆管理</Link>,
+          },
+          {
+            key: '/knowledge',
+            label: <Link href="/knowledge">知识管理</Link>,
+          },
+        ],
       })
     }
 
@@ -194,21 +251,21 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
       if (canAccessUsers('read')) {
         userChildren.push({
           key: '/users/info',
-          label: <Link href="/users/info">用户信息</Link>,
+          label: <Link href="/users/info">用户列表</Link>,
         })
       }
 
       if (canAccessPermissions('read')) {
         userChildren.push({
           key: '/users/permissions',
-          label: <Link href="/users/permissions">权限管理</Link>,
+          label: <Link href="/users/permissions">角色权限</Link>,
         })
       }
 
       if (canAccessApprovals('read')) {
         userChildren.push({
           key: '/cicd/approvals',
-          label: <Link href="/cicd/approvals">审批管理</Link>,
+          label: <Link href="/cicd/approvals">审批中心</Link>,
         })
       }
 
@@ -217,7 +274,7 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
           key: '/notifications',
           label: (
             <Link href="/notifications">
-              通知管理
+              消息通知
               {unreadCount > 0 && (
                 <Badge
                   count={unreadCount}
@@ -230,10 +287,21 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
         })
       }
 
+      if (canAccessPermissions('read')) {
+        userChildren.push({
+          key: '/governance/audit',
+          label: <Link href="/governance/audit">审计日志</Link>,
+        })
+        userChildren.push({
+          key: '/governance/credentials',
+          label: <Link href="/governance/credentials">凭据治理</Link>,
+        })
+      }
+
       items.push({
         key: '/users',
-        icon: <UserOutlined />,
-        label: '用户管理',
+        icon: <SafetyCertificateOutlined />,
+        label: '安全治理',
         children: userChildren,
       })
     }
@@ -247,11 +315,15 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
         children: [
           {
             key: '/config/models',
-            label: <Link href="/config/models">模型配置</Link>,
+            label: <Link href="/config/models">模型接入</Link>,
           },
           {
-            key: '/config/models/preset',
-            label: <Link href="/config/models/preset">预设模型</Link>,
+            key: '/config/mcp',
+            label: <Link href="/config/mcp">MCP工具</Link>,
+          },
+          {
+            key: '/config/tools',
+            label: <Link href="/config/tools">脚本管理</Link>,
           },
         ],
       })
@@ -270,8 +342,37 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
           },
           {
             key: '/servers/groups',
-            label: <Link href="/servers/groups">主机组列表</Link>,
+            label: <Link href="/servers/groups">主机分组</Link>,
           },
+        ],
+      })
+
+      items.push({
+        key: '/operations',
+        icon: <ScheduleOutlined />,
+        label: '作业中心',
+        children: [
+          { key: '/operations/jobs', label: <Link href="/operations/jobs">作业管理</Link> },
+          { key: '/operations/runs', label: <Link href="/operations/runs">执行记录</Link> },
+        ],
+      })
+
+    }
+
+    // 网络管理：设备资产与真实变更执行统一入口
+    if (canAccessNetwork('read')) {
+      items.push({
+        key: '/network',
+        icon: <GlobalOutlined />,
+        label: '网络管理',
+        children: [
+          { key: '/network/devices', label: <Link href="/network/devices">设备资产</Link> },
+          { key: '/network/groups', label: <Link href="/network/groups">设备分组</Link> },
+          { key: '/network/configs', label: <Link href="/network/configs">配置中心</Link> },
+          { key: '/network/topology', label: <Link href="/network/topology">网络拓扑</Link> },
+          { key: '/network/changes', label: <Link href="/network/changes">变更管理</Link> },
+          { key: '/network/inspections', label: <Link href="/network/inspections">网络巡检</Link> },
+          { key: '/network/alerts', label: <Link href="/network/alerts">网络告警</Link> },
         ],
       })
     }
@@ -281,23 +382,35 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
       items.push({
         key: '/cicd',
         icon: <DeploymentUnitOutlined />,
-        label: 'CI&CD',
+        label: '交付管理',
         children: [
           {
             key: '/cicd/projects',
-            label: <Link href="/cicd/projects">持续集成</Link>,
+            label: <Link href="/cicd/projects">项目管理</Link>,
           },
           {
             key: '/cicd/deployments',
-            label: <Link href="/cicd/deployments">持续部署</Link>,
+            label: <Link href="/cicd/deployments">部署管理</Link>,
+          },
+          {
+            key: '/cicd/pipelines',
+            label: <Link href="/cicd/pipelines">流水管理</Link>,
+          },
+          {
+            key: '/cicd/builds',
+            label: <Link href="/cicd/builds">构建记录</Link>,
           },
           {
             key: '/cicd/jenkins-deployments',
-            label: <Link href="/cicd/jenkins-deployments">Jenkins部署</Link>,
+            label: <Link href="/cicd/jenkins-deployments">任务部署</Link>,
           },
           {
             key: '/cicd/templates',
             label: <Link href="/cicd/templates">模板管理</Link>,
+          },
+          {
+            key: '/cicd/ai-reports',
+            label: <Link href="/cicd/ai-reports">智能报告</Link>,
           },
         ],
       })
@@ -307,17 +420,47 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
     if (canAccessConfig('read') || canAccessMonitoring('read') || canAccessGrafana('read')) {
       const integrationChildren = []
 
+      integrationChildren.push({
+        key: '/integration',
+        label: <Link href="/integration">接入总览</Link>,
+      })
+
       if (canAccessServers('read')) {
         integrationChildren.push({
           key: '/servers/logs',
-          label: <Link href="/servers/logs">ELK日志</Link>,
+          label: <Link href="/servers/logs">日志接入</Link>,
         })
       }
 
       if (canAccessGrafana('read')) {
         integrationChildren.push({
           key: '/monitor',
-          label: <Link href="/monitor">grafana监控</Link>,
+          label: <Link href="/monitor">监控接入</Link>,
+        })
+      }
+
+      if (canAccessConfig('read')) {
+        integrationChildren.push({
+          key: '/integration/git',
+          label: <Link href="/integration/git">代码接入</Link>,
+        })
+      }
+
+      if (canAccessCICD('read')) {
+        integrationChildren.push({
+          key: '/integration/jenkins',
+          label: <Link href="/integration/jenkins">任务接入</Link>,
+        })
+        integrationChildren.push({
+          key: '/integration/artifacts',
+          label: <Link href="/integration/artifacts">制品管理</Link>,
+        })
+      }
+
+      if (canAccessMonitoring('read')) {
+        integrationChildren.push({
+          key: '/integration/alerts',
+          label: <Link href="/integration/alerts">告警接入</Link>,
         })
       }
 
@@ -331,11 +474,28 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
       }
     }
 
+    // 无子菜单的直接入口统一排列在分组菜单之后，侧边栏层级更整齐
+    if (canAccessServers('read')) {
+      items.push({
+        key: '/clusters',
+        icon: <ClusterOutlined />,
+        label: <Link href="/clusters">集群管理</Link>,
+      })
+    }
+
+    if (canAccessMonitoring('read')) {
+      items.push({
+        key: '/events',
+        icon: <AlertOutlined />,
+        label: <Link href="/events">事件中心</Link>,
+      })
+    }
+
     // 工具箱 - 所有用户都可以访问
     items.push({
       key: '/tools',
       icon: <ToolOutlined />,
-      label: <Link href="/tools">工具箱</Link>,
+      label: <Link href="/tools">运维工具</Link>,
     })
 
     return items
@@ -476,7 +636,13 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
       </Sider>
 
       {/* 主内容区 */}
-      <Layout className={`transition-all duration-300 ${collapsed ? 'ml-20' : 'ml-64'}`}>
+      <Layout
+        className="transition-all duration-300 min-w-0"
+        style={{
+          marginLeft: collapsed ? 80 : 256,
+          width: `calc(100% - ${collapsed ? 80 : 256}px)`,
+        }}
+      >
         {/* 顶部导航 */}
         <Header 
           className="fixed top-0 right-0 z-10 px-6 flex items-center justify-between"
@@ -541,7 +707,7 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
               }`}>
                 <Avatar
                   size="small"
-                  src={user?.avatar || "https://wuhrai-wordpress.oss-cn-hangzhou.aliyuncs.com/%E5%9B%BE%E6%A0%87/%E5%88%9B%E5%BB%BA%E8%B5%9B%E5%8D%9A%E6%9C%8B%E5%85%8B%E5%9B%BE%E6%A0%87%20%283%29.png"}
+                  src={user?.avatar || undefined}
                   icon={<UserOutlined />}
                 />
                 <span className={`text-sm truncate max-w-32 ${
@@ -555,8 +721,8 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
         </Header>
 
         {/* 内容区域 */}
-        <Content className="mt-16 p-6 min-h-[calc(100vh-64px)] bg-transparent">
-          <div className="animate-fade-in">
+        <Content className="mt-16 p-6 min-w-0 min-h-[calc(100vh-64px)] bg-transparent">
+          <div className="animate-fade-in min-w-0">
             {children}
           </div>
         </Content>
@@ -572,4 +738,4 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
   )
 }
 
-export default MainLayout 
+export default MainLayout

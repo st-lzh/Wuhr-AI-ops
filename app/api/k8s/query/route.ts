@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '../../../../lib/auth/apiHelpers-new'
 import { getPrismaClient } from '../../../../lib/config/database'
+import { resolveRuntimeModelConfig } from '../../../../lib/ai/runtimeModelConfig'
 
 // POST方法：处理K8s模式非流式聊天请求
 export async function POST(request: NextRequest) {
@@ -25,6 +26,14 @@ export async function POST(request: NextRequest) {
     }
 
     const prisma = await getPrismaClient()
+    const runtimeModel = await resolveRuntimeModelConfig({
+      prisma,
+      userId: user.id,
+      model: config?.model || requestConfig?.model,
+      provider: config?.provider || requestConfig?.provider,
+      apiKey: config?.apiKey || requestConfig?.apiKey,
+      baseUrl: config?.baseUrl || requestConfig?.baseUrl
+    })
 
     // 获取主机信息 - 远程执行必须提供hostId
     const hostId = config?.hostId || requestConfig?.hostId
@@ -38,7 +47,6 @@ export async function POST(request: NextRequest) {
     const hostInfo = await prisma.server.findFirst({
       where: {
         id: hostId,
-        userId: user.id,
         isActive: true
       }
     })
@@ -70,10 +78,10 @@ export async function POST(request: NextRequest) {
       query: actualQuery,
       isK8sMode: true, // 🔥 强制设置为K8s模式
       config: {
-        provider: config?.provider || requestConfig?.provider,
-        model: config?.model || requestConfig?.model || 'deepseek-chat',
-        apiKey: config?.apiKey || requestConfig?.apiKey,
-        baseUrl: config?.baseUrl || requestConfig?.baseUrl,
+        provider: runtimeModel.provider,
+        model: runtimeModel.model,
+        apiKey: runtimeModel.apiKey,
+        baseUrl: runtimeModel.baseUrl,
         hostId: hostId,
         maxIterations: 20,
         streamingOutput: false,

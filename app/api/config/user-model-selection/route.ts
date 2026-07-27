@@ -28,12 +28,9 @@ export async function GET(request: NextRequest) {
       // 如果用户没有选择，尝试获取默认模型
       const defaultModel = await prisma.modelConfig.findFirst({
         where: {
-          userId: user.id,
           isActive: true
         },
-        orderBy: {
-          createdAt: 'desc'
-        }
+        orderBy: [{ isDefault: 'desc' }, { createdAt: 'asc' }]
       })
 
       if (defaultModel) {
@@ -113,11 +110,10 @@ export async function POST(request: NextRequest) {
 
     console.log('📝 设置用户模型选择:', { userId: user.id, selectedModelId })
 
-    // 验证模型是否属于当前用户
+    // 团队模型共享；个人选择只记录当前用户的会话偏好。
     const modelConfig = await prisma.modelConfig.findFirst({
       where: {
         id: selectedModelId,
-        userId: user.id,
         isActive: true
       }
     })
@@ -188,7 +184,6 @@ export async function PUT(request: NextRequest) {
 
     const availableModels = await prisma.modelConfig.findMany({
       where: {
-        userId: user.id,
         isActive: true
       },
       orderBy: [

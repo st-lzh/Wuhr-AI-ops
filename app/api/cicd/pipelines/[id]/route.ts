@@ -14,6 +14,10 @@ const UpdatePipelineSchema = z.object({
   isActive: z.boolean().optional()
 })
 
+function canWriteCICD(user: { role: string; permissions: string[] }) {
+  return user.role === 'admin' || user.role === 'manager' || user.permissions.includes('cicd:write')
+}
+
 // 获取单个流水线详情
 export async function GET(
   request: NextRequest,
@@ -25,15 +29,13 @@ export async function GET(
       return authResult.response
     }
 
-    const { user } = authResult
     const pipelineId = params.id
     const prisma = await getPrismaClient()
 
     // 查询流水线详情
     const pipeline = await prisma.pipeline.findFirst({
       where: {
-        id: pipelineId,
-        userId: user.id
+        id: pipelineId
       },
       include: {
         project: {
@@ -101,6 +103,9 @@ export async function PUT(
     }
 
     const { user } = authResult
+    if (!canWriteCICD(user)) {
+      return NextResponse.json({ success: false, error: '没有流水线写入权限' }, { status: 403 })
+    }
     const pipelineId = params.id
     const body = await request.json()
 
@@ -117,11 +122,10 @@ export async function PUT(
     const data = validationResult.data
     const prisma = await getPrismaClient()
 
-    // 验证流水线是否存在且属于当前用户
+    // 流水线属于可信团队共享资产，写操作已在入口校验权限。
     const existingPipeline = await prisma.pipeline.findFirst({
       where: {
-        id: pipelineId,
-        userId: user.id
+        id: pipelineId
       }
     })
 
@@ -138,7 +142,6 @@ export async function PUT(
         where: {
           name: data.name,
           projectId: existingPipeline.projectId,
-          userId: user.id,
           id: { not: pipelineId }
         }
       })
@@ -237,14 +240,16 @@ export async function DELETE(
     }
 
     const { user } = authResult
+    if (!canWriteCICD(user)) {
+      return NextResponse.json({ success: false, error: '没有流水线写入权限' }, { status: 403 })
+    }
     const pipelineId = params.id
     const prisma = await getPrismaClient()
 
-    // 验证流水线是否存在且属于当前用户
+    // 流水线属于可信团队共享资产，写操作已在入口校验权限。
     const existingPipeline = await prisma.pipeline.findFirst({
       where: {
-        id: pipelineId,
-        userId: user.id
+        id: pipelineId
       }
     })
 

@@ -91,8 +91,11 @@ export default function GrafanaMonitorPage() {
   const [configForm] = Form.useForm()
 
   // 权限检查
-  const canWrite = user?.role === 'admin' || user?.permissions?.includes('grafana:write')
-  const canRead = user?.role === 'admin' || user?.permissions?.includes('grafana:read') || canWrite
+  const canWrite = user?.role === 'admin'
+    || user?.role === 'manager'
+    || user?.permissions?.includes('*')
+    || user?.permissions?.includes('grafana:write')
+  const canRead = Boolean(user)
 
   // 调试信息
   console.log('🔍 用户权限调试:', {

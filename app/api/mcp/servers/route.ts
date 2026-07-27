@@ -1,17 +1,29 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { requireAuth } from '../../../../lib/auth/apiHelpers-new'
+import { getBackendApiKey, getBackendBaseUrl } from '../../../../lib/improve/backendProxy'
 
-const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:2081'
+function backendHeaders(): Record<string, string> | null {
+  const key = getBackendApiKey()
+  return key ? { 'Content-Type': 'application/json', 'X-API-Key': key } : null
+}
+
+const backendUrl = (path: string) => `${getBackendBaseUrl().replace(/\/$/, '')}${path}`
 
 // GET /api/mcp/servers - 获取MCP服务器列表
 export async function GET(request: NextRequest) {
   try {
+    const authResult = await requireAuth(request)
+    if (!authResult.success) return authResult.response
+    const headers = backendHeaders()
+    if (!headers) {
+      return NextResponse.json({ success: false, error: '后端 API key 未配置' }, { status: 500 })
+    }
+
     console.log('📋 [MCP API] 获取MCP服务器列表')
 
-    const response = await fetch(`${BACKEND_URL}/api/mcp/servers`, {
+    const response = await fetch(backendUrl('/api/mcp/servers'), {
       method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers,
     })
 
     if (!response.ok) {
@@ -42,6 +54,13 @@ export async function GET(request: NextRequest) {
 // POST /api/mcp/servers?action=test - 测试MCP服务器连接
 export async function POST(request: NextRequest) {
   try {
+    const authResult = await requireAuth(request)
+    if (!authResult.success) return authResult.response
+    const headers = backendHeaders()
+    if (!headers) {
+      return NextResponse.json({ success: false, error: '后端 API key 未配置' }, { status: 500 })
+    }
+
     const searchParams = request.nextUrl.searchParams
     const action = searchParams.get('action')
 
@@ -50,11 +69,9 @@ export async function POST(request: NextRequest) {
 
       const body = await request.json()
 
-      const response = await fetch(`${BACKEND_URL}/api/mcp/servers/test`, {
+      const response = await fetch(backendUrl('/api/mcp/servers/test'), {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers,
         body: JSON.stringify(body),
       })
 

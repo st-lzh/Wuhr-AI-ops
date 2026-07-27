@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '../../../../../lib/auth/apiHelpers-new'
 import { getPrismaClient } from '../../../../../lib/config/database'
+import { canWriteTeamAssets } from '../../../../../lib/auth/teamAccess'
 
 // 获取单个Git认证配置详情
 export async function GET(
@@ -22,7 +23,6 @@ export async function GET(
     const credential = await prisma.gitCredential.findFirst({
       where: {
         id,
-        userId: user.id,
         isActive: true
       },
       select: {
@@ -71,6 +71,9 @@ export async function DELETE(
     }
 
     const { user } = authResult
+    if (!canWriteTeamAssets(user, 'config:write')) {
+      return NextResponse.json({ success: false, error: '没有接入凭据写入权限' }, { status: 403 })
+    }
     const { id } = params
     const prisma = getPrismaClient()
 
@@ -80,7 +83,6 @@ export async function DELETE(
     const credential = await (await prisma).gitCredential.findFirst({
       where: {
         id,
-        userId: user.id,
         isActive: true
       }
     })
@@ -126,6 +128,9 @@ export async function PATCH(
     }
 
     const { user } = authResult
+    if (!canWriteTeamAssets(user, 'config:write')) {
+      return NextResponse.json({ success: false, error: '没有接入凭据写入权限' }, { status: 403 })
+    }
     const { id } = params
     const body = await request.json()
     const { isDefault } = body
@@ -138,7 +143,6 @@ export async function PATCH(
     const credential = await (await prisma).gitCredential.findFirst({
       where: {
         id,
-        userId: user.id,
         isActive: true
       }
     })
@@ -154,7 +158,6 @@ export async function PATCH(
     if (isDefault) {
       await (await prisma).gitCredential.updateMany({
         where: {
-          userId: user.id,
           platform: credential.platform,
           isDefault: true,
           id: { not: id }

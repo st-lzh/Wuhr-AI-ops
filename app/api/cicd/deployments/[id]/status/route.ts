@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '../../../../../../lib/auth/apiHelpers-new'
 import { getPrismaClient } from '../../../../../../lib/config/database'
+import { refreshJenkinsDeploymentStatus } from '../../../../../../lib/services/deploymentTriggerService'
 
 // 获取部署状态和日志
 export async function GET(
@@ -14,7 +15,6 @@ export async function GET(
       return authResult.response
     }
 
-    const { user } = authResult
     const deploymentId = params.id
 
     console.log(`📊 获取部署状态: ${deploymentId}`)
@@ -22,7 +22,7 @@ export async function GET(
     const prisma = await getPrismaClient()
 
     // 查找部署任务
-    const deployment = await prisma.deployment.findUnique({
+    let deployment = await prisma.deployment.findUnique({
       where: { id: deploymentId },
       include: {
         project: {
@@ -47,16 +47,11 @@ export async function GET(
       }, { status: 404 })
     }
 
-    // 权限检查：项目成员或管理员可以查看状态
-    const canViewStatus = user.role === 'admin' || 
-                         deployment.userId === user.id ||
-                         (user.permissions && user.permissions.includes('cicd:read'))
-
-    if (!canViewStatus) {
-      return NextResponse.json({
-        success: false,
-        error: '没有权限查看部署状态'
-      }, { status: 403 })
+    if (deployment.isJenkinsDeployment && deployment.status === 'deploying') {
+      deployment = await refreshJenkinsDeploymentStatus(prisma, deployment)
+    }
+    if (!deployment) {
+      return NextResponse.json({ success: false, error: '部署状态同步失败' }, { status: 500 })
     }
 
     // 计算部署持续时间

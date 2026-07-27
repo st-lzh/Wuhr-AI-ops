@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '../../../../../lib/auth/apiHelpers'
 import { getPrismaClient } from '../../../../../lib/config/database'
-import { encrypt, decrypt } from '../../../../../lib/crypto/encryption'
+import { encrypt } from '../../../../../lib/crypto/encryption'
+import { canWriteTeamAssets } from '../../../../../lib/auth/teamAccess'
 
 // GET - 获取ELK配置列表
 export async function GET(request: NextRequest) {
@@ -57,6 +58,9 @@ export async function POST(request: NextRequest) {
       return authResult.response
     }
     const user = authResult.user
+    if (!canWriteTeamAssets(user, 'monitoring:write')) {
+      return NextResponse.json({ success: false, error: '没有日志接入写入权限' }, { status: 403 })
+    }
 
     const data = await request.json()
     const { name, host, port, username, password, indices, ssl, isActive, apiKey, webUrl } = data
@@ -150,6 +154,9 @@ export async function PUT(request: NextRequest) {
       return authResult.response
     }
     const user = authResult.user
+    if (!canWriteTeamAssets(user, 'monitoring:write')) {
+      return NextResponse.json({ success: false, error: '没有日志接入写入权限' }, { status: 403 })
+    }
 
     const data = await request.json()
     const { id, name, host, port, username, password, indices, ssl, isActive, apiKey, webUrl } = data
@@ -253,6 +260,9 @@ export async function DELETE(request: NextRequest) {
       return authResult.response
     }
     const user = authResult.user
+    if (!canWriteTeamAssets(user, 'monitoring:write')) {
+      return NextResponse.json({ success: false, error: '没有日志接入写入权限' }, { status: 403 })
+    }
 
     const { searchParams } = new URL(request.url)
     const id = searchParams.get('id')

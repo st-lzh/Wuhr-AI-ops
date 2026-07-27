@@ -1,5 +1,6 @@
 import { getPrismaClient } from '../config/database'
 import { spawn } from 'child_process'
+import { revealSecret } from '../crypto/encryption'
 
 interface HostInfo {
   id: string
@@ -250,7 +251,7 @@ export class SimplifiedDeploymentExecutor {
         host: host.ip || host.hostname,
         port: host.port || 22,
         username: host.username || 'root',
-        password: host.password || undefined,
+        password: revealSecret(host.password) || undefined,
         keyPath: host.keyPath || undefined,
         authType: host.keyPath ? 'key' : 'password'
       }
