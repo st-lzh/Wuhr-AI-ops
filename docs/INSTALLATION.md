@@ -32,6 +32,15 @@ Agent 支持：
 
 以 `1.0.0` 为例：
 
+下载来源：
+
+- GitHub：`https://github.com/st-lzh/Wuhr-AI-ops/releases/tag/v1.0.0`
+- 国内镜像：`http://106.12.150.207/download/`
+
+完整平台请选择 `wuhr-ai-ops-1.0.0.tar.gz`；仅安装 Agent 请选择
+`wuhr-agent-1.0.0.tar.gz`。两个压缩包都必须同时下载对应的 `.sha256`
+文件进行校验。
+
 ```bash
 sha256sum -c wuhr-ai-ops-1.0.0.tar.gz.sha256
 tar -xzf wuhr-ai-ops-1.0.0.tar.gz

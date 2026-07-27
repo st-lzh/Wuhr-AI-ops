@@ -85,6 +85,11 @@ flowchart LR
 
 正式发布通过 GitHub Releases 提供编译包，不要求客户下载源码。
 
+下载地址：
+
+- [GitHub Release](https://github.com/st-lzh/Wuhr-AI-ops/releases/tag/v1.0.0)
+- [国内下载镜像](http://106.12.150.207/download/)
+
 ```bash
 sha256sum -c wuhr-ai-ops-1.0.0.tar.gz.sha256
 tar -xzf wuhr-ai-ops-1.0.0.tar.gz
