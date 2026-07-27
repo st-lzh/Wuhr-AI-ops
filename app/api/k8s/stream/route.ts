@@ -108,7 +108,9 @@ export async function POST(request: NextRequest) {
         mcpClientEnabled: runtimeTools.mcpEnabled && config?.mcpClientEnabled === true,
         requireApproval: config?.requireApproval || false, // 🔥 传递命令批准配置
         batchMode: executionContext.batchMode,
-        batchHosts: executionContext.batchHosts
+        batchHosts: executionContext.batchHosts,
+        // 🔥 vLLM需要ReAct模式
+        enableToolUseShim: true
       }
     }
 

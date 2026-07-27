@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '../../../../lib/auth/apiHelpers-new'
-
 import { getPrismaClient } from '../../../../lib/config/database'
 import {
   CICDContextError,
@@ -11,8 +10,10 @@ import {
 import { resolveRuntimeToolConfig } from '../../../../lib/ai/runtimeToolConfig'
 import { resolvePersistedConversationHistory } from '../../../../lib/ai/conversationHistory'
 import { resolveRuntimeModelConfig } from '../../../../lib/ai/runtimeModelConfig'
+import { executeHTTPStream, executeHTTPQuery } from '../../../../utils/httpApiClient'
 
 // 注释：系统仅支持远程执行模式，通过kubelet-wuhrai服务处理所有AI请求
+// 修复：添加async/await处理流式传输启动错误
 
 export async function POST(request: NextRequest) {
   try {
@@ -126,16 +127,54 @@ export async function POST(request: NextRequest) {
     try {
       // 🔥 修改：直接调用kubelet-wuhrai HTTP API，不再通过SSH
       // 获取主机信息用于HTTP API调用
-      const server = await prisma.server.findFirst({
+      console.log('🔍 查询主机信息:', {
+        hostId,
+        userId: user.id
+      })
+
+      let server = await prisma.server.findFirst({
         where: {
           id: finalHostId,
           isActive: true
         }
       })
 
+      // 🔥 如果找不到指定的server，尝试使用用户的默认激活server
+      if (!server && hostId) {
+        console.log('⚠️ 指定的hostId不存在，尝试使用默认激活server')
+        server = await prisma.server.findFirst({
+          where: {
+            userId: user.id,
+            isActive: true
+          },
+          orderBy: {
+            createdAt: 'asc' // 使用最早创建的server
+          }
+        })
+
+        if (server) {
+          console.log('✅ 使用默认server:', {
+            serverId: server.id,
+            serverName: server.name,
+            serverIp: server.ip
+          })
+        }
+      }
+
+      console.log('🔍 查询结果:', {
+        found: !!server,
+        serverIp: server?.ip,
+        serverId: server?.id
+      })
+
       if (!server) {
+        console.error('❌ 未找到主机:', {
+          hostId,
+          userId: user.id,
+          reason: '主机不存在或不属于当前用户或未激活'
+        })
         return NextResponse.json(
-          { success: false, error: `未找到主机: ${finalHostId}` },
+          { success: false, error: `未找到可用主机，请先在系统中添加并激活主机` },
           { status: 404 }
         )
       }
@@ -145,9 +184,6 @@ export async function POST(request: NextRequest) {
         hostPort: 2081,
         isK8sMode: isK8sMode
       })
-
-      // 导入HTTP API客户端
-      const { executeHTTPStream } = await import('../../../../utils/httpApiClient')
 
       // 构建HTTP API请求
       const httpRequest = {
@@ -166,13 +202,24 @@ export async function POST(request: NextRequest) {
           maxIterations: 20,
           streamingOutput: true,
           isK8sMode: isK8sMode,
+          disableTools: requestConfig.disableTools === true,
           mcpClientEnabled: runtimeTools.mcpEnabled && requestConfig.mcpClientEnabled === true,
           requireApproval: requestConfig.requireApproval === true,
           networkDeviceIds: Array.isArray(body.networkDeviceIds) ? body.networkDeviceIds : [],
           networkBatchLabel: typeof body.networkBatchLabel === 'string' ? body.networkBatchLabel : '',
-          networkActor: user.email || user.username || user.id
+          networkActor: user.email || user.username || user.id,
+          enableToolUseShim: true
         }
       }
+
+      console.log('📤 发送到kubelet-wuhrai的配置:', {
+        provider: httpRequest.config.provider,
+        model: httpRequest.config.model,
+        hasApiKey: !!httpRequest.config.apiKey,
+        baseUrl: httpRequest.config.baseUrl,
+        disableTools: httpRequest.config.disableTools,
+        isK8sMode: httpRequest.config.isK8sMode
+      })
 
       // HTTP API配置
       const httpConfig = {
@@ -186,33 +233,47 @@ export async function POST(request: NextRequest) {
 
         // 创建流式响应
         const stream = new ReadableStream({
-          start(controller) {
-            executeHTTPStream(httpConfig, httpRequest, {
-              onData: (streamData) => {
-                controller.enqueue(`data: ${JSON.stringify(streamData)}\n\n`)
-              },
-              onError: (error) => {
-                console.error('❌ HTTP流式传输错误:', error)
-                try {
-                  controller.enqueue(`data: ${JSON.stringify({
-                    type: 'error',
-                    content: error,
-                    timestamp: new Date().toISOString()
-                  })}\n\n`)
-                  controller.close()
-                } catch (e) {
-                  console.error('关闭控制器失败:', e)
+          async start(controller) {
+            try {
+              await executeHTTPStream(httpConfig, httpRequest, {
+                onData: (streamData) => {
+                  controller.enqueue(`data: ${JSON.stringify(streamData)}\n\n`)
+                },
+                onError: (error) => {
+                  console.error('❌ HTTP流式传输错误:', error)
+                  try {
+                    controller.enqueue(`data: ${JSON.stringify({
+                      type: 'error',
+                      content: error,
+                      timestamp: new Date().toISOString()
+                    })}\n\n`)
+                    controller.close()
+                  } catch (e) {
+                    console.error('关闭控制器失败:', e)
+                  }
+                },
+                onComplete: () => {
+                  console.log('✅ HTTP流式传输完成')
+                  try {
+                    controller.close()
+                  } catch (e) {
+                    console.error('关闭控制器失败:', e)
+                  }
                 }
-              },
-              onComplete: () => {
-                console.log('✅ HTTP流式传输完成')
-                try {
-                  controller.close()
-                } catch (e) {
-                  console.error('关闭控制器失败:', e)
-                }
+              })
+            } catch (error) {
+              console.error('💥 启动流式传输失败:', error)
+              try {
+                controller.enqueue(`data: ${JSON.stringify({
+                  type: 'error',
+                  content: error instanceof Error ? error.message : '流式传输启动失败',
+                  timestamp: new Date().toISOString()
+                })}\n\n`)
+                controller.close()
+              } catch (e) {
+                console.error('发送错误消息失败:', e)
               }
-            })
+            }
           }
         })
 
@@ -227,12 +288,13 @@ export async function POST(request: NextRequest) {
       }
 
       // 非流式模式：使用HTTP API查询
-      const { executeHTTPQuery } = await import('../../../../utils/httpApiClient')
       const result = await executeHTTPQuery(httpConfig, httpRequest)
 
       return NextResponse.json({
         success: true,
-        response: result,
+        data: result.data,  // 🔥 直接返回data字段，与前端useRedisChat.ts:750的期望匹配
+        message: result.message,
+        response: result,  // 保留完整响应供调试
         executionMode: 'remote',
         hasResponse: !!result,
         hasError: false

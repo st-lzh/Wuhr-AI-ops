@@ -86,6 +86,9 @@ const SecurityToggle: React.FC = () => {
         localStorage.setItem('securityConfig', JSON.stringify(newConfig))
         window.dispatchEvent(new CustomEvent('security-config-updated', { detail: newConfig }))
         console.log('🔐 安全配置已保存到后端和localStorage:', newConfig)
+
+        // 🔥 触发自定义事件，通知其他组件配置已更新（实现实时生效）
+        window.dispatchEvent(new CustomEvent('securityConfigChanged', { detail: newConfig }))
       } else {
         throw new Error(data.error || '保存失败')
       }

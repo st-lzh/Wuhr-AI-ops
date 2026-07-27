@@ -111,7 +111,9 @@ export async function POST(request: NextRequest) {
         batchHosts: executionContext.batchHosts,
         networkDeviceIds: Array.isArray(body.networkDeviceIds) ? body.networkDeviceIds : [],
         networkBatchLabel: typeof body.networkBatchLabel === 'string' ? body.networkBatchLabel : '',
-        networkActor: user.email || user.username || user.id
+        networkActor: user.email || user.username || user.id,
+        // 🔥 vLLM需要ReAct模式
+        enableToolUseShim: true
       }
     }
 

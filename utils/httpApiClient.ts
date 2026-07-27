@@ -222,7 +222,7 @@ export class HTTPApiClient {
       configIsK8sMode: request.config?.isK8sMode
     })
 
-    // 🔥 对于流式请求使用15分钟超时（匹配后端10分钟批准超时 + 5分钟执行时间）
+    // 🔥 对于流式请求使用20分钟超时（匹配后端3分钟批准超时×多轮迭代 + 执行时间）
     const response = await this.makeRequest('/api/stream', {
       method: 'POST',
       headers: {
@@ -231,7 +231,7 @@ export class HTTPApiClient {
         ...authHeader(),
       },
       body: JSON.stringify(request),
-    }, 15 * 60 * 1000) // 🔥 15分钟超时用于流式请求
+    }, 20 * 60 * 1000) // 🔥 20分钟超时用于流式请求
 
     if (!response.ok) {
       const errorText = await response.text()
@@ -269,6 +269,12 @@ export class HTTPApiClient {
     let lastProcessedContent = new Set<string>() // 防止重复处理相同内容
     let lastDataTime = Date.now()
     let dataCount = 0
+    let isWaitingForApproval = false // 🔥 新增：跟踪是否正在等待命令批准
+    let hasReceivedDoneSignal = false // 🔥 新增：是否收到了done信号
+
+    // 🔥 增加超时时间：300秒(5分钟)，匹配后端3分钟批准超时 + 执行时间
+    const HEARTBEAT_TIMEOUT = 300000 // 300秒无数据才视为超时
+    const HEARTBEAT_CHECK_INTERVAL = 10000 // 每10秒检查一次
 
     // 启动连接状态监控
     this.connectionState = 'connected'
@@ -276,7 +282,47 @@ export class HTTPApiClient {
     this.lastHeartbeat = Date.now()
     this.startHeartbeat()
 
-    console.log('🌊 开始处理SSE流式响应')
+    console.log('🌊 开始处理SSE流式响应', {
+      heartbeatTimeout: HEARTBEAT_TIMEOUT,
+      checkInterval: HEARTBEAT_CHECK_INTERVAL
+    })
+
+    // 🔥 启动超时检测定时器
+    let heartbeatCheckTimer: NodeJS.Timeout | null = null
+    const startHeartbeatCheck = () => {
+      heartbeatCheckTimer = setInterval(() => {
+        const timeSinceLastData = Date.now() - lastDataTime
+
+        // 如果超过超时阈值且还在等待数据
+        if (timeSinceLastData > HEARTBEAT_TIMEOUT && !isCompleted) {
+          console.warn('⏰ [SSE心跳检测] 超时检测触发', {
+            timeSinceLastData,
+            timeout: HEARTBEAT_TIMEOUT,
+            lastDataTime: new Date(lastDataTime).toISOString(),
+            currentTime: new Date().toISOString(),
+            isWaitingForApproval
+          })
+
+          // 🔥 如果正在等待批准，继续等待不断开
+          if (isWaitingForApproval) {
+            console.log('⏳ [SSE心跳检测] 正在等待命令批准，继续保持连接')
+          } else {
+            console.log('⚠️ [SSE心跳检测] 检测到长时间无数据,继续保持连接')
+          }
+        }
+      }, HEARTBEAT_CHECK_INTERVAL)
+    }
+
+    // 停止心跳检测
+    const stopHeartbeatCheck = () => {
+      if (heartbeatCheckTimer) {
+        clearInterval(heartbeatCheckTimer)
+        heartbeatCheckTimer = null
+      }
+    }
+
+    // 启动心跳检测
+    startHeartbeatCheck()
 
     try {
       while (true) {
@@ -352,6 +398,16 @@ export class HTTPApiClient {
               } else if (data.type === 'command_approval_request' || data.type === 'command_approved' || data.type === 'command_rejected') {
                 // 🔥 命令批准相关事件 - 必须转发给前端
                 console.log('🔐 [SSE转发] 命令批准事件:', data.type)
+
+                // 🔥 关键：更新批准等待状态
+                if (data.type === 'command_approval_request') {
+                  isWaitingForApproval = true
+                  console.log('⏳ [SSE] 进入命令批准等待状态')
+                } else if (data.type === 'command_approved' || data.type === 'command_rejected') {
+                  isWaitingForApproval = false
+                  console.log('✅ [SSE] 退出命令批准等待状态')
+                }
+
                 callbacks.onData(data)
               } else if (data.type === 'error') {
                 console.error('❌ 服务器错误:', data.content)
@@ -364,12 +420,16 @@ export class HTTPApiClient {
                 console.log('✅ 流式传输完成:', data.content)
                 if (!isCompleted) {
                   isCompleted = true
+                  hasReceivedDoneSignal = true // 🔥 标记收到了done信号
                   callbacks.onData(data)
                   callbacks.onComplete()
                 }
                 return // 完成时直接返回
               } else if (data.type === 'connection') {
-                // 跳过connection事件
+                // 🔥 connection事件作为心跳,更新lastDataTime
+                lastDataTime = Date.now()
+                console.log('💓 [SSE心跳] 收到connection事件,更新心跳时间')
+                // 跳过不转发给前端
                 continue
               } else {
                 // 兼容其他格式
@@ -394,7 +454,9 @@ export class HTTPApiClient {
         hasReceivedData,
         dataCount,
         connectionDuration: Date.now() - this.connectionStartTime,
-        timeSinceLastData: Date.now() - lastDataTime
+        timeSinceLastData: Date.now() - lastDataTime,
+        isWaitingForApproval,
+        hasReceivedDoneSignal
       })
 
       this.stopHeartbeat()
@@ -406,13 +468,24 @@ export class HTTPApiClient {
 
         // 更详细的错误分类
         if (errorMessage.includes('terminated') || errorMessage.includes('closed')) {
-          // 连接中断时，如果已经有数据，则认为是正常完成
-          if (hasReceivedData && dataCount > 0) {
-            console.log('🔌 连接中断，但已接收到数据，视为正常完成', {
+          // 🔥 关键修复：只有在收到done信号后，连接断开才视为正常完成
+          if (hasReceivedDoneSignal) {
+            console.log('🔌 连接中断，已收到完成信号，视为正常完成', {
               dataCount,
               duration: Date.now() - this.connectionStartTime
             })
             callbacks.onComplete()
+          } else if (isWaitingForApproval) {
+            // 🔥 如果还在等待批准，说明连接异常断开
+            console.log('❌ 连接中断，正在等待批准中，这是异常情况')
+            callbacks.onError('连接中断，命令批准过程被中断，请重试')
+          } else if (hasReceivedData && dataCount > 3) {
+            // 🔥 收到了一些数据但未收到done信号，警告但仍视为部分完成
+            console.warn('⚠️ 连接中断，收到部分数据但未收到完成信号', {
+              dataCount,
+              duration: Date.now() - this.connectionStartTime
+            })
+            callbacks.onError('连接中断，执行可能未完成，请检查结果')
           } else {
             console.log('🔌 连接中断且无有效数据')
             callbacks.onError('连接中断，未接收到完整数据')
@@ -429,6 +502,9 @@ export class HTTPApiClient {
         }
       }
     } finally {
+      // 🔥 清理心跳检测定时器
+      stopHeartbeatCheck()
+
       try {
         reader.releaseLock()
       } catch (releaseError) {

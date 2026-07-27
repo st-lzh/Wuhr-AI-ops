@@ -133,7 +133,36 @@ export async function POST(request: NextRequest) {
     })
 
     const responseTime = Date.now() - startTime
-    const data = await response.json()
+
+    // 🔥 处理非JSON响应(如vLLM返回500 Internal Server Error文本)
+    let data: any
+    try {
+      data = await response.json()
+    } catch (jsonError) {
+      const errorText = await response.text()
+      console.warn('⚠️ [模型能力测试] API返回非JSON响应:', errorText.substring(0, 200))
+
+      // 如果是500错误且响应是"Internal Server Error"，说明可能不支持function calling
+      if (response.status === 500 && errorText.includes('Internal Server Error')) {
+        console.log('🔧 [模型能力测试] 检测到模型可能不支持function calling，将标记为不支持但可用')
+        return NextResponse.json({
+          success: true,
+          supported: false,
+          message: '⚠️ 模型不支持function calling(这是正常的，部分本地模型如vLLM不支持此功能)',
+          details: {
+            responseTime: `${responseTime}ms`,
+            note: '模型可以正常使用，但需要禁用工具调用功能'
+          }
+        })
+      }
+
+      return NextResponse.json({
+        success: false,
+        supported: false,
+        error: `API返回非JSON响应: ${errorText.substring(0, 100)}`,
+        details: { statusCode: response.status }
+      })
+    }
 
     console.log('📊 [模型能力测试] API响应:', {
       status: response.status,

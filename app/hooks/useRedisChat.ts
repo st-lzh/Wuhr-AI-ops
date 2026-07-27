@@ -184,6 +184,9 @@ ${executionResults}
       apiPath = '/completions'  // 豆包API路径（baseUrl已包含/api/v3/chat）
     } else if (apiProvider === 'qwen') {
       apiPath = '/chat/completions'  // Qwen API路径（baseUrl已包含/compatible-mode/v1）
+    } else if (apiProvider === 'openai-compatible' || apiBaseUrl.includes('/v1')) {
+      // 🔥 对于openai-compatible或baseUrl已包含/v1的情况，只添加/chat/completions
+      apiPath = '/chat/completions'
     }
 
     console.log('🚀 [总结函数] 直接调用LLM API生成总结:', {
@@ -572,9 +575,10 @@ export function useRedisChat(options: UseRedisChatOptions = {}) {
     // 初始加载
     loadSecurityConfig()
 
-    // 🔥 监听storage事件,当配置更新时重新加载
+    // 🔥 监听storage事件,当配置更新时重新加载（跨标签页）
     const handleStorageChange = (e: StorageEvent) => {
       if (e.key === 'securityConfig') {
+        console.log('🔐 检测到安全配置更新（跨标签页），重新加载')
         loadSecurityConfig()
       }
     }
@@ -585,9 +589,11 @@ export function useRedisChat(options: UseRedisChatOptions = {}) {
 
     window.addEventListener('storage', handleStorageChange)
     window.addEventListener('security-config-updated', handleConfigUpdated)
+    window.addEventListener('securityConfigChanged', handleConfigUpdated)
     return () => {
       window.removeEventListener('storage', handleStorageChange)
       window.removeEventListener('security-config-updated', handleConfigUpdated)
+      window.removeEventListener('securityConfigChanged', handleConfigUpdated)
     }
   }, [])
 
@@ -1005,7 +1011,9 @@ export function useRedisChat(options: UseRedisChatOptions = {}) {
           maxIterations: 20,
           streamingOutput: true,
           mcpClientEnabled: modelConfig?.mcpToolsEnabled === true,
-          requireApproval: securityConfig.enabled && securityConfig.requireApproval  // 🔥 新增: 命令执行询问
+          requireApproval: securityConfig.enabled && securityConfig.requireApproval,
+          // 🔥 vLLM需要ReAct模式(enableToolUseShim: true)，因为没有--enable-auto-tool-choice
+          enableToolUseShim: true
         },
         // 优化：添加会话上下文信息，用于kubelet-wuhrai后端会话管理
         sessionId: session.id, // 传递会话ID给kubelet-wuhrai

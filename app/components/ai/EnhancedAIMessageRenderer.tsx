@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useEffect, useMemo } from 'react'
-import { Card, Tag, Typography, Button, Space, Tooltip, Switch } from 'antd'
+import { Card, Tag, Typography, Button, Space, Tooltip, Switch, Collapse } from 'antd'
 import {
   CheckCircleOutlined,
   ClockCircleOutlined,
@@ -12,14 +12,23 @@ import {
   RobotOutlined,
   ThunderboltOutlined,
   SettingOutlined,
-  BranchesOutlined
+  BranchesOutlined,
+  BulbOutlined
 } from '@ant-design/icons'
 import { AgentSession, createAgentParser } from '../../utils/agentOutputParser'
 import AgentSessionRenderer from './AgentSessionRenderer'
 import EnhancedMarkdownRenderer from './EnhancedMarkdownRenderer'
 
-
 const { Text } = Typography
+const { Panel } = Collapse
+
+// 🔥 解析<think>标签内容
+interface ParsedContent {
+  hasThinkTag: boolean
+  thinkContent: string
+  mainContent: string
+  isThinkingComplete: boolean
+}
 
 interface EnhancedAIMessageRendererProps {
   content: string
@@ -44,6 +53,46 @@ interface EnhancedAIMessageRendererProps {
   onAgentModeToggle?: (enabled: boolean) => void
 }
 
+// 🔥 解析<think>标签的函数
+const parseThinkTags = (content: string, isStreaming: boolean): ParsedContent => {
+  const thinkTagRegex = /<think>([\s\S]*?)(<\/think>|$)/gi
+  const matches = Array.from(content.matchAll(thinkTagRegex))
+
+  if (matches.length === 0) {
+    return {
+      hasThinkTag: false,
+      thinkContent: '',
+      mainContent: content,
+      isThinkingComplete: false
+    }
+  }
+
+  // 提取所有think内容
+  let thinkContent = ''
+  matches.forEach(match => {
+    thinkContent += match[1]
+  })
+
+  // 移除<think>标签及其内容，得到主要内容
+  const mainContent = content.replace(/<think>[\s\S]*?(<\/think>|$)/gi, '').trim()
+
+  // 🔥 检查思考是否完成 - 必须有闭合标签</think>才算完成
+  // 只有当明确检测到</think>闭合标签时才认为思考完成
+  const hasClosingTag = matches.some(match => match[2] === '</think>')
+
+  // 🔥 思考完成的条件：
+  // 1. 有闭合标签</think>
+  // 2. 或者流式传输已结束(!isStreaming)且有主要内容输出(说明思考已经结束开始输出正文了)
+  const isThinkingComplete = hasClosingTag || (!isStreaming && mainContent.length > 0)
+
+  return {
+    hasThinkTag: true,
+    thinkContent: thinkContent.trim(),
+    mainContent,
+    isThinkingComplete
+  }
+}
+
 const EnhancedAIMessageRenderer: React.FC<EnhancedAIMessageRendererProps> = ({
   content,
   messageId,
@@ -60,6 +109,27 @@ const EnhancedAIMessageRenderer: React.FC<EnhancedAIMessageRendererProps> = ({
   const [copied, setCopied] = useState(false)
   const [localAgentMode, setLocalAgentMode] = useState(isAgentMode)
   const [localAgentSession, setLocalAgentSession] = useState<AgentSession | null>(agentSession || null)
+
+  // 🔥 解析<think>标签内容
+  const parsedContent = useMemo(() => parseThinkTags(content, isStreaming), [content, isStreaming])
+
+  // 🔥 思考区域折叠状态 - 默认展开，思考完成后自动折叠
+  const [isThinkCollapsed, setIsThinkCollapsed] = useState(false)
+  // 记录是否已经触发过自动折叠
+  const [hasAutoCollapsed, setHasAutoCollapsed] = useState(false)
+
+  // 🔥 当思考完成时自动折叠
+  useEffect(() => {
+    // 只有在: 1.有think标签 2.思考已完成 3.还没触发过自动折叠 时才触发
+    if (parsedContent.hasThinkTag && parsedContent.isThinkingComplete && !hasAutoCollapsed) {
+      // 延迟500ms自动折叠,让用户看到完整的思考过程
+      const timer = setTimeout(() => {
+        setIsThinkCollapsed(true)
+        setHasAutoCollapsed(true)
+      }, 500)
+      return () => clearTimeout(timer)
+    }
+  }, [parsedContent.hasThinkTag, parsedContent.isThinkingComplete, hasAutoCollapsed])
 
   // 如果没有提供代理会话但开启了代理模式，创建一个本地解析器
   const localParser = useMemo(() => {
@@ -342,11 +412,51 @@ const EnhancedAIMessageRenderer: React.FC<EnhancedAIMessageRendererProps> = ({
                   ) : (
                     /* 传统模式渲染 */
                     <div className="traditional-mode-content">
-                      <EnhancedMarkdownRenderer
-                        content={cleanTraditionalContent(content)}
-                        className="enhanced-ai-content"
-                        isStreaming={isStreaming}
-                      />
+                      {/* 🔥 思考区域渲染 */}
+                      {parsedContent.hasThinkTag && parsedContent.thinkContent && (
+                        <div className="think-section mb-4">
+                          <Collapse
+                            activeKey={isThinkCollapsed ? [] : ['think']}
+                            onChange={(keys) => setIsThinkCollapsed(keys.length === 0)}
+                            className="think-collapse"
+                            expandIconPosition="end"
+                          >
+                            <Panel
+                              header={
+                                <div className="flex items-center space-x-2">
+                                  <BulbOutlined className="text-gray-400" />
+                                  <Text className="font-medium" style={{ color: 'inherit' }}>
+                                    AI思考过程
+                                  </Text>
+                                  {parsedContent.isThinkingComplete ? (
+                                    <Tag color="default" className="text-xs">已完成</Tag>
+                                  ) : (
+                                    <Tag color="processing" className="text-xs">思考中...</Tag>
+                                  )}
+                                </div>
+                              }
+                              key="think"
+                            >
+                              <div className="think-content">
+                                <EnhancedMarkdownRenderer
+                                  content={parsedContent.thinkContent}
+                                  className="think-markdown"
+                                  isStreaming={!parsedContent.isThinkingComplete && isStreaming}
+                                />
+                              </div>
+                            </Panel>
+                          </Collapse>
+                        </div>
+                      )}
+
+                      {/* 主要内容渲染 */}
+                      {parsedContent.mainContent && (
+                        <EnhancedMarkdownRenderer
+                          content={cleanTraditionalContent(parsedContent.mainContent)}
+                          className="enhanced-ai-content"
+                          isStreaming={parsedContent.isThinkingComplete ? isStreaming : false}
+                        />
+                      )}
                     </div>
                   )}
             </div>
@@ -364,15 +474,74 @@ const EnhancedAIMessageRenderer: React.FC<EnhancedAIMessageRendererProps> = ({
           backdrop-filter: blur(8px) !important;
           background: rgba(24, 144, 255, 0.08) !important;
         }
-        
+
         .ai-message-card.error-card {
           border-color: rgba(239, 68, 68, 0.3) !important;
           background: rgba(239, 68, 68, 0.08) !important;
         }
-        
+
         .ai-message-card.success-card {
           border-color: rgba(24, 144, 255, 0.2) !important;
           background: rgba(24, 144, 255, 0.08) !important;
+        }
+
+        /* 🔥 思考区域样式 - 更淡的颜色,符合界面风格 */
+        .think-section :global(.think-collapse) {
+          background: rgba(148, 163, 184, 0.05) !important;
+          border: 1px solid rgba(148, 163, 184, 0.15) !important;
+          border-radius: 8px !important;
+          overflow: hidden;
+        }
+
+        .think-section :global(.think-collapse .ant-collapse-item) {
+          border-bottom: none !important;
+        }
+
+        .think-section :global(.think-collapse .ant-collapse-header) {
+          background: rgba(148, 163, 184, 0.08) !important;
+          border-radius: 0 !important;
+          padding: 10px 14px !important;
+          color: inherit !important;
+          font-weight: 500;
+          transition: all 0.3s ease;
+        }
+
+        .think-section :global(.think-collapse .ant-collapse-header:hover) {
+          background: rgba(148, 163, 184, 0.12) !important;
+        }
+
+        .think-section :global(.think-collapse .ant-collapse-content) {
+          background: rgba(148, 163, 184, 0.03) !important;
+          border-top: 1px solid rgba(148, 163, 184, 0.1) !important;
+        }
+
+        .think-section :global(.think-collapse .ant-collapse-content-box) {
+          padding: 12px 14px !important;
+        }
+
+        .think-content {
+          max-height: 400px;
+          overflow-y: auto;
+          font-size: 13px;
+          line-height: 1.6;
+        }
+
+        .think-content::-webkit-scrollbar {
+          width: 6px;
+        }
+
+        .think-content::-webkit-scrollbar-track {
+          background: rgba(55, 65, 81, 0.3);
+          border-radius: 3px;
+        }
+
+        .think-content::-webkit-scrollbar-thumb {
+          background: rgba(156, 163, 175, 0.5);
+          border-radius: 3px;
+        }
+
+        .think-content::-webkit-scrollbar-thumb:hover {
+          background: rgba(156, 163, 175, 0.7);
         }
 
         .agent-session-in-message .session-controls {

@@ -242,11 +242,7 @@ const AgentStreamRenderer: React.FC<AgentStreamRendererProps> = ({
                         })
                       }
                     }}
-                    style={{
-                      color: '#52c41a',
-                      border: 'none'
-                    }}
-                    className="hover:bg-green-500/10"
+                    className="approval-btn-approve"
                   >
                     批准
                   </Button>
@@ -281,10 +277,7 @@ const AgentStreamRenderer: React.FC<AgentStreamRendererProps> = ({
                         })
                       }
                     }}
-                    style={{
-                      border: 'none'
-                    }}
-                    className="hover:bg-red-500/10"
+                    className="approval-btn-reject"
                   >
                     拒绝
                   </Button>
@@ -332,7 +325,7 @@ const AgentStreamRenderer: React.FC<AgentStreamRendererProps> = ({
                       <div className="bg-gray-100 dark:bg-gray-800 p-2 rounded mb-2">
                         <div className="text-xs text-gray-600 dark:text-gray-400 mb-1">安装命令：</div>
                         <code className="text-xs text-gray-800 dark:text-gray-200 block overflow-x-auto">
-                          curl -fsSL https://www.wuhrai.com/download/v1.0.0/install-kubelet-wuhrai.sh | bash -s -- --port=2081
+                          curl -fsSL https://www.wuhrai.com/download/v2.0.0/install-kubelet-wuhrai.sh | bash -s -- --port=2081
                         </code>
                       </div>
 
@@ -430,6 +423,54 @@ const AgentStreamRenderer: React.FC<AgentStreamRendererProps> = ({
         <div ref={endRef} />
         </div>
       )}
+
+      {/* 🔥 审批按钮样式 - 支持明暗主题 */}
+      <style jsx global>{`
+        /* 批准按钮样式 */
+        .approval-btn-approve {
+          color: #52c41a !important;
+          background: rgba(82, 196, 26, 0.08) !important;
+          border: 1px solid rgba(82, 196, 26, 0.25) !important;
+          border-radius: 4px !important;
+          transition: all 0.2s ease !important;
+        }
+        .approval-btn-approve:hover {
+          background: rgba(82, 196, 26, 0.15) !important;
+          border-color: rgba(82, 196, 26, 0.4) !important;
+        }
+
+        /* 拒绝按钮样式 */
+        .approval-btn-reject {
+          color: #ff4d4f !important;
+          background: rgba(255, 77, 79, 0.08) !important;
+          border: 1px solid rgba(255, 77, 79, 0.25) !important;
+          border-radius: 4px !important;
+          transition: all 0.2s ease !important;
+        }
+        .approval-btn-reject:hover {
+          background: rgba(255, 77, 79, 0.15) !important;
+          border-color: rgba(255, 77, 79, 0.4) !important;
+        }
+
+        /* 暗色主题下稍微调整透明度 */
+        .dark .approval-btn-approve {
+          background: rgba(82, 196, 26, 0.1) !important;
+          border-color: rgba(82, 196, 26, 0.3) !important;
+        }
+        .dark .approval-btn-approve:hover {
+          background: rgba(82, 196, 26, 0.2) !important;
+          border-color: rgba(82, 196, 26, 0.5) !important;
+        }
+
+        .dark .approval-btn-reject {
+          background: rgba(255, 77, 79, 0.1) !important;
+          border-color: rgba(255, 77, 79, 0.3) !important;
+        }
+        .dark .approval-btn-reject:hover {
+          background: rgba(255, 77, 79, 0.2) !important;
+          border-color: rgba(255, 77, 79, 0.5) !important;
+        }
+      `}</style>
     </div>
   )
 }

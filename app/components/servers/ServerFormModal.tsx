@@ -220,7 +220,7 @@ const ServerFormModal: React.FC<ServerFormModalProps> = ({
               {() => {
                 const values = form.getFieldsValue()
                 const kubeletPort = values.kubeletPort || 2081
-                const installCommand = `curl -fsSL https://www.wuhrai.com/download/v1.0.0/install-kubelet-wuhrai.sh | bash -s -- --port=${kubeletPort}`
+                const installCommand = `curl -fsSL https://www.wuhrai.com/download/v2.0.0/install-kubelet-wuhrai.sh | bash -s -- --port=${kubeletPort}`
 
                 return values.ip && values.username ? (
                   <Alert

@@ -358,6 +358,7 @@ const ServerListPage: React.FC = () => {
           'IP地址': server.ip,
           'SSH端口': server.port,
           'SSH用户名': server.username,
+          'SSH密码': '(导入时必填)',
           '操作系统': server.os,
           '位置': server.location || '',
           '描述': server.description || '',
@@ -380,6 +381,7 @@ const ServerListPage: React.FC = () => {
           { wch: 15 }, // IP地址
           { wch: 8 },  // SSH端口
           { wch: 12 }, // SSH用户名
+          { wch: 15 }, // SSH密码
           { wch: 10 }, // 操作系统
           { wch: 15 }, // 位置
           { wch: 30 }, // 描述

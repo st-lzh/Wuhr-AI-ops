@@ -81,6 +81,21 @@ export const PROVIDER_CONFIGS: Record<ProviderType, ProviderInfo> = {
       'doubao-lite-4k'
     ]
   },
+  'ollama': {
+    name: 'ollama',
+    displayName: 'Ollama',
+    description: 'Ollama本地模型服务',
+    apiKeyRequired: false,
+    baseUrlRequired: false,
+    defaultModels: [
+      'llama3.3:70b',
+      'qwen2.5:32b',
+      'deepseek-r1:32b',
+      'gemma2:27b',
+      'mixtral:8x7b',
+      'codellama:13b'
+    ]
+  },
   'local-deployment': {
     name: 'local-deployment',
     displayName: 'Local Deployment',
@@ -176,6 +191,7 @@ export const PROVIDER_ENV_MAP: Record<ProviderType, string> = {
   'gemini': 'GEMINI_API_KEY',
   'qwen': 'QWEN_API_KEY',
   'doubao': 'DOUBAO_API_KEY',
+  'ollama': 'OLLAMA_HOST',
   'local-deployment': 'OPENAI_API_KEY'
 }
 
@@ -251,35 +267,70 @@ export function validateModelConfig(
   // 如果明确指定了提供商，使用指定的；否则根据模型名称查找
   const actualProvider = provider || findProviderByModel(modelName)
 
-  // 对于本地部署提供商，允许任何模型名称且不需要API密钥
+  // 🔥 Ollama提供商：允许任何模型名称且API密钥可选
+  if (provider === 'ollama') {
+    console.log('🔧 Ollama提供商，允许任何模型名称且无需API密钥')
+
+    // Ollama的BaseURL可选，默认http://127.0.0.1:11434
+    if (baseUrl && baseUrl.trim().length > 0) {
+      try {
+        new URL(baseUrl)
+      } catch {
+        errors.push('Base URL格式不正确')
+      }
+    }
+
+    return { valid: errors.length === 0, errors }
+  }
+
+  // 🔥 本地部署提供商：允许任何模型名称且API密钥可选
   if (provider === 'local-deployment') {
-    console.log('🔧 本地部署提供商，允许任何模型名称且无需API密钥')
+    console.log('🔧 本地部署提供商，允许任何模型名称且API密钥可选')
 
     // 本地部署必须有Base URL
     if (!baseUrl || baseUrl.trim().length === 0) {
       errors.push('本地部署提供商必须设置Base URL')
     }
-  } else {
-    // 对于openai-compatible提供商，如果有baseUrl，则允许任何模型名称
-    if (!actualProvider) {
-      if (baseUrl && baseUrl.trim().length > 0) {
-        // 有baseUrl的情况下，认为是openai-compatible提供商，允许任何模型
-        console.log('🔧 检测到自定义模型配置:', { modelName, baseUrl })
-      } else {
-        errors.push(`不支持的模型: ${modelName}`)
-      }
+
+    // API密钥可选，不强制验证
+    if (!apiKey || apiKey.trim().length === 0) {
+      console.log('ℹ️ 本地部署未设置API密钥，将使用占位符（适用于无认证服务）')
     }
 
-    // 检查API密钥 - 对于自定义baseUrl的情况，API密钥可以为空
-    const isCustomProvider = baseUrl && baseUrl.trim().length > 0
-    if (!isCustomProvider && (!apiKey || apiKey.trim().length === 0)) {
-      errors.push('API密钥不能为空')
+    return { valid: errors.length === 0, errors }
+  }
+
+  // 🔥 OpenAI兼容提供商：如果有baseUrl，允许任何模型
+  if (provider === 'openai-compatible' && baseUrl && baseUrl.trim().length > 0) {
+    console.log('🔧 OpenAI兼容提供商且提供了BaseURL，允许自定义模型')
+
+    // API密钥可选（某些自部署服务不需要认证）
+    if (!apiKey || apiKey.trim().length === 0) {
+      console.log('⚠️ OpenAI兼容提供商未提供API密钥，确保目标服务器不需要认证')
     }
 
-    // 对于自定义提供商，如果API密钥为空，给出提示但不阻止
-    if (isCustomProvider && (!apiKey || apiKey.trim().length === 0)) {
-      console.log('ℹ️ 自定义模型未设置API密钥，将使用空密钥（适用于无认证的本地部署）')
+    return { valid: errors.length === 0, errors }
+  }
+
+  // 对于其他提供商，检查模型是否在预设列表中
+  if (!actualProvider) {
+    if (baseUrl && baseUrl.trim().length > 0) {
+      // 有baseUrl的情况下，认为是openai-compatible提供商，允许任何模型
+      console.log('🔧 检测到自定义模型配置:', { modelName, baseUrl })
+    } else {
+      errors.push(`不支持的模型: ${modelName}`)
     }
+  }
+
+  // 检查API密钥 - 对于自定义baseUrl的情况，API密钥可以为空
+  const isCustomProvider = baseUrl && baseUrl.trim().length > 0
+  if (!isCustomProvider && (!apiKey || apiKey.trim().length === 0)) {
+    errors.push('API密钥不能为空')
+  }
+
+  // 对于自定义提供商，如果API密钥为空，给出提示但不阻止
+  if (isCustomProvider && (!apiKey || apiKey.trim().length === 0)) {
+    console.log('ℹ️ 自定义模型未设置API密钥，将使用空密钥（适用于无认证的本地部署）')
   }
 
   // 检查Base URL（如果提供了的话）
