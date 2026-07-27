@@ -32,6 +32,10 @@ export const PERMISSION_CODES = {
   SERVERS_READ: 'servers:read',
   SERVERS_WRITE: 'servers:write',
 
+  // 网络设备管理
+  NETWORK_READ: 'network:read',
+  NETWORK_WRITE: 'network:write',
+
   // CI/CD管理
   CICD_READ: 'cicd:read',
   CICD_WRITE: 'cicd:write',
@@ -59,6 +63,11 @@ export const PERMISSION_CODES = {
   // Grafana监控
   GRAFANA_READ: 'grafana:read',
   GRAFANA_WRITE: 'grafana:write',
+
+  // AI 资产管理（self-improving lesson loop / outcomes / skills 浏览 / memory）
+  // 后端接口走 /api/v1/improve/*；写操作需 backend admin role API key
+  IMPROVE_READ: 'improve:read',
+  IMPROVE_WRITE: 'improve:write',
 } as const
 
 // 权限定义
@@ -119,6 +128,26 @@ export const SYSTEM_PERMISSIONS: Permission[] = [
     code: PERMISSION_CODES.SERVERS_WRITE,
     description: '添加、编辑、删除服务器，执行服务器操作等',
     category: '主机管理',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  },
+
+  // 网络设备管理权限
+  {
+    id: 'perm_network_read',
+    name: '网络查看',
+    code: PERMISSION_CODES.NETWORK_READ,
+    description: '查看网络设备、配置版本、拓扑、巡检、告警和变更记录',
+    category: '网络管理',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  },
+  {
+    id: 'perm_network_write',
+    name: '网络管理',
+    code: PERMISSION_CODES.NETWORK_WRITE,
+    description: '管理设备凭据、创建并审批网络变更、执行巡检和配置操作',
+    category: '网络管理',
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString()
   },
@@ -261,6 +290,26 @@ export const SYSTEM_PERMISSIONS: Permission[] = [
     category: 'Grafana监控',
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString()
+  },
+
+  // AI 资产管理
+  {
+    id: 'perm_improve_read',
+    name: 'AI 资产查看',
+    code: PERMISSION_CODES.IMPROVE_READ,
+    description: '查看 lesson 库 / 执行历史 / 技能源码 / 记忆条目',
+    category: 'AI 资产',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  },
+  {
+    id: 'perm_improve_write',
+    name: 'AI 资产管理',
+    code: PERMISSION_CODES.IMPROVE_WRITE,
+    description: '批准/拒绝 lesson 提案、触发反思、写入记忆、删除 lesson 等写操作',
+    category: 'AI 资产',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
   }
 ]
 
@@ -285,6 +334,11 @@ export const PERMISSION_CATEGORIES: PermissionCategory[] = [
     name: 'CI/CD管理',
     description: '持续集成、持续部署和模板管理',
     permissions: SYSTEM_PERMISSIONS.filter(p => p.category === 'CI/CD管理')
+  },
+  {
+    name: '网络管理',
+    description: '路由器、交换机、防火墙等网络设备与变更管理',
+    permissions: SYSTEM_PERMISSIONS.filter(p => p.category === '网络管理')
   },
   {
     name: '审批管理',
@@ -315,6 +369,11 @@ export const PERMISSION_CATEGORIES: PermissionCategory[] = [
     name: 'Grafana监控',
     description: 'Grafana仪表板和监控数据管理',
     permissions: SYSTEM_PERMISSIONS.filter(p => p.category === 'Grafana监控')
+  },
+  {
+    name: 'AI 资产',
+    description: 'lesson 库、执行历史、技能源码、记忆管理',
+    permissions: SYSTEM_PERMISSIONS.filter(p => p.category === 'AI 资产')
   }
 ]
 
@@ -359,6 +418,8 @@ export const ROLE_PERMISSIONS = {
     PERMISSION_CODES.USERS_READ,
     PERMISSION_CODES.SERVERS_READ,
     PERMISSION_CODES.SERVERS_WRITE,
+    PERMISSION_CODES.NETWORK_READ,
+    PERMISSION_CODES.NETWORK_WRITE,
     PERMISSION_CODES.CICD_READ,
     PERMISSION_CODES.CICD_WRITE,
     PERMISSION_CODES.APPROVALS_READ,
@@ -376,6 +437,8 @@ export const ROLE_PERMISSIONS = {
     PERMISSION_CODES.USERS_READ,
     PERMISSION_CODES.SERVERS_READ,
     PERMISSION_CODES.SERVERS_WRITE,
+    PERMISSION_CODES.NETWORK_READ,
+    PERMISSION_CODES.NETWORK_WRITE,
     PERMISSION_CODES.CICD_READ,
     PERMISSION_CODES.CICD_WRITE,
     PERMISSION_CODES.APPROVALS_READ,
@@ -389,6 +452,7 @@ export const ROLE_PERMISSIONS = {
   viewer: [
     PERMISSION_CODES.USERS_READ,
     PERMISSION_CODES.SERVERS_READ,
+    PERMISSION_CODES.NETWORK_READ,
     PERMISSION_CODES.CICD_READ,
     PERMISSION_CODES.APPROVALS_READ,
     PERMISSION_CODES.NOTIFICATIONS_READ,

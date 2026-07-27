@@ -58,7 +58,7 @@ export const FullScreenLoading: React.FC<{ text?: string }> = ({ text = '系统�
         <div className="absolute inset-0 flex items-center justify-center">
           <div className="w-12 h-12 bg-white rounded-lg flex items-center justify-center shadow-lg overflow-hidden">
             <img
-              src="https://wuhrai-wordpress.oss-cn-hangzhou.aliyuncs.com/%E5%9B%BE%E6%A0%87/%E5%88%9B%E5%BB%BA%E8%B5%9B%E5%8D%9A%E6%9C%8B%E5%85%8B%E5%9B%BE%E6%A0%87%20%283%29.png"
+              src="/wuhr-ai.svg"
               alt="Wuhr AI Ops Logo"
               className="w-10 h-10 object-contain"
               onError={(e) => {

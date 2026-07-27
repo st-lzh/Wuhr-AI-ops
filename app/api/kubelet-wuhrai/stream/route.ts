@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '../../../../lib/auth/apiHelpers-new'
 import { getPrismaClient } from '../../../../lib/config/database'
+import { resolveRuntimeModelConfig } from '../../../../lib/ai/runtimeModelConfig'
+import { resolveRuntimeToolConfig } from '../../../../lib/ai/runtimeToolConfig'
+import { resolvePersistedConversationHistory } from '../../../../lib/ai/conversationHistory'
 
 // 流式数据类型定义
 interface StreamData {
@@ -38,6 +41,20 @@ export async function POST(request: NextRequest) {
     }
 
     const prisma = await getPrismaClient()
+    const runtimeModel = await resolveRuntimeModelConfig({
+      prisma,
+      userId: user.id,
+      model: config?.model || requestConfig?.model,
+      provider: config?.provider || requestConfig?.provider,
+      apiKey: config?.apiKey || requestConfig?.apiKey,
+      baseUrl: config?.baseUrl || requestConfig?.baseUrl
+    })
+    const runtimeTools = await resolveRuntimeToolConfig(prisma, user.id)
+    const history = await resolvePersistedConversationHistory({
+      userId: user.id,
+      sessionId: body.sessionId,
+      currentMessageId: body.currentMessageId
+    })
 
     // 获取主机信息 - 远程执行必须提供hostId
     const hostId = config?.hostId || requestConfig?.hostId
@@ -51,7 +68,6 @@ export async function POST(request: NextRequest) {
     const hostInfo = await prisma.server.findFirst({
       where: {
         id: hostId,
-        userId: user.id,
         isActive: true
       }
     })
@@ -80,16 +96,22 @@ export async function POST(request: NextRequest) {
     // 构建HTTP API请求
     const httpRequest = {
       query: actualQuery,
+      sessionId: typeof body.sessionId === 'string' ? body.sessionId : undefined,
+      history,
       isK8sMode: body.isK8sMode || body.config?.isK8sMode, // 🔥 关键：确保K8s模式参数传递
+      customTools: runtimeTools.customTools,
+      mcpServers: config?.mcpClientEnabled === true ? runtimeTools.mcpServers : [],
       config: {
-        provider: config?.provider || requestConfig?.provider,
-        model: config?.model || requestConfig?.model || 'deepseek-chat',
-        apiKey: config?.apiKey || requestConfig?.apiKey,
-        baseUrl: config?.baseUrl || requestConfig?.baseUrl,
+        provider: runtimeModel.provider,
+        model: runtimeModel.model,
+        apiKey: runtimeModel.apiKey,
+        baseUrl: runtimeModel.baseUrl,
         hostId: hostId,
         maxIterations: 20,
         streamingOutput: true,
-        isK8sMode: body.isK8sMode || body.config?.isK8sMode // 🔥 关键：config中也要包含
+        isK8sMode: body.isK8sMode || body.config?.isK8sMode, // 🔥 关键：config中也要包含
+        mcpClientEnabled: runtimeTools.mcpEnabled && config?.mcpClientEnabled === true,
+        requireApproval: config?.requireApproval === true
       }
     }
 

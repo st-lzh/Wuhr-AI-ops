@@ -1,0 +1,6 @@
+INSERT INTO "roles" ("name", "displayName", "description", "permissions", "createdAt", "updatedAt") VALUES
+  ('admin'::"UserRole", '系统管理员', '拥有系统全部权限，负责用户、角色和安全配置。', '["*"]'::jsonb, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+  ('manager'::"UserRole", '运维经理', '管理团队主机、交付、审批、模型工具和监控配置。', '["users:read","permissions:read","servers:read","servers:write","cicd:read","cicd:write","approvals:read","approvals:write","notifications:read","notifications:write","config:read","config:write","ai:read","ai:write","monitoring:read","monitoring:write","grafana:read","grafana:write","improve:read","improve:write"]'::jsonb, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+  ('developer'::"UserRole", '运维工程师', '执行日常主机运维、CI/CD 操作和 AI 辅助分析。', '["users:read","servers:read","servers:write","cicd:read","cicd:write","approvals:read","notifications:read","config:read","ai:read","ai:write","monitoring:read","grafana:read","improve:read"]'::jsonb, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+  ('viewer'::"UserRole", '只读成员', '只读查看团队资产、交付记录、报告和监控数据。', '["users:read","servers:read","cicd:read","approvals:read","notifications:read","config:read","ai:read","monitoring:read","grafana:read","improve:read"]'::jsonb, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+ON CONFLICT ("name") DO NOTHING;

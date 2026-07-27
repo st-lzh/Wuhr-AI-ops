@@ -1,152 +1,166 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { 
-  requireAuth, 
-  successResponse, 
+import {
+  requireAuth,
   errorResponse,
   serverErrorResponse
 } from '../../../../../lib/auth/apiHelpers'
+import { getBackendApiKey, getBackendBaseUrl } from '../../../../../lib/improve/backendProxy'
+import { getPrismaClient } from '../../../../../lib/config/database'
+import { canWriteTeamAssets, resolveTeamConfigOwnerId } from '../../../../../lib/auth/teamAccess'
+import { revealEnvironment } from '../../../../../lib/crypto/environmentSecrets'
+import { z } from 'zod'
 
-// 强制动态渲染
 export const dynamic = 'force-dynamic'
 
-// MCP服务器测试接口
-interface MCPServerTest {
+const TestRequestSchema = z.object({
+  serverId: z.string().min(1),
+  confirmed: z.boolean().optional().default(false)
+})
+
+interface StoredMCPServer {
+  id: string
   name: string
-  command: string
-  args: string[]
-  env: Record<string, string>
+  command?: string
+  args?: string[]
+  env?: Record<string, string>
+  url?: string
 }
 
-// 模拟MCP服务器连接测试
-async function testMCPServerConnection(serverConfig: MCPServerTest): Promise<{
-  success: boolean
-  tools?: any[]
-  error?: string
-}> {
-  try {
-    console.log('🔍 测试MCP服务器连接:', serverConfig.name)
-
-    // 模拟连接测试延迟
-    await new Promise(resolve => setTimeout(resolve, 1000))
-
-    // 根据服务器类型模拟不同的结果
-    const serverType = serverConfig.command.includes('filesystem') ? 'filesystem' :
-                      serverConfig.command.includes('git') ? 'git' :
-                      serverConfig.command.includes('sqlite') ? 'sqlite' : 'unknown'
-
-    // 模拟不同成功率
-    const successRate = {
-      'filesystem': 0.9,
-      'git': 0.8,
-      'sqlite': 0.7,
-      'unknown': 0.5
-    }[serverType]
-
-    const isSuccess = Math.random() < successRate
-
-    if (isSuccess) {
-      // 模拟发现的工具
-      const mockTools = {
-        'filesystem': [
-          { name: 'read_file', description: '读取文件内容' },
-          { name: 'write_file', description: '写入文件内容' },
-          { name: 'list_directory', description: '列出目录内容' },
-          { name: 'create_directory', description: '创建目录' },
-          { name: 'delete_file', description: '删除文件' }
-        ],
-        'git': [
-          { name: 'git_status', description: '查看Git状态' },
-          { name: 'git_add', description: '添加文件到暂存区' },
-          { name: 'git_commit', description: '提交更改' },
-          { name: 'git_push', description: '推送到远程仓库' },
-          { name: 'git_pull', description: '拉取远程更改' },
-          { name: 'git_diff', description: '查看文件差异' }
-        ],
-        'sqlite': [
-          { name: 'execute_query', description: '执行SQL查询' },
-          { name: 'describe_table', description: '描述表结构' },
-          { name: 'list_tables', description: '列出所有表' },
-          { name: 'create_table', description: '创建新表' }
-        ],
-        'unknown': [
-          { name: 'unknown_tool', description: '未知工具' }
-        ]
-      }
-
-      return {
-        success: true,
-        tools: mockTools[serverType]
-      }
-    } else {
-      // 模拟不同类型的错误
-      const errors = [
-        '命令未找到',
-        '连接超时',
-        '权限不足',
-        '端口已被占用',
-        '配置文件格式错误',
-        '依赖包缺失'
-      ]
-      const randomError = errors[Math.floor(Math.random() * errors.length)]
-
-      return {
-        success: false,
-        error: randomError
-      }
-    }
-
-  } catch (error) {
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : '未知连接错误'
-    }
-  }
+function actorFor(user: { id: string; email?: string | null; username?: string | null }) {
+  return (user.email || user.username || user.id).replace(/[^\x20-\x7e]/g, '?').slice(0, 128)
 }
 
-// POST - 测试MCP服务器连接
+// POST - 在真正运行 Agent 的 kubelet-wuhrai 服务器上测试 MCP 连接。
 export async function POST(request: NextRequest) {
   try {
-    // 身份验证
     const authResult = await requireAuth(request)
-    if (!authResult.success) {
-      return authResult.response
+    if (!authResult.success) return authResult.response
+    const { user } = authResult
+    if (!canWriteTeamAssets(user, 'config:write')) {
+      return errorResponse('权限不足', '需要 MCP 配置权限', 403)
     }
 
-    const body = await request.json()
-    console.log('🧪 测试MCP服务器连接请求:', body)
-
-    // 验证请求参数
-    if (!body.name || !body.command) {
-      return errorResponse('参数不完整', '服务器名称和命令不能为空', 400)
+    const parsed = TestRequestSchema.safeParse(await request.json())
+    if (!parsed.success) {
+      return errorResponse('测试参数无效', parsed.error.errors.map(item => item.message).join('; '), 400)
+    }
+    if (!parsed.data.confirmed) {
+      return NextResponse.json({
+        success: false,
+        state: 'confirmation_required',
+        error: '执行真实 MCP 连接测试前必须核对并确认命令'
+      }, { status: 409 })
     }
 
-    const serverConfig: MCPServerTest = {
-      name: body.name,
-      command: body.command,
-      args: Array.isArray(body.args) ? body.args : [],
-      env: body.env || {}
+    const prisma = await getPrismaClient()
+    const ownerId = await resolveTeamConfigOwnerId(prisma, user.id)
+    const dbConfig = await prisma.mCPToolsConfig.findUnique({ where: { userId: ownerId } })
+    const servers = Array.isArray(dbConfig?.servers) ? dbConfig.servers as unknown as StoredMCPServer[] : []
+    const server = servers.find(item => item.id === parsed.data.serverId)
+    if (!server) {
+      return errorResponse('MCP 服务器不存在', '请先保存配置，再执行连接测试', 404)
+    }
+    if (!server.name || (!server.command && !server.url)) {
+      return errorResponse('MCP 服务器配置不完整', '服务器名称，以及命令或 URL 不能为空', 400)
     }
 
-    // 执行连接测试
-    const testResult = await testMCPServerConnection(serverConfig)
+    const apiKey = getBackendApiKey()
+    if (!apiKey) {
+      return NextResponse.json({ success: false, error: '后端 API key 未配置' }, { status: 500 })
+    }
 
-    if (testResult.success) {
-      console.log('✅ MCP服务器连接测试成功:', serverConfig.name)
-      return successResponse({
-        message: `服务器 "${serverConfig.name}" 连接测试成功`,
-        connected: true,
-        tools: testResult.tools || [],
-        toolCount: testResult.tools?.length || 0
+    const backendBase = getBackendBaseUrl().replace(/\/$/, '')
+    const response = await fetch(`${backendBase}/api/mcp/servers/test`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-API-Key': apiKey,
+        'X-Actor': actorFor(user)
+      },
+      body: JSON.stringify({
+        name: server.name,
+        command: server.command || '',
+        args: Array.isArray(server.args) ? server.args : [],
+        env: revealEnvironment(server.env),
+        url: server.url || ''
+      }),
+      signal: AbortSignal.timeout(20_000)
+    })
+
+    const result = await response.json().catch(() => null)
+    if (!response.ok || !result?.success) {
+      await prisma.systemLog.create({
+        data: {
+          level: 'warn',
+          category: 'mcp_tools',
+          source: 'mcp-tools-test',
+          userId: user.id,
+          message: `真实测试 MCP 服务器：${server.name} - 失败`,
+          details: {
+            action: 'mcp_server_test',
+            serverId: server.id,
+            serverName: server.name,
+            transport: server.url ? 'http' : 'stdio',
+            backendStatus: response.status,
+            error: result?.error || result?.message || '连接失败'
+          }
+        }
       })
-    } else {
-      console.log('❌ MCP服务器连接测试失败:', serverConfig.name, testResult.error)
       return errorResponse(
-        `服务器 "${serverConfig.name}" 连接失败`,
-        testResult.error || '连接测试失败',
+        `服务器 "${server.name}" 连接失败`,
+        result?.error || result?.message || `后端返回 HTTP ${response.status}`,
         400
       )
     }
 
+    const tools = Array.isArray(result.toolMetadata)
+      ? result.toolMetadata.map((tool: any) => ({
+          name: String(tool.name || ''),
+          description: String(tool.description || ''),
+          inputSchema: tool.inputSchema && typeof tool.inputSchema === 'object' ? tool.inputSchema : {},
+          server: String(tool.server || server.name),
+          transport: tool.transport === 'http' ? 'http' : 'stdio',
+          annotations: tool.annotations && typeof tool.annotations === 'object' ? tool.annotations : {},
+          riskLevel: ['low', 'medium', 'high'].includes(tool.riskLevel) ? tool.riskLevel : 'medium',
+          requiresApproval: tool.requiresApproval !== false
+        }))
+      : (Array.isArray(result.tools) ? result.tools : []).map((name: string) => ({
+          name,
+          description: '',
+          inputSchema: {},
+          server: server.name,
+          transport: server.url ? 'http' : 'stdio',
+          annotations: {},
+          riskLevel: 'medium',
+          requiresApproval: true
+        }))
+
+    await prisma.systemLog.create({
+      data: {
+        level: 'info',
+        category: 'mcp_tools',
+        source: 'mcp-tools-test',
+        userId: user.id,
+        message: `真实测试 MCP 服务器：${server.name} - 成功`,
+        details: {
+          action: 'mcp_server_test',
+          serverId: server.id,
+          serverName: server.name,
+          transport: server.url ? 'http' : 'stdio',
+          toolCount: result.toolsFound ?? tools.length
+        }
+      }
+    })
+
+    return NextResponse.json({
+      success: true,
+      data: {
+        message: result.message || `服务器 "${server.name}" 连接测试成功`,
+        connected: result.isConnected === true,
+        tools,
+        toolCount: result.toolsFound ?? tools.length
+      }
+    })
   } catch (error) {
     console.error('MCP连接测试异常:', error)
     return serverErrorResponse(error)

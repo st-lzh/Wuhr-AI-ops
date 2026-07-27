@@ -5,6 +5,7 @@ import {
   performSSHConnectionTest,
   createSSHConfigFromServer
 } from '../../../../../../lib/utils/sshConnectionUtils'
+import { canWriteTeamAssets } from '../../../../../../lib/auth/teamAccess'
 
 // 响应辅助函数
 function successResponse(data: any) {
@@ -43,6 +44,9 @@ export async function POST(
     const authResult = await requireAuth(request)
     if (!authResult.success) {
       return authResult.response
+    }
+    if (!canWriteTeamAssets(authResult.user, 'servers:write')) {
+      return errorResponse('权限不足', '需要主机管理权限', 403)
     }
 
     const serverId = params.id

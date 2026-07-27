@@ -569,9 +569,9 @@ const NotificationsPage: React.FC = () => {
         <div className="mb-6">
           <Title level={2} className="mb-2">
             <BellOutlined className="mr-2" />
-            通知管理
+            消息通知
           </Title>
-          <Paragraph className="text-gray-600 mb-0">
+          <Paragraph type="secondary" className="mb-0">
             管理系统通知，查看通知历史和状态
           </Paragraph>
         </div>

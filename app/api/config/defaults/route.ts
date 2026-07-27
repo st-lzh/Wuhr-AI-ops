@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '../../../../lib/auth/apiHelpers-new'
 import { getPrismaClient } from '../../../../lib/config/database'
 
+export const dynamic = 'force-dynamic'
+
 // 获取用户的默认配置（默认主机和默认模型）
 export async function GET(request: NextRequest) {
   try {
@@ -16,7 +18,6 @@ export async function GET(request: NextRequest) {
     // 获取默认主机
     const defaultServer = await prisma.server.findFirst({
       where: {
-        userId: user.id,
         isDefault: true,
         isActive: true
       },
@@ -33,7 +34,6 @@ export async function GET(request: NextRequest) {
     // 获取默认模型配置
     const defaultModel = await prisma.modelConfig.findFirst({
       where: {
-        userId: user.id,
         isDefault: true,
         isActive: true
       },
@@ -42,7 +42,6 @@ export async function GET(request: NextRequest) {
         modelName: true,
         displayName: true,
         provider: true,
-        apiKey: true,
         baseUrl: true
       }
     })
@@ -50,7 +49,6 @@ export async function GET(request: NextRequest) {
     // 获取默认主机组
     const defaultGroup = await prisma.serverGroup.findFirst({
       where: {
-        userId: user.id,
         isDefault: true,
         isActive: true
       },
@@ -91,7 +89,6 @@ export async function GET(request: NextRequest) {
         id: true,
         name: true,
         provider: true,
-        apiKey: true,
         baseUrl: true
       }
     })
@@ -105,7 +102,9 @@ export async function GET(request: NextRequest) {
           ...defaultGroup,
           serverCount: defaultGroup._count.servers
         } : null,
-        defaultApiKey: !defaultModel ? defaultApiKey : null // 只有没有默认模型时才返回API Key
+        defaultApiKey: !defaultModel && defaultApiKey
+          ? { ...defaultApiKey, hasApiKey: true }
+          : null
       },
       timestamp: new Date().toISOString(),
     })

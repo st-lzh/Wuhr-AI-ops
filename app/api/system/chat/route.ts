@@ -1,12 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { KubeletWuhraiRequest, ProviderType } from '../../../types/api'
 import { requireAuth } from '../../../../lib/auth/apiHelpers-new'
 
 import { getPrismaClient } from '../../../../lib/config/database'
 import {
-  getProviderFromModel,
-  validateModelConfig
-} from '../../../config/kubelet-wuhrai-providers'
+  CICDContextError,
+  formatCICDContextPrompt,
+  recordCICDContextRead,
+  resolveCICDContext
+} from '../../../../lib/ai/cicdContext'
+import { resolveRuntimeToolConfig } from '../../../../lib/ai/runtimeToolConfig'
+import { resolvePersistedConversationHistory } from '../../../../lib/ai/conversationHistory'
+import { resolveRuntimeModelConfig } from '../../../../lib/ai/runtimeModelConfig'
 
 // 注释：系统仅支持远程执行模式，通过kubelet-wuhrai服务处理所有AI请求
 
@@ -24,6 +28,7 @@ export async function POST(request: NextRequest) {
     const {
       message,
       model,
+      provider: requestedProvider,
       temperature = 0.7,
       maxTokens = 4000,
       systemPrompt,
@@ -33,7 +38,11 @@ export async function POST(request: NextRequest) {
       isK8sMode = false, // K8s命令模式标识
       sessionId, // 会话ID
       sessionContext, // 会话上下文
-      enableStreaming = false // 🔥 新增：流式传输控制参数
+      customTools = [],
+      mcpServers = [],
+      config: requestConfig = {},
+      enableStreaming = false, // 🔥 新增：流式传输控制参数
+      cicdContext
     } = body
 
     // 验证必需参数
@@ -49,99 +58,43 @@ export async function POST(request: NextRequest) {
     }
 
     const prisma = await getPrismaClient()
-    let finalModel: string
-    let finalApiKey: string
-    let finalBaseUrl: string | undefined
-    let provider: ProviderType
-
-    // 如果前端传递了完整配置，直接使用
-    if (model && apiKey) {
-      finalModel = model
-      finalApiKey = apiKey
-      finalBaseUrl = baseUrl
-      provider = getProviderFromModel(model)
-
-
-    } else {
-      // 否则从数据库获取用户的模型配置
-
-      const userSelection = await prisma.userModelSelection.findUnique({
-        where: {
-          userId: user.id
-        },
-        include: {
-          selectedModel: true
-        }
-      })
-
-      if (!userSelection || !userSelection.selectedModel) {
-        return NextResponse.json(
-          {
-            success: false,
-            error: '未找到模型配置，请先在AI助手页面选择模型或在模型管理页面添加模型配置',
-            timestamp: new Date().toISOString(),
-          },
-          { status: 400 }
-        )
-      }
-
-      const modelConfig = userSelection.selectedModel
-
-      if (!modelConfig.isActive) {
-        return NextResponse.json(
-          {
-            success: false,
-            error: '选择的模型已被禁用，请选择其他模型',
-            timestamp: new Date().toISOString(),
-          },
-          { status: 400 }
-        )
-      }
-
-      finalModel = modelConfig.modelName
-      finalApiKey = modelConfig.apiKey
-      finalBaseUrl = modelConfig.baseUrl || undefined
-      provider = getProviderFromModel(finalModel)
-
-      console.log('📨 使用数据库配置:', {
-        modelId: modelConfig.id,
-        model: finalModel,
-        displayName: modelConfig.displayName,
-        provider: provider,
-        hasApiKey: !!finalApiKey,
-        hasBaseUrl: !!finalBaseUrl
-      })
-    }
-
-    // 验证配置完整性
-    console.log('🔍 验证模型配置:', {
-      model: finalModel,
-      hasApiKey: !!finalApiKey,
-      apiKeyLength: finalApiKey?.length || 0,
-      baseUrl: finalBaseUrl,
-      provider: provider
+    const runtimeTools = await resolveRuntimeToolConfig(prisma, user.id)
+    const history = await resolvePersistedConversationHistory({
+      userId: user.id,
+      sessionId,
+      currentMessageId: body.currentMessageId
     })
-
-    const validation = validateModelConfig(finalModel, finalApiKey, finalBaseUrl)
-    if (!validation.valid) {
-      console.error('❌ 模型配置验证失败:', validation.errors)
-      return NextResponse.json(
-        {
-          success: false,
-          error: `配置错误: ${validation.errors.join(', ')}`,
-          timestamp: new Date().toISOString(),
-        },
-        { status: 400 }
-      )
+    const resolvedCICDContext = await resolveCICDContext(prisma, cicdContext || {})
+    if (resolvedCICDContext) await recordCICDContextRead(prisma, user.id, resolvedCICDContext)
+    const contextualMessage = `${formatCICDContextPrompt(resolvedCICDContext)}${message}`
+    const finalHostId = hostId || resolvedCICDContext?.coordinatorHostId
+    let runtimeModel: Awaited<ReturnType<typeof resolveRuntimeModelConfig>>
+    try {
+      runtimeModel = await resolveRuntimeModelConfig({
+        prisma,
+        userId: user.id,
+        model,
+        provider: requestedProvider,
+        apiKey,
+        baseUrl
+      })
+    } catch (error) {
+      return NextResponse.json({
+        success: false,
+        error: error instanceof Error ? error.message : '模型配置不可用',
+        timestamp: new Date().toISOString()
+      }, { status: 400 })
     }
-
-    console.log('✅ 模型配置验证通过')
+    const finalModel = runtimeModel.model
+    const finalApiKey = runtimeModel.apiKey
+    const finalBaseUrl = runtimeModel.baseUrl
+    const provider = runtimeModel.provider
 
     console.log('📨 System Chat 请求:', {
       messageLength: message.length,
       model: finalModel,
       provider: provider,
-      hostId: hostId || 'remote required',
+      hostId: finalHostId || 'remote required',
       hasSystemPrompt: !!systemPrompt,
       hasApiKey: !!finalApiKey,
       hasBaseUrl: !!finalBaseUrl,
@@ -150,7 +103,7 @@ export async function POST(request: NextRequest) {
     })
 
     // 验证是否选择了远程主机（必须）
-    if (!hostId || hostId === 'local') {
+    if (!finalHostId || finalHostId === 'local') {
       return NextResponse.json(
         {
           success: false,
@@ -162,28 +115,27 @@ export async function POST(request: NextRequest) {
     }
 
     console.log('🎯 使用远程执行模式:', {
-      hostId: hostId,
+      hostId: finalHostId,
       reason: '系统仅支持远程执行',
       nextStep: '调用远程kubelet-wuhrai API'
     })
 
     // 使用远程执行架构
-    console.log('🌐 进入远程执行模式，主机ID:', hostId)
+    console.log('🌐 进入远程执行模式，主机ID:', finalHostId)
 
     try {
       // 🔥 修改：直接调用kubelet-wuhrai HTTP API，不再通过SSH
       // 获取主机信息用于HTTP API调用
       const server = await prisma.server.findFirst({
         where: {
-          id: hostId,
-          userId: user.id,
+          id: finalHostId,
           isActive: true
         }
       })
 
       if (!server) {
         return NextResponse.json(
-          { success: false, error: `未找到主机: ${hostId}` },
+          { success: false, error: `未找到主机: ${finalHostId}` },
           { status: 404 }
         )
       }
@@ -199,17 +151,26 @@ export async function POST(request: NextRequest) {
 
       // 构建HTTP API请求
       const httpRequest = {
-        query: message, // 直接使用原始消息，不添加环境约束（由后端kubelet-wuhrai处理）
+        query: contextualMessage,
+        sessionId: typeof sessionId === 'string' ? sessionId : undefined,
+        history,
         isK8sMode: isK8sMode,
+        customTools: runtimeTools.customTools,
+        mcpServers: requestConfig.mcpClientEnabled === true ? runtimeTools.mcpServers : [],
         config: {
           provider: provider,
           model: finalModel,
           apiKey: finalApiKey,
           baseUrl: finalBaseUrl,
-          hostId: hostId,
+          hostId: finalHostId,
           maxIterations: 20,
           streamingOutput: true,
-          isK8sMode: isK8sMode
+          isK8sMode: isK8sMode,
+          mcpClientEnabled: runtimeTools.mcpEnabled && requestConfig.mcpClientEnabled === true,
+          requireApproval: requestConfig.requireApproval === true,
+          networkDeviceIds: Array.isArray(body.networkDeviceIds) ? body.networkDeviceIds : [],
+          networkBatchLabel: typeof body.networkBatchLabel === 'string' ? body.networkBatchLabel : '',
+          networkActor: user.email || user.username || user.id
         }
       }
 
@@ -289,6 +250,9 @@ export async function POST(request: NextRequest) {
     }
 
   } catch (error) {
+    if (error instanceof CICDContextError) {
+      return NextResponse.json({ success: false, error: error.message }, { status: error.status })
+    }
     console.error('❌ System Chat API错误:', error)
     return NextResponse.json(
       {

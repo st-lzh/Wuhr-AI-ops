@@ -32,6 +32,7 @@ import {
 } from '@ant-design/icons'
 import { useRouter } from 'next/navigation'
 import MainLayout from '../../../components/layout/MainLayout'
+import CICDAssistantButton from '../../../components/cicd/CICDAssistantButton'
 import type { ColumnsType } from 'antd/es/table'
 import dayjs from 'dayjs'
 
@@ -226,13 +227,21 @@ const PipelineDetailPage: React.FC<PipelineDetailPageProps> = ({ params }) => {
           <Button
             type="text"
             size="small"
-            onClick={() => {
-              // TODO: 查看构建详情
-              message.info('查看构建详情功能开发中')
-            }}
+            onClick={() => router.push(`/cicd/builds/${record.id}`)}
           >
             详情
           </Button>
+          <CICDAssistantButton
+            context={{
+              kind: 'build',
+              projectId: pipeline?.projectId,
+              pipelineId: pipeline?.id,
+              buildId: record.id
+            }}
+            intent={record.status === 'failed' ? 'diagnose' : 'status'}
+            size="small"
+            iconOnly
+          />
         </Space>
       )
     }
@@ -281,6 +290,14 @@ const PipelineDetailPage: React.FC<PipelineDetailPageProps> = ({ params }) => {
             ) : (
               <Badge status="default" text="禁用" />
             )}
+            <CICDAssistantButton
+              context={{ kind: 'pipeline', projectId: pipeline.projectId, pipelineId: pipeline.id }}
+              intent="optimize"
+            />
+            <CICDAssistantButton
+              context={{ kind: 'pipeline', projectId: pipeline.projectId, pipelineId: pipeline.id }}
+              intent="risk"
+            />
           </Space>
         </div>
 
@@ -375,21 +392,21 @@ const PipelineDetailPage: React.FC<PipelineDetailPageProps> = ({ params }) => {
               <Row gutter={16}>
                 <Col span={8}>
                   <Card title="参数配置" size="small">
-                    <pre className="text-sm bg-gray-50 p-3 rounded">
+                    <pre className="text-sm bg-gray-50 p-3 rounded dark:bg-slate-800 dark:text-slate-200">
                       {pipeline.parameters ? JSON.stringify(pipeline.parameters, null, 2) : '无配置'}
                     </pre>
                   </Card>
                 </Col>
                 <Col span={8}>
                   <Card title="触发器配置" size="small">
-                    <pre className="text-sm bg-gray-50 p-3 rounded">
+                    <pre className="text-sm bg-gray-50 p-3 rounded dark:bg-slate-800 dark:text-slate-200">
                       {pipeline.triggers ? JSON.stringify(pipeline.triggers, null, 2) : '无配置'}
                     </pre>
                   </Card>
                 </Col>
                 <Col span={8}>
                   <Card title="阶段配置" size="small">
-                    <pre className="text-sm bg-gray-50 p-3 rounded">
+                    <pre className="text-sm bg-gray-50 p-3 rounded dark:bg-slate-800 dark:text-slate-200">
                       {pipeline.stages ? JSON.stringify(pipeline.stages, null, 2) : '无配置'}
                     </pre>
                   </Card>

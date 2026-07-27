@@ -36,7 +36,7 @@ import {
   InfoCircleOutlined
 } from '@ant-design/icons'
 
-const { Title, Text } = Typography
+const { Text } = Typography
 const { Panel } = Collapse
 const { TextArea } = Input
 
@@ -56,6 +56,15 @@ interface MCPTool {
   description: string
   inputSchema: any
   server: string
+  transport?: 'stdio' | 'http'
+  annotations?: {
+    readOnlyHint?: boolean
+    destructiveHint?: boolean
+    idempotentHint?: boolean
+    openWorldHint?: boolean
+  }
+  riskLevel?: 'low' | 'medium' | 'high'
+  requiresApproval?: boolean
 }
 
 interface MCPConfig {
@@ -115,7 +124,9 @@ const MCPToolsConfig: React.FC = () => {
       
       if (data.success) {
         message.success('MCP配置保存成功')
-        setConfig(newConfig)
+        const savedConfig = data.data?.config || newConfig
+        setConfig(savedConfig)
+        window.dispatchEvent(new CustomEvent('mcp-config-updated', { detail: savedConfig }))
       } else {
         message.error(data.error || '保存失败')
       }
@@ -128,42 +139,62 @@ const MCPToolsConfig: React.FC = () => {
   }
 
   // 测试MCP服务器连接
-  const testServerConnection = async (server: MCPServer) => {
-    setConnecting([...connecting, server.id])
-    try {
-      const response = await fetch('/api/config/mcp-tools/test', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          name: server.name,
-          command: server.command,
-          args: server.args,
-          env: server.env
-        })
-      })
-      
-      const data = await response.json()
-      
-      if (data.success) {
-        message.success(`服务器 "${server.name}" 连接成功`)
-        // 更新服务器状态和工具列表
-        const updatedServers = config.servers.map(s => 
-          s.id === server.id 
-            ? { ...s, status: 'connected' as const, tools: data.tools || [], isConnected: true }
-            : s
-        )
-        setConfig({ ...config, servers: updatedServers })
-      } else {
-        message.error(`服务器 "${server.name}" 连接失败: ${data.error}`)
+  const testServerConnection = (server: MCPServer) => {
+    const exactCommand = [server.command, ...(Array.isArray(server.args) ? server.args : [])]
+      .filter(Boolean)
+      .map(part => /\s/.test(part) ? JSON.stringify(part) : part)
+      .join(' ')
+
+    Modal.confirm({
+      title: `确认真实测试：${server.name}`,
+      width: 720,
+      okText: '确认连接',
+      cancelText: '取消',
+      okButtonProps: { danger: true },
+      content: (
+        <Space direction="vertical" className="w-full">
+          <Alert
+            type="warning"
+            showIcon
+            message="MCP 进程将在运行 Agent 的服务器上真实启动"
+            description="接口只执行数据库中已经保存的配置，操作人和连接结果会写入审计日志。"
+          />
+          <Text strong>启动命令</Text>
+          <TextArea value={exactCommand || '(HTTP MCP 服务器)'} autoSize={{ minRows: 2, maxRows: 6 }} readOnly />
+          <Text type="secondary">环境变量：{Object.keys(server.env || {}).length} 个（值已加密并遮罩）</Text>
+        </Space>
+      ),
+      onOk: async () => {
+        setConnecting(current => Array.from(new Set([...current, server.id])))
+        try {
+          const response = await fetch('/api/config/mcp-tools/test', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ serverId: server.id, confirmed: true })
+          })
+
+          const data = await response.json()
+          const result = data?.data || data
+
+          if (response.ok && data.success && result.connected !== false) {
+            message.success(`服务器 "${server.name}" 连接成功`)
+            const updatedServers = config.servers.map(s =>
+              s.id === server.id
+                ? { ...s, status: 'connected' as const, tools: result.tools || [], isConnected: true }
+                : s
+            )
+            await saveMCPConfig({ ...config, servers: updatedServers })
+          } else {
+            message.error(`服务器 "${server.name}" 连接失败: ${data.error || result?.error || '未连接'}`)
+          }
+        } catch (error) {
+          console.error('测试连接失败:', error)
+          message.error('测试连接失败')
+        } finally {
+          setConnecting(current => current.filter(id => id !== server.id))
+        }
       }
-    } catch (error) {
-      console.error('测试连接失败:', error)
-      message.error('测试连接失败')
-    } finally {
-      setConnecting(connecting.filter(id => id !== server.id))
-    }
+    })
   }
 
   // 添加或编辑服务器
@@ -257,6 +288,16 @@ const MCPToolsConfig: React.FC = () => {
       dataIndex: 'server',
       key: 'server',
       render: (server: string) => <Tag color="blue">{server}</Tag>
+    },
+    {
+      title: '安全等级',
+      dataIndex: 'riskLevel',
+      key: 'riskLevel',
+      render: (risk: MCPTool['riskLevel'], tool: MCPTool) => {
+        const level = risk || 'medium'
+        const label = level === 'low' ? '只读低风险' : level === 'high' ? '破坏性高风险' : '未知需审批'
+        return <Tag color={level === 'low' ? 'green' : level === 'high' ? 'red' : 'orange'}>{label}{tool.requiresApproval === false ? '' : ' · 审批'}</Tag>
+      }
     }
   ]
 
@@ -281,25 +322,14 @@ const MCPToolsConfig: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      {/* 页面标题 */}
-      <div>
-        <Title level={3} className="!text-white !mb-2">
-          <ToolOutlined className="mr-2" />
-          MCP工具配置
-        </Title>
-        <Text className="text-gray-400">
-          配置和管理Model Context Protocol (MCP) 工具服务器
-        </Text>
-      </div>
-
       {/* 全局设置 */}
       <Card title="全局设置" className="glass-card">
         <Row gutter={24}>
           <Col span={8}>
             <div className="flex items-center justify-between">
               <div>
-                <Text strong className="text-white">启用MCP工具</Text>
-                <div className="text-xs text-gray-400 mt-1">
+                <Text strong>启用MCP工具</Text>
+                <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">
                   启用后将加载配置的MCP服务器
                 </div>
               </div>
@@ -317,8 +347,8 @@ const MCPToolsConfig: React.FC = () => {
           <Col span={8}>
             <div className="flex items-center justify-between">
               <div>
-                <Text strong className="text-white">自动发现工具</Text>
-                <div className="text-xs text-gray-400 mt-1">
+                <Text strong>自动发现工具</Text>
+                <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">
                   启动时自动发现可用工具
                 </div>
               </div>
@@ -337,8 +367,8 @@ const MCPToolsConfig: React.FC = () => {
           <Col span={8}>
             <div className="flex items-center justify-between">
               <div>
-                <Text strong className="text-white">自动连接</Text>
-                <div className="text-xs text-gray-400 mt-1">
+                <Text strong>自动连接</Text>
+                <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">
                   启动时自动连接到服务器
                 </div>
               </div>
@@ -400,7 +430,7 @@ const MCPToolsConfig: React.FC = () => {
         {config.servers.length === 0 ? (
           <div className="text-center py-12">
             <ApiOutlined className="text-4xl text-gray-500 mb-4" />
-            <Text className="text-gray-400 block mb-4">
+            <Text type="secondary" className="mb-4 block">
               尚未配置MCP服务器
             </Text>
             <Button
@@ -427,7 +457,7 @@ const MCPToolsConfig: React.FC = () => {
                         server.status === 'error' ? 'error' : 'default'
                       }
                     />
-                    <span className="text-white">{server.name}</span>
+                    <span>{server.name}</span>
                     <Tag color={server.status === 'connected' ? 'green' : 'orange'}>
                       {server.status === 'connected' ? '已连接' : '未连接'}
                     </Tag>
@@ -463,20 +493,20 @@ const MCPToolsConfig: React.FC = () => {
               >
                 <Row gutter={16}>
                   <Col span={8}>
-                    <Text className="text-gray-400 block">命令</Text>
-                    <Text className="text-white font-mono text-sm">
+                    <Text type="secondary" className="block">命令</Text>
+                    <Text className="font-mono text-sm">
                       {server.command} {server.args.join(' ')}
                     </Text>
                   </Col>
                   <Col span={8}>
-                    <Text className="text-gray-400 block">环境变量</Text>
-                    <Text className="text-white">
+                    <Text type="secondary" className="block">环境变量</Text>
+                    <Text>
                       {Object.keys(server.env).length} 个变量
                     </Text>
                   </Col>
                   <Col span={8}>
-                    <Text className="text-gray-400 block">可用工具</Text>
-                    <Text className="text-white">
+                    <Text type="secondary" className="block">可用工具</Text>
+                    <Text>
                       {server.tools.length} 个工具
                     </Text>
                   </Col>
@@ -498,11 +528,14 @@ const MCPToolsConfig: React.FC = () => {
                             >
                               <div className="flex items-center space-x-2">
                                 <ToolOutlined className="text-blue-400" />
-                                <Text strong className="text-white text-sm">
+                                <Text strong className="text-sm">
                                   {tool.name}
                                 </Text>
+                                <Tag color={tool.riskLevel === 'low' ? 'green' : tool.riskLevel === 'high' ? 'red' : 'orange'}>
+                                  {tool.riskLevel === 'low' ? '只读' : tool.riskLevel === 'high' ? '高风险' : '需审批'}
+                                </Tag>
                               </div>
-                              <Text className="text-gray-400 text-xs mt-1 block">
+                              <Text type="secondary" className="mt-1 block text-xs">
                                 {tool.description}
                               </Text>
                             </div>
@@ -532,7 +565,7 @@ const MCPToolsConfig: React.FC = () => {
         {getAllTools().length === 0 ? (
           <div className="text-center py-8">
             <ToolOutlined className="text-2xl text-gray-500 mb-2" />
-            <Text className="text-gray-400">
+            <Text type="secondary">
               没有可用的MCP工具。请先添加并连接MCP服务器。
             </Text>
           </div>

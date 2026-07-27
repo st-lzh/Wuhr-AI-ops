@@ -659,7 +659,7 @@ const ServerListPage: React.FC = () => {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold text-gray-800 dark:text-white">
-              主机管理
+              主机列表
             </h1>
             <p className="text-gray-600 dark:text-gray-400 mt-1">
               管理和监控所有主机的状态和性能

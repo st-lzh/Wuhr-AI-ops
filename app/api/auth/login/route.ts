@@ -94,8 +94,8 @@ export async function POST(request: NextRequest) {
       }, { status: 401 })
     }
 
-    // Generate JWT tokens
-    const { accessToken } = await generateTokens({
+    // 访问令牌和刷新令牌共用同一个会话 ID，便于服务端撤销。
+    const tokens = await generateTokens({
       id: user.id,
       username: user.username,
       email: user.email,
@@ -105,7 +105,7 @@ export async function POST(request: NextRequest) {
       updatedAt: user.updatedAt,
       lastLoginAt: user.lastLoginAt || undefined,
       isActive: user.isActive
-    })
+    }, { rememberMe })
 
     // Update last login time
     await prisma.user.update({
@@ -114,15 +114,14 @@ export async function POST(request: NextRequest) {
     })
 
     // Create session record
-    const sessionId = require('crypto').randomUUID()
     await prisma.authSession.create({
       data: {
-        id: sessionId,
+        id: require('crypto').randomUUID(),
         userId: user.id,
-        refreshTokenId: sessionId,
+        refreshTokenId: tokens.refreshTokenId,
         userAgent: request.headers.get('user-agent') || 'unknown',
         ipAddress: request.ip || request.headers.get('x-forwarded-for') || 'unknown',
-        expiresAt: new Date(Date.now() + (rememberMe ? 30 : 7) * 24 * 60 * 60 * 1000),
+        expiresAt: new Date(tokens.refreshExpiresAt),
         lastUsedAt: new Date()
       }
     })
@@ -146,8 +145,8 @@ export async function POST(request: NextRequest) {
           lastLoginAt: user.lastLoginAt
         },
         tokens: {
-          accessToken,
-          expiresIn: 2 * 60 * 60 // 2小时
+          accessToken: tokens.accessToken,
+          expiresIn: Math.max(0, Math.floor((tokens.expiresAt - Date.now()) / 1000))
         }
       },
       timestamp: new Date().toISOString()
@@ -175,9 +174,13 @@ export async function POST(request: NextRequest) {
       isHttps
     })
 
-    response.cookies.set('accessToken', accessToken, {
+    response.cookies.set('accessToken', tokens.accessToken, {
       ...cookieOptions,
-      maxAge: 2 * 60 * 60 // 2小时
+      maxAge: Math.max(0, Math.floor((tokens.expiresAt - Date.now()) / 1000))
+    })
+    response.cookies.set('refreshToken', tokens.refreshToken, {
+      ...cookieOptions,
+      maxAge: Math.max(0, Math.floor((tokens.refreshExpiresAt - Date.now()) / 1000))
     })
 
     return response

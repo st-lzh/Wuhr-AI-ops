@@ -1,11 +1,17 @@
 import { SignJWT, jwtVerify } from 'jose'
-import { generateUUID } from './uuid-edge'
 import { AuthTokens, User, JWTPayload, AuthError, AUTH_ERRORS, AuthConfig } from './types'
 
-// JWT配置 - 从环境变量获取，提供默认值用于开发
+const DEVELOPMENT_JWT_SECRET = 'wuhr-ai-ops-development-only-secret-change-me'
+
+// JWT配置：生产环境必须显式提供密钥，避免错误配置时退回公开默认值。
 function getJWTConfig(): AuthConfig {
+  const configuredSecret = process.env.JWT_SECRET?.trim()
+  if (!configuredSecret && process.env.NODE_ENV === 'production') {
+    throw new AuthError('生产环境必须配置 JWT_SECRET', 'JWT_SECRET_MISSING', 500)
+  }
+
   const config = {
-    jwtSecret: process.env.JWT_SECRET || 'wuhr_ai_ops_jwt_secret_key_2024_very_secure',
+    jwtSecret: configuredSecret || DEVELOPMENT_JWT_SECRET,
     accessTokenExpiry: process.env.JWT_EXPIRES_IN || '2h',
     refreshTokenExpiry: process.env.REFRESH_TOKEN_EXPIRY || '7d',
     bcryptRounds: 12
@@ -50,7 +56,10 @@ function getUserPermissions(role: string): string[] {
 /**
  * 生成JWT tokens
  */
-export async function generateTokens(user: User): Promise<AuthTokens> {
+export async function generateTokens(
+  user: User,
+  options: { rememberMe?: boolean; refreshTokenId?: string } = {}
+): Promise<AuthTokens> {
   try {
     const config = getJWTConfig()
 
@@ -65,24 +74,46 @@ export async function generateTokens(user: User): Promise<AuthTokens> {
       : getUserPermissions(user.role)
     const secret = new TextEncoder().encode(config.jwtSecret)
 
-    // 生成访问令牌
+    const refreshTokenId = options.refreshTokenId || crypto.randomUUID()
+    const accessExpiresIn = parseExpiry(config.accessTokenExpiry)
+    const refreshExpiresIn = options.rememberMe ? parseExpiry('30d') : parseExpiry(config.refreshTokenExpiry)
+
+    // 访问令牌和刷新令牌共享同一个 jti，用于绑定数据库会话。
     const accessToken = await new SignJWT({
       userId: user.id,
       username: user.username,
       email: user.email,
       role: user.role,
       permissions,
-      type: 'access'
+      type: 'access',
+      jti: refreshTokenId
     })
       .setProtectedHeader({ alg: 'HS256' })
       .setIssuedAt(now)
-      .setExpirationTime(now + parseExpiry(config.accessTokenExpiry))
+      .setExpirationTime(now + accessExpiresIn)
+      .sign(secret)
+
+    const refreshToken = await new SignJWT({
+      userId: user.id,
+      username: user.username,
+      email: user.email,
+      role: user.role,
+      permissions,
+      type: 'refresh',
+      jti: refreshTokenId
+    })
+      .setProtectedHeader({ alg: 'HS256' })
+      .setIssuedAt(now)
+      .setExpirationTime(now + refreshExpiresIn)
       .sign(secret)
 
     return {
       accessToken,
-      expiresAt: now + parseExpiry(config.accessTokenExpiry)
-    } as AuthTokens
+      refreshToken,
+      refreshTokenId,
+      expiresAt: (now + accessExpiresIn) * 1000,
+      refreshExpiresAt: (now + refreshExpiresIn) * 1000
+    }
   } catch (error) {
     console.error('生成Token失败:', error)
     throw new AuthError('Token生成失败', AUTH_ERRORS.TOKEN_GENERATION_FAILED, 500)
@@ -111,6 +142,22 @@ export async function verifyAccessToken(token: string) {
   }
 }
 
+/** 验证刷新令牌，调用方还必须校验对应数据库会话仍处于启用状态。 */
+export async function verifyRefreshToken(token: string): Promise<JWTPayload> {
+  try {
+    const config = getJWTConfig()
+    const secret = new TextEncoder().encode(config.jwtSecret)
+    const { payload } = await jwtVerify(token, secret)
+    if (payload.type !== 'refresh' || !payload.jti) {
+      throw new AuthError('无效的刷新令牌', AUTH_ERRORS.INVALID_TOKEN, 401)
+    }
+    return payload as unknown as JWTPayload
+  } catch (error) {
+    if (error instanceof AuthError) throw error
+    throw new AuthError('刷新令牌验证失败', AUTH_ERRORS.INVALID_TOKEN, 401)
+  }
+}
+
 
 
 /**
@@ -121,6 +168,8 @@ export async function verifyToken(token: string, type: 'access'): Promise<{
   username: string
   role: string
   email?: string
+  permissions: string[]
+  tokenId?: string
 } | null> {
   try {
     const payload = await verifyAccessToken(token)
@@ -128,7 +177,9 @@ export async function verifyToken(token: string, type: 'access'): Promise<{
       userId: payload.userId as string,
       username: payload.username as string,
       role: payload.role as string,
-      email: payload.email as string
+      email: payload.email as string,
+      permissions: Array.isArray(payload.permissions) ? payload.permissions as string[] : [],
+      tokenId: payload.jti
     }
   } catch (error) {
     // 静默处理token验证失败

@@ -69,6 +69,7 @@ const CustomToolsToggle: React.FC<CustomToolsToggleProps> = ({ onToolClick }) =>
       if (data.success) {
         message.success('自定义工具配置已更新')
         setConfig(newConfig)
+        window.dispatchEvent(new CustomEvent('custom-tools-config-updated', { detail: newConfig }))
       } else {
         message.error(data.error || '保存失败')
       }
@@ -158,7 +159,7 @@ const CustomToolsToggle: React.FC<CustomToolsToggleProps> = ({ onToolClick }) =>
       {!config.enabled && (
         <div className="mt-4 p-3 bg-gray-900/20 border border-gray-500/30 rounded">
           <Text className="text-gray-400 text-xs">
-            启用后可使用已配置的自定义工具。前往<Button type="link" size="small" className="p-0 h-auto text-blue-400">模型管理</Button>配置自定义工具
+            启用后可使用已配置的自定义工具。前往<Button type="link" href="/config/tools" size="small" className="p-0 h-auto text-blue-400">自定义工具</Button>完成配置
           </Text>
           <div className="mt-2 p-2 bg-blue-900/10 border border-blue-500/30 rounded">
             <div className="text-blue-400 text-xs font-semibold mb-1">💡 使用提示:</div>

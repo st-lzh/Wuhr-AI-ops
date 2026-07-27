@@ -4,6 +4,7 @@
 // 延迟加载 SSH 客户端以避免在构建时加载原生模块
 // import { SSHClient } from '../ssh/client'
 import { SSHConnectionConfig, SSHConnectionResult } from '../../app/types/access-management'
+import { revealSecret } from '../crypto/encryption'
 
 /**
  * 执行SSH连接测试
@@ -52,6 +53,7 @@ export async function performSSHConnectionTest(
     })
 
     try {
+      const startedAt = Date.now()
       // 执行连接测试
       await sshClient.connect()
 
@@ -67,7 +69,7 @@ export async function performSSHConnectionTest(
         message: successMessage,
         connected: true,
         systemInfo,
-        connectionTime: Date.now()
+        connectionTime: Date.now() - startedAt
       }
 
     } catch (connectionError) {
@@ -97,6 +99,27 @@ export async function performSSHConnectionTest(
       connected: false,
       error: error instanceof Error ? error.message : '未知异常'
     }
+  }
+}
+
+/** 仅验证 SSH 握手与认证，供列表实时状态检查使用，避免执行额外探测命令。 */
+export async function performSSHReachabilityCheck(
+  config: SSHConnectionConfig,
+  timeout = 8000
+): Promise<{ success: boolean; error?: string }> {
+  const { SSHClient } = await import('../ssh/client')
+  const sshClient = new SSHClient({ ...config, timeout })
+
+  try {
+    await sshClient.connect()
+    return { success: true }
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'SSH 连接失败'
+    }
+  } finally {
+    await sshClient.disconnect().catch(() => undefined)
   }
 }
 
@@ -221,7 +244,7 @@ export function createSSHConfigFromServer(server: {
     host: server.ip,
     port: server.port,
     username: server.username,
-    password: server.password || undefined,
+    password: revealSecret(server.password) || undefined,
     privateKey: server.keyPath || undefined
   }
 }

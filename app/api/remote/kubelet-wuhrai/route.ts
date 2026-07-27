@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '../../../../lib/auth/apiHelpers-new'
 import { getPrismaClient } from '../../../../lib/config/database'
 import { executeSSHCommand } from '../../../../lib/ssh/client'
+import { revealSecret } from '../../../../lib/crypto/encryption'
 
 // 提供商到环境变量的映射
 const PROVIDER_ENV_MAP = {
@@ -152,7 +153,6 @@ export async function POST(request: NextRequest) {
     server = await prisma.server.findFirst({
       where: { 
         id: hostId,
-        userId: user.id,
         isActive: true
       }
     })
@@ -165,7 +165,6 @@ export async function POST(request: NextRequest) {
       const serverGroup = await prisma.serverGroup.findFirst({
         where: {
           id: hostId,
-          userId: user.id,
           isActive: true
         },
         include: {
@@ -197,7 +196,6 @@ export async function POST(request: NextRequest) {
       // 尝试选择用户的默认主机
       server = await prisma.server.findFirst({
         where: { 
-          userId: user.id,
           isActive: true,
           isDefault: true // 优先选择默认主机
         }
@@ -207,7 +205,6 @@ export async function POST(request: NextRequest) {
       if (!server) {
         server = await prisma.server.findFirst({
           where: { 
-            userId: user.id,
             isActive: true
           }
         })
@@ -284,7 +281,7 @@ export async function POST(request: NextRequest) {
       host: server.ip,
       port: server.port,
       username: server.username,
-      password: server.password || undefined,
+      password: revealSecret(server.password) || undefined,
       timeout: 120000 // 2分钟超时
     }
 
@@ -375,4 +372,3 @@ export async function POST(request: NextRequest) {
     }, { status: 500 })
   }
 }
-

@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '../../../../../../lib/auth/apiHelpers-new'
 import { getPrismaClient } from '../../../../../../lib/config/database'
-import { deploymentExecutionService } from '../../../../../../lib/services/deploymentExecutionService'
+import { triggerApprovedDeployment } from '../../../../../../lib/services/deploymentTriggerService'
+import { canWriteTeamAssets } from '../../../../../../lib/auth/teamAccess'
 
 // 启动部署
 export async function POST(
@@ -16,6 +17,9 @@ export async function POST(
     }
 
     const { user } = authResult
+    if (!canWriteTeamAssets(user, 'cicd:write')) {
+      return NextResponse.json({ success: false, error: '没有部署执行权限' }, { status: 403 })
+    }
     const deploymentId = params.id
 
     console.log(`🚀 启动部署: ${deploymentId}`)
@@ -44,58 +48,14 @@ export async function POST(
       }, { status: 404 })
     }
 
-    // 检查部署状态
-    if (deployment.status === 'deploying') {
-      return NextResponse.json({
-        success: false,
-        error: '部署任务正在运行中'
-      }, { status: 400 })
-    }
-
-    if (deployment.status === 'success') {
-      return NextResponse.json({
-        success: false,
-        error: '部署任务已完成'
-      }, { status: 400 })
-    }
-
-    // 检查是否需要审批
-    const hasApprovalUsers = deployment.approvalUsers && Array.isArray(deployment.approvalUsers) && deployment.approvalUsers.length > 0
-    if (hasApprovalUsers && deployment.status !== 'approved') {
-      return NextResponse.json({
-        success: false,
-        error: '部署任务需要审批后才能启动'
-      }, { status: 400 })
-    }
-
-    console.log(`✅ 部署启动成功: ${deployment.name}`)
-
-    // 异步执行部署，不阻塞响应
-    console.log('🚀 开始异步执行部署...')
-
-    // 立即返回响应，部署在后台执行
-    const deploymentPromise = deploymentExecutionService.triggerDeployment(deploymentId)
-
-    // 不等待部署完成，立即返回
-    setImmediate(async () => {
-      try {
-        const success = await deploymentPromise
-        console.log(`${success ? '✅' : '❌'} 自动部署执行${success ? '成功' : '失败'}: ${deploymentId}`)
-      } catch (error) {
-        console.error('❌ 自动部署执行异常:', error)
-      }
-    })
+    const result = await triggerApprovedDeployment(deploymentId, user.id, prisma)
 
     return NextResponse.json({
-      success: true,
-      data: {
-        deploymentId,
-        status: 'deploying',
-        startedAt: new Date().toISOString(),
-        message: '部署已开始执行'
-      },
-      message: '部署启动成功，正在后台执行'
-    })
+      success: result.success,
+      data: result,
+      message: result.message,
+      error: result.success ? undefined : result.message
+    }, { status: result.success ? 200 : 409 })
 
   } catch (error) {
     console.error('❌ 启动部署失败:', error)

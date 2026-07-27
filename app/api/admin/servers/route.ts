@@ -5,6 +5,8 @@ import { getPrismaClient } from '../../../../lib/config/database'
 // import { SSHClient } from '../../../../lib/ssh/client'
 import { withLeakDetection } from '../../../../lib/database/leakDetector'
 import { ServerStatus } from '../../../../lib/generated/prisma'
+import { protectSecret, revealSecret } from '../../../../lib/crypto/encryption'
+import { canWriteTeamAssets } from '../../../../lib/auth/teamAccess'
 
 // 响应辅助函数
 function successResponse(data: any) {
@@ -41,7 +43,6 @@ export async function GET(request: NextRequest) {
     if (!authResult.success) {
       return authResult.response
     }
-
     // 获取查询参数
     const { searchParams } = new URL(request.url)
     const page = parseInt(searchParams.get('page') || '1')
@@ -146,6 +147,9 @@ export async function POST(request: NextRequest) {
     if (!authResult.success) {
       return authResult.response
     }
+    if (!canWriteTeamAssets(authResult.user, 'servers:write')) {
+      return errorResponse('权限不足', '需要主机管理权限', 403)
+    }
 
     const body = await request.json()
     const {
@@ -166,10 +170,11 @@ export async function POST(request: NextRequest) {
       autoInstallKubelet = true // 🔥 自动安装kubelet-wuhrai开关
     } = body
 
-    // 验证必要参数
-    if (!name || !hostname || !ip || !username) {
-      return errorResponse('缺少必要参数', 'name、hostname、ip和username是必需的', 400)
+    // 验证必要参数（hostname 可选；若未填则用 ip 兜底，避免 schema NOT NULL 报错）
+    if (!name || !ip || !username) {
+      return errorResponse('缺少必要参数', 'name、ip 和 username 是必需的', 400)
     }
+    const effectiveHostname: string = (hostname && String(hostname).trim()) || ip
 
     // 验证IP格式
     const ipRegex = /^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/
@@ -184,12 +189,12 @@ export async function POST(request: NextRequest) {
 
     const prisma = await getPrismaClient()
 
-    // 检查IP和主机名是否已存在
+    // 检查IP和主机名是否已存在（hostname 用户没填时，只查 IP 冲突，避免兜底值误判）
     const existingServer = await prisma.server.findFirst({
       where: {
         OR: [
           { ip },
-          { hostname }
+          ...(hostname && String(hostname).trim() ? [{ hostname: String(hostname).trim() }] : [])
         ]
       }
     })
@@ -206,7 +211,6 @@ export async function POST(request: NextRequest) {
     if (isDefault) {
       await prisma.server.updateMany({
         where: {
-          userId: authResult.user.id,
           isDefault: true
         },
         data: {
@@ -243,11 +247,11 @@ export async function POST(request: NextRequest) {
     const newServer = await prisma.server.create({
       data: {
         name,
-        hostname,
+        hostname: effectiveHostname,
         ip,
         port,
         username,
-        password: password || null,
+        password: protectSecret(password),
         keyPath: keyPath || null,
         os: os || 'Unknown',
         version: version || 'Unknown',
@@ -302,13 +306,13 @@ export async function POST(request: NextRequest) {
         const installCommand = `curl -fsSL https://www.wuhrai.com/download/v2.0.0/install-kubelet-wuhrai.sh | bash -s -- --port=2081`
 
         console.log('📥 执行安装命令:', installCommand)
-        const installResult = await sshClient.executeCommand(installCommand, { timeout: 120000 }) // 2分钟超时
+        const installResult = await sshClient.executeCommand(installCommand)
 
         if (installResult.success) {
           console.log('✅ kubelet-wuhrai 安装成功')
-          console.log('安装输出:', installResult.output?.substring(0, 500))
+          console.log('安装输出:', installResult.stdout.substring(0, 500))
         } else {
-          console.warn('⚠️ kubelet-wuhrai 安装可能失败:', installResult.error)
+          console.warn('⚠️ kubelet-wuhrai 安装可能失败:', installResult.stderr || `退出码 ${installResult.code}`)
         }
 
         await sshClient.disconnect()
@@ -337,6 +341,9 @@ export async function PUT(request: NextRequest) {
       const authResult = await requireAuth(request)
       if (!authResult.success) {
         return authResult.response
+      }
+      if (!canWriteTeamAssets(authResult.user, 'servers:write')) {
+        return errorResponse('权限不足', '需要主机管理权限', 403)
       }
 
       const body = await request.json()
@@ -384,7 +391,6 @@ export async function PUT(request: NextRequest) {
       const group = await prisma.serverGroup.findFirst({
         where: {
           id: groupId,
-          userId: authResult.user.id,
           isActive: true
         }
       })
@@ -398,7 +404,6 @@ export async function PUT(request: NextRequest) {
     if (isDefault) {
       await prisma.server.updateMany({
         where: {
-          userId: authResult.user.id,
           isDefault: true,
           id: { not: id } // 排除当前更新的主机
         },
@@ -418,7 +423,7 @@ export async function PUT(request: NextRequest) {
         ...(port && { port }),
         ...(username && { username }),
         // 只有当密码不为空时才更新密码
-        ...(password && password.trim() !== '' && { password }),
+        ...(password && password.trim() !== '' && { password: protectSecret(password) }),
         ...(keyPath !== undefined && { keyPath }),
         ...(os && { os }),
         ...(version && { version }),
@@ -477,6 +482,9 @@ export async function PATCH(request: NextRequest) {
     if (!authResult.success) {
       return authResult.response
     }
+    if (!canWriteTeamAssets(authResult.user, 'servers:write')) {
+      return errorResponse('权限不足', '需要主机管理权限', 403)
+    }
 
     const body = await request.json()
     const { id, action, ...updateData } = body
@@ -511,7 +519,7 @@ export async function PATCH(request: NextRequest) {
             host: existingServer.ip,
             port: existingServer.port,
             username: existingServer.username || 'root',
-            password: existingServer.password || undefined,
+            password: revealSecret(existingServer.password) || undefined,
             privateKey: existingServer.keyPath || undefined
           })
 
@@ -635,6 +643,9 @@ export async function DELETE(request: NextRequest) {
     const authResult = await requireAuth(request)
     if (!authResult.success) {
       return authResult.response
+    }
+    if (!canWriteTeamAssets(authResult.user, 'servers:write')) {
+      return errorResponse('权限不足', '需要主机管理权限', 403)
     }
 
     const { searchParams } = new URL(request.url)

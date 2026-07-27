@@ -1,22 +1,97 @@
 import crypto from 'crypto'
 
-// 加密配置
-const ALGORITHM = 'aes-256-cbc'
+// 新写入的数据统一使用带认证标签的 AES-GCM；旧 CBC 密文只保留读取兼容。
+const ALGORITHM = 'aes-256-gcm'
+const LEGACY_ALGORITHM = 'aes-256-cbc'
 const KEY_LENGTH = 32
-const IV_LENGTH = 16
+const IV_LENGTH = 12
+const LEGACY_IV_LENGTH = 16
+const AUTH_TAG_LENGTH = 16
+const SECRET_PREFIX = 'wuhr:v2:'
 
-// 从环境变量获取加密密钥，如果不存在则生成一个
+let developmentKey: Buffer | null = null
+
+// 从环境变量获取稳定加密密钥。生产环境缺少或配置错误时直接失败，
+// 防止每次启动生成新密钥而让历史凭据永久不可恢复。
 function getEncryptionKey(): Buffer {
-  const keyString = process.env.ENCRYPTION_KEY
+  const keyString = process.env.ENCRYPTION_KEY?.trim()
   if (keyString) {
+    if (!/^[a-fA-F0-9]{64}$/.test(keyString)) {
+      throw new Error('ENCRYPTION_KEY 必须是 64 位十六进制字符串')
+    }
     return Buffer.from(keyString, 'hex')
   }
-  
-  // 如果没有设置加密密钥，生成一个新的（仅用于开发环境）
-  console.warn('⚠️  ENCRYPTION_KEY not set, generating a new one for development')
-  const newKey = crypto.randomBytes(KEY_LENGTH)
-  console.log('🔑 Generated encryption key (add to .env):', newKey.toString('hex'))
-  return newKey
+
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('生产环境必须配置 ENCRYPTION_KEY')
+  }
+
+  if (!developmentKey) {
+    developmentKey = crypto.randomBytes(KEY_LENGTH)
+    console.warn('⚠️ 未配置 ENCRYPTION_KEY：本次开发进程使用临时密钥，重启后无法解密')
+  }
+  return developmentKey
+}
+
+function encryptPayload(plaintext: string): string {
+  const key = getEncryptionKey()
+  const iv = crypto.randomBytes(IV_LENGTH)
+  const cipher = crypto.createCipheriv(ALGORITHM, key, iv, { authTagLength: AUTH_TAG_LENGTH })
+  const encrypted = Buffer.concat([cipher.update(plaintext, 'utf8'), cipher.final()])
+  const authTag = cipher.getAuthTag()
+  return `${SECRET_PREFIX}${iv.toString('hex')}:${authTag.toString('hex')}:${encrypted.toString('hex')}`
+}
+
+function decryptPayload(encryptedText: string): string {
+  if (encryptedText.startsWith(SECRET_PREFIX)) {
+    const parts = encryptedText.slice(SECRET_PREFIX.length).split(':')
+    if (parts.length !== 3) throw new Error('加密数据格式错误')
+    const [ivHex, tagHex, encryptedHex] = parts
+    if (ivHex.length !== IV_LENGTH * 2 || tagHex.length !== AUTH_TAG_LENGTH * 2) {
+      throw new Error('加密数据长度错误')
+    }
+    const decipher = crypto.createDecipheriv(
+      ALGORITHM,
+      getEncryptionKey(),
+      Buffer.from(ivHex, 'hex'),
+      { authTagLength: AUTH_TAG_LENGTH }
+    )
+    decipher.setAuthTag(Buffer.from(tagHex, 'hex'))
+    return Buffer.concat([
+      decipher.update(Buffer.from(encryptedHex, 'hex')),
+      decipher.final()
+    ]).toString('utf8')
+  }
+
+  // 兼容历史 encrypt() 写入的 iv:ciphertext 格式。
+  const parts = encryptedText.split(':')
+  if (parts.length !== 2 || parts[0].length !== LEGACY_IV_LENGTH * 2) {
+    throw new Error('加密数据格式错误')
+  }
+  const decipher = crypto.createDecipheriv(
+    LEGACY_ALGORITHM,
+    getEncryptionKey(),
+    Buffer.from(parts[0], 'hex')
+  )
+  let decrypted = decipher.update(parts[1], 'hex', 'utf8')
+  decrypted += decipher.final('utf8')
+  return decrypted
+}
+
+export function isEncryptedSecret(value?: string | null): boolean {
+  return Boolean(value?.startsWith(SECRET_PREFIX))
+}
+
+/** 明文写入前加密；已使用当前格式加密的值不会被重复加密。 */
+export function protectSecret(value?: string | null): string | null {
+  if (!value) return null
+  return isEncryptedSecret(value) ? value : encrypt(value)
+}
+
+/** 读取应用密文；为迁移兼容，未带当前前缀的数据按历史明文返回。 */
+export function revealSecret(value?: string | null): string {
+  if (!value) return ''
+  return isEncryptedSecret(value) ? decrypt(value) : value
 }
 
 /**
@@ -26,17 +101,7 @@ function getEncryptionKey(): Buffer {
  */
 export function encryptCredentials(data: any): string {
   try {
-    const key = getEncryptionKey()
-    const iv = crypto.randomBytes(IV_LENGTH)
-    const cipher = crypto.createCipheriv(ALGORITHM, key, iv)
-
-    const plaintext = JSON.stringify(data)
-    let encrypted = cipher.update(plaintext, 'utf8', 'hex')
-    encrypted += cipher.final('hex')
-
-    // 组合 IV + 加密数据
-    const result = iv.toString('hex') + encrypted
-    return result
+    return encryptPayload(JSON.stringify(data))
   } catch (error) {
     console.error('❌ 加密失败:', error)
     throw new Error('数据加密失败')
@@ -55,22 +120,17 @@ export function decryptCredentials(encryptedData: string): any {
       throw new Error('无效的加密数据格式')
     }
 
-    // 检查数据长度
-    if (encryptedData.length < IV_LENGTH * 2) {
-      throw new Error('加密数据长度不足')
+    if (encryptedData.startsWith(SECRET_PREFIX) || encryptedData.includes(':')) {
+      return JSON.parse(decryptPayload(encryptedData))
     }
 
-    const key = getEncryptionKey()
-
-    // 提取 IV 和加密数据
-    const iv = Buffer.from(encryptedData.slice(0, IV_LENGTH * 2), 'hex')
-    const encrypted = encryptedData.slice(IV_LENGTH * 2)
-
-    const decipher = crypto.createDecipheriv(ALGORITHM, key, iv)
-
+    // 兼容历史 encryptCredentials() 的 iv+ciphertext（无分隔符）格式。
+    if (encryptedData.length < LEGACY_IV_LENGTH * 2) throw new Error('加密数据长度不足')
+    const iv = Buffer.from(encryptedData.slice(0, LEGACY_IV_LENGTH * 2), 'hex')
+    const encrypted = encryptedData.slice(LEGACY_IV_LENGTH * 2)
+    const decipher = crypto.createDecipheriv(LEGACY_ALGORITHM, getEncryptionKey(), iv)
     let decrypted = decipher.update(encrypted, 'hex', 'utf8')
     decrypted += decipher.final('utf8')
-
     return JSON.parse(decrypted)
   } catch (error) {
     console.error('❌ 解密失败:', error)
@@ -114,15 +174,7 @@ export function generateEncryptionKey(): string {
  */
 export function encrypt(text: string): string {
   try {
-    const key = getEncryptionKey()
-    const iv = crypto.randomBytes(IV_LENGTH)
-    const cipher = crypto.createCipheriv(ALGORITHM, key, iv)
-
-    let encrypted = cipher.update(text, 'utf8', 'hex')
-    encrypted += cipher.final('hex')
-
-    // 将IV和加密数据组合
-    return iv.toString('hex') + ':' + encrypted
+    return encryptPayload(text)
   } catch (error) {
     console.error('❌ 字符串加密失败:', error)
     throw new Error('加密失败')
@@ -141,20 +193,7 @@ export function decrypt(encryptedText: string): string {
       throw new Error('无效的加密数据格式')
     }
 
-    const parts = encryptedText.split(':')
-    if (parts.length !== 2) {
-      throw new Error('加密数据格式错误')
-    }
-
-    const key = getEncryptionKey()
-    const iv = Buffer.from(parts[0], 'hex')
-    const encrypted = parts[1]
-
-    const decipher = crypto.createDecipheriv(ALGORITHM, key, iv)
-    let decrypted = decipher.update(encrypted, 'hex', 'utf8')
-    decrypted += decipher.final('utf8')
-
-    return decrypted
+    return decryptPayload(encryptedText)
   } catch (error) {
     console.error('❌ 字符串解密失败:', error)
     const err = error as any

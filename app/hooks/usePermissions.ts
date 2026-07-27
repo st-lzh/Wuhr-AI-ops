@@ -15,10 +15,10 @@ const ROLE_HIERARCHY = {
 
 // 路径权限映射
 const ROLE_PATH_PERMISSIONS = {
-  admin: ['/admin', '/config', '/monitor', '/servers', '/tools', '/ai'],
-  manager: ['/monitor', '/servers', '/tools', '/ai'],
-  developer: ['/tools', '/ai'],
-  viewer: ['/monitor', '/ai'],
+  admin: ['/admin', '/config', '/monitor', '/servers', '/network', '/tools', '/ai'],
+  manager: ['/monitor', '/servers', '/network', '/tools', '/ai'],
+  developer: ['/servers', '/network', '/tools', '/ai'],
+  viewer: ['/monitor', '/network', '/ai'],
 } as const
 
 // 权限检查Hook
@@ -76,6 +76,10 @@ export function usePermissions() {
     return checkModulePermission('servers', action)
   }, [checkModulePermission])
 
+  const canAccessNetwork = useCallback((action: 'read' | 'write' = 'read'): boolean => {
+    return checkModulePermission('network', action)
+  }, [checkModulePermission])
+
   const canAccessCICD = useCallback((action: 'read' | 'write' = 'read'): boolean => {
     return checkModulePermission('cicd', action)
   }, [checkModulePermission])
@@ -102,6 +106,12 @@ export function usePermissions() {
 
   const canAccessGrafana = useCallback((action: 'read' | 'write' = 'read'): boolean => {
     return checkModulePermission('grafana', action)
+  }, [checkModulePermission])
+
+  // AI 资产（lesson 库 / 执行历史 / 技能 / 记忆）
+  // 对应后端 /api/v1/improve/* 的访问权限
+  const canAccessImprove = useCallback((action: 'read' | 'write' = 'read'): boolean => {
+    return checkModulePermission('improve', action)
   }, [checkModulePermission])
 
   // 检查角色权限（支持层级）
@@ -282,6 +292,7 @@ export function usePermissions() {
     canAccessUsers,
     canAccessPermissions,
     canAccessServers,
+    canAccessNetwork,
     canAccessCICD,
     canAccessApprovals,
     canAccessNotifications,
@@ -289,6 +300,7 @@ export function usePermissions() {
     canAccessAI,
     canAccessMonitoring,
     canAccessGrafana,
+    canAccessImprove,
 
     // 工具方法
     getAccessiblePaths,
@@ -301,4 +313,4 @@ export function usePermissions() {
     isAuthenticated: auth.isAuthenticated,
     user: auth.user,
   }
-} 
+}

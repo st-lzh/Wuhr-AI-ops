@@ -11,6 +11,7 @@ import { getPrismaClient } from '../../../../../../lib/config/database'
 import { createJenkinsClient } from '../../../../../../lib/jenkins/client'
 import { JenkinsJobExecuteRequest } from '../../../../../../lib/jenkins/types'
 import { z } from 'zod'
+import { revealSecret } from '../../../../../../lib/crypto/encryption'
 
 // 执行作业验证schema
 const executeJobsSchema = z.object({
@@ -53,38 +54,7 @@ export async function GET(
     }
 
     try {
-      console.log('🔐 Jenkins配置信息:', {
-        serverUrl: jenkinsConfig.serverUrl,
-        hasUsername: !!jenkinsConfig.username,
-        hasApiToken: !!jenkinsConfig.apiToken,
-        username: jenkinsConfig.username ? `${jenkinsConfig.username.substring(0, 3)}***` : 'none',
-        apiTokenFormat: jenkinsConfig.apiToken ? `${jenkinsConfig.apiToken.substring(0, 8)}...` : 'none',
-        apiTokenHasColon: jenkinsConfig.apiToken ? jenkinsConfig.apiToken.includes(':') : false
-      })
-
-      // 解析认证信息（兼容两种格式）
-      let authUsername = ''
-      let authToken = ''
-
-      if (jenkinsConfig.apiToken && jenkinsConfig.apiToken.includes(':')) {
-        // 格式1: apiToken包含 "username:token"
-        const parts = jenkinsConfig.apiToken.split(':')
-        authUsername = parts[0]
-        authToken = parts[1]
-        console.log('🔑 认证信息解析 (格式1 - 完整):', {
-          parsedUsername: authUsername ? `${authUsername.substring(0, 3)}***` : 'none',
-          parsedTokenLength: authToken ? authToken.length : 0
-        })
-      } else if (jenkinsConfig.username && jenkinsConfig.apiToken) {
-        // 格式2: username和apiToken分开存储
-        authUsername = jenkinsConfig.username
-        authToken = jenkinsConfig.apiToken
-        console.log('🔑 认证信息解析 (格式2 - 分开):', {
-          username: authUsername ? `${authUsername.substring(0, 3)}***` : 'none',
-          tokenLength: authToken ? authToken.length : 0
-        })
-      } else {
-        console.log('❌ 认证信息不完整')
+      if (!jenkinsConfig.username || !jenkinsConfig.apiToken) {
         return errorResponse(
           'Jenkins配置不完整',
           '请配置用户名和API Token',
@@ -92,26 +62,14 @@ export async function GET(
         )
       }
 
+      const authUsername = jenkinsConfig.username
+      const authToken = revealSecret(jenkinsConfig.apiToken)
       const base64Auth = Buffer.from(`${authUsername}:${authToken}`).toString('base64')
-      console.log('🔑 最终认证信息:', {
-        authString: `${authUsername}:${authToken.substring(0, 4)}***`,
-        base64Preview: base64Auth.substring(0, 12) + '...'
-      })
-
-      // 检查认证信息
-      if (!jenkinsConfig.username || !jenkinsConfig.apiToken) {
-        console.warn('⚠️ Jenkins配置缺少认证信息')
-        return errorResponse(
-          'Jenkins配置不完整',
-          '请配置用户名和API Token以访问Jenkins服务器',
-          400
-        )
-      }
 
       // 创建Jenkins客户端
       const jenkinsClient = createJenkinsClient({
         jobUrl: jenkinsConfig.serverUrl,
-        authToken: jenkinsConfig.apiToken || undefined
+        authToken: `${authUsername}:${jenkinsConfig.apiToken}`
       })
 
       console.log('📋 从Jenkins服务器获取作业列表...')
@@ -295,7 +253,9 @@ export async function POST(
     // 创建Jenkins客户端
     const client = createJenkinsClient({
       jobUrl: jenkinsConfig.serverUrl, // 使用serverUrl作为jobUrl
-      authToken: jenkinsConfig.apiToken || undefined
+      authToken: jenkinsConfig.username && jenkinsConfig.apiToken
+        ? `${jenkinsConfig.username}:${jenkinsConfig.apiToken}`
+        : jenkinsConfig.apiToken || undefined
     })
 
     // 首先验证所有作业是否存在

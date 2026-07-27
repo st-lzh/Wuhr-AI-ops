@@ -1,0 +1,39 @@
+# 弱网/离线恢复构建。
+# 前提：本机已有一次通过标准 Dockerfile 构建的 wuhr-ai-ops:local。
+# 该镜像提供经过验证的 Linux Node、pnpm、原生依赖和 node_modules；
+# 当前源码仍会重新执行 Prisma generate 与 Next.js production build。
+FROM wuhr-ai-ops:local AS offline-builder
+
+USER root
+WORKDIR /build
+COPY . .
+RUN cp -a /app/node_modules ./node_modules && chown -R wuhr:wuhr /build
+
+USER wuhr
+ENV NEXT_TELEMETRY_DISABLED=1 \
+    NODE_OPTIONS="--max-old-space-size=4096" \
+    SKIP_ENV_VALIDATION=1 \
+    DATABASE_URL="postgresql://placeholder:placeholder@placeholder:5432/placeholder" \
+    REDIS_URL="redis://placeholder:6379"
+RUN pnpm prisma generate && pnpm build
+
+FROM wuhr-ai-ops:local AS offline-runner
+
+USER root
+RUN rm -rf /app/.next /app/server.js /app/public /app/prisma /app/lib/generated/prisma
+COPY --from=offline-builder --chown=wuhr:wuhr /build/.next/standalone /app/
+COPY --from=offline-builder --chown=wuhr:wuhr /build/.next/static /app/.next/static
+COPY --from=offline-builder --chown=wuhr:wuhr /build/public /app/public
+COPY --from=offline-builder --chown=wuhr:wuhr /build/prisma /app/prisma
+COPY --from=offline-builder --chown=wuhr:wuhr /build/lib/config/db-seed.cjs /app/lib/config/db-seed.cjs
+COPY --from=offline-builder --chown=wuhr:wuhr /build/lib/generated/prisma /app/lib/generated/prisma
+COPY --from=offline-builder --chown=wuhr:wuhr /build/scripts/deployment-scheduler-worker.cjs /app/scripts/deployment-scheduler-worker.cjs
+COPY --from=offline-builder --chown=wuhr:wuhr /build/package.json /app/package.json
+RUN chown -R wuhr:wuhr /app/.next /app/public /app/prisma /app/lib /app/scripts /app/package.json
+
+# 与标准镜像保持相同的发布边界，避免基础镜像或 standalone 追踪残留源码。
+RUN rm -f /app/lib/logging/projectLogManager.ts /app/utils/httpApiClient.ts && \
+    find /app/lib/generated/prisma -type f \( -name '*.ts' -o -name '*.tsx' -o -name '*.map' \) -delete && \
+    find /app -maxdepth 2 -type f \( -name '.env' -o -name '.env.*' \) -delete
+
+USER wuhr

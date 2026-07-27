@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '../../../../../lib/auth/apiHelpers-new'
 import { getPrismaClient } from '../../../../../lib/config/database'
-import { hasPermission } from '../../../../../lib/auth/permissions'
+import { canWriteTeamAssets } from '../../../../../lib/auth/teamAccess'
 
 export async function POST(request: NextRequest) {
   try {
@@ -13,7 +13,7 @@ export async function POST(request: NextRequest) {
     const { user } = authResult
 
     // 检查权限
-    if (!hasPermission(user.permissions, 'servers:write')) {
+    if (!canWriteTeamAssets(user, 'servers:write')) {
       return NextResponse.json(
         { success: false, error: '权限不足' },
         { status: 403 }
@@ -36,7 +36,6 @@ export async function POST(request: NextRequest) {
     const targetGroup = await prisma.serverGroup.findFirst({
       where: {
         id: groupId,
-        userId: user.id,
         isActive: true
       }
     })
@@ -66,7 +65,6 @@ export async function POST(request: NextRequest) {
         // 如果当前主机组不是默认，则设为默认并取消用户其他主机组的默认状态
         await tx.serverGroup.updateMany({
           where: {
-            userId: user.id,
             isDefault: true
           },
           data: {

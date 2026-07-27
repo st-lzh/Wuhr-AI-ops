@@ -25,7 +25,6 @@ export async function GET(request: NextRequest) {
 
     // 构建查询条件
     const whereCondition: any = {
-      userId: authResult.user.id,
       isActive: true
     }
     

@@ -1,16 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '../../../../lib/auth/apiHelpers-new'
-import { exec } from 'child_process'
+import { execFile } from 'child_process'
 import { promisify } from 'util'
 import os from 'os'
-import fs from 'fs'
-import { appInitializer } from '../../../../lib/startup/appInitializer'
+import { readFile } from 'fs/promises'
 
 // 强制动态渲染，解决构建时的request.headers问题
 export const dynamic = 'force-dynamic'
 
 
-const execAsync = promisify(exec)
+const execFileAsync = promisify(execFile)
 
 // 获取系统健康状态
 export async function GET(request: NextRequest) {
@@ -63,29 +62,15 @@ export async function GET(request: NextRequest) {
 // 获取CPU使用率
 async function getCPUUsage(): Promise<number> {
   try {
-    if (os.platform() === 'linux') {
-      // Linux系统使用top命令
-      const { stdout } = await execAsync("top -bn1 | grep 'Cpu(s)' | awk '{print $2}' | cut -d'%' -f1")
-      const cpuUsage = parseFloat(stdout.trim())
-      return isNaN(cpuUsage) ? 0 : Math.round(cpuUsage)
-    } else {
-      // 其他系统使用Node.js的os模块估算
-      const cpus = os.cpus()
-      let totalIdle = 0
-      let totalTick = 0
-
-      cpus.forEach(cpu => {
-        for (const type in cpu.times) {
-          totalTick += cpu.times[type as keyof typeof cpu.times]
-        }
-        totalIdle += cpu.times.idle
-      })
-
-      const idle = totalIdle / cpus.length
-      const total = totalTick / cpus.length
-      const usage = 100 - ~~(100 * idle / total)
-      return Math.max(0, Math.min(100, usage))
-    }
+    const sample = () => os.cpus().reduce((acc, cpu) => ({
+      idle: acc.idle + cpu.times.idle,
+      total: acc.total + Object.values(cpu.times).reduce((sum, value) => sum + value, 0)
+    }), { idle: 0, total: 0 })
+    const before = sample()
+    await new Promise(resolve => setTimeout(resolve, 250))
+    const after = sample()
+    const total = after.total - before.total
+    return total > 0 ? Math.round((1 - (after.idle - before.idle) / total) * 100) : 0
   } catch (error) {
     console.error('获取CPU使用率失败:', error)
     return 0
@@ -109,21 +94,10 @@ async function getMemoryUsage(): Promise<number> {
 // 获取磁盘使用率
 async function getDiskUsage(): Promise<number> {
   try {
-    if (os.platform() === 'linux') {
-      // Linux系统使用df命令
-      const { stdout } = await execAsync("df -h / | awk 'NR==2 {print $5}' | cut -d'%' -f1")
-      const diskUsage = parseInt(stdout.trim())
-      return isNaN(diskUsage) ? 0 : diskUsage
-    } else {
-      // 其他系统的简化实现
-      try {
-        const stats = fs.statSync('/')
-        // 这是一个简化的实现，实际磁盘使用率需要更复杂的计算
-        return Math.floor(Math.random() * 30) + 30 // 30-60%的随机值作为fallback
-      } catch {
-        return 45 // 默认值
-      }
-    }
+    const { stdout } = await execFileAsync('df', ['-Pk', '/'])
+    const line = stdout.trim().split('\n').at(-1) || ''
+    const usage = Number(line.trim().split(/\s+/)[4]?.replace('%', ''))
+    return Number.isFinite(usage) ? usage : 0
   } catch (error) {
     console.error('获取磁盘使用率失败:', error)
     return 0
@@ -133,28 +107,22 @@ async function getDiskUsage(): Promise<number> {
 // 获取网络使用率
 async function getNetworkUsage(): Promise<number> {
   try {
-    if (os.platform() === 'linux') {
-      // Linux系统获取网络接口统计
-      const { stdout } = await execAsync("cat /proc/net/dev | grep -E '(eth|ens|enp)' | head -1 | awk '{print $2+$10}'")
-      const bytes = parseInt(stdout.trim())
-      
-      if (!isNaN(bytes)) {
-        // 简化的网络使用率计算（基于传输字节数）
-        // 这里使用一个简化的算法，实际应该计算带宽利用率
-        const mbps = bytes / (1024 * 1024) // 转换为MB
-        const usage = Math.min(100, (mbps / 1000) * 100) // 假设1GB带宽
-        return Math.round(usage)
-      }
+    if (os.platform() !== 'linux') return 0
+    const sample = async () => {
+      const content = await readFile('/proc/net/dev', 'utf8')
+      return content.split('\n').slice(2).reduce((total, line) => {
+        const [name, values] = line.trim().split(':')
+        if (!values || name === 'lo') return total
+        const fields = values.trim().split(/\s+/).map(Number)
+        return total + (fields[0] || 0) + (fields[8] || 0)
+      }, 0)
     }
-    
-    // Fallback: 基于网络接口数量的估算
-    const networkInterfaces = os.networkInterfaces()
-    const activeInterfaces = Object.keys(networkInterfaces).filter(name => 
-      !name.includes('lo') && networkInterfaces[name]?.some(iface => !iface.internal)
-    )
-    
-    // 简化的网络负载估算
-    return Math.floor(Math.random() * 20) + 10 // 10-30%
+    const before = await sample()
+    const startedAt = Date.now()
+    await new Promise(resolve => setTimeout(resolve, 250))
+    const bytesPerSecond = (await sample() - before) * 1000 / Math.max(Date.now() - startedAt, 1)
+    const capacityBitsPerSecond = Number(process.env.NETWORK_CAPACITY_BPS) || 1_000_000_000
+    return Math.min(100, Math.round(bytesPerSecond * 8 / capacityBitsPerSecond * 100))
   } catch (error) {
     console.error('获取网络使用率失败:', error)
     return 0

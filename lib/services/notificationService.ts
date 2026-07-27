@@ -187,18 +187,19 @@ export class NotificationService {
       console.log(`🧹 清理审批通知: ${deploymentId} -> ${approverId}`)
 
       // 标记相关的审批通知为已读
-      await prisma.notification.updateMany({
+      await prisma.infoNotification.updateMany({
         where: {
-          recipientId: approverId,
-          relatedId: deploymentId,
-          relatedType: 'deployment',
-          category: 'approval',
+          userId: approverId,
+          type: { in: ['approval', 'deployment_approval'] },
+          metadata: {
+            path: ['deploymentId'],
+            equals: deploymentId
+          },
           isRead: false
         },
         data: {
           isRead: true,
-          readAt: new Date(),
-          updatedAt: new Date()
+          readAt: new Date()
         }
       })
 
@@ -221,23 +222,18 @@ export class NotificationService {
       console.log(`🧹 清理部署通知: ${deploymentId}`)
 
       // 标记相关的部署通知为已读（除了最终状态通知）
-      await prisma.notification.updateMany({
+      await prisma.infoNotification.updateMany({
         where: {
-          relatedId: deploymentId,
-          relatedType: 'deployment',
-          category: 'deployment',
+          type: { in: ['deployment', 'deployment_notification'] },
+          metadata: {
+            path: ['deploymentId'],
+            equals: deploymentId
+          },
           isRead: false,
-          NOT: {
-            metadata: {
-              path: ['action'],
-              equals: 'status_update'
-            }
-          }
         },
         data: {
           isRead: true,
-          readAt: new Date(),
-          updatedAt: new Date()
+          readAt: new Date()
         }
       })
 
@@ -260,19 +256,19 @@ export class NotificationService {
     try {
       const prisma = await this.getPrisma()
 
-      const notifications = await prisma.notification.findMany({
+      const notifications = await prisma.infoNotification.findMany({
         where: {
-          recipientId: userId,
+          userId,
           isRead: false
         },
         select: {
-          category: true
+          type: true
         }
       })
 
       const byCategory: Record<string, number> = {}
       notifications.forEach((n: any) => {
-        byCategory[n.category] = (byCategory[n.category] || 0) + 1
+        byCategory[n.type] = (byCategory[n.type] || 0) + 1
       })
 
       return {

@@ -20,6 +20,9 @@ node_modules
 .next/
 dist/
 build/
+*.tsbuildinfo
+test-results/
+playwright-report/
 
 # Logs
 logs/

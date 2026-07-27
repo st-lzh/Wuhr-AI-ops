@@ -13,6 +13,7 @@ import {
   serverErrorResponse
 } from '../../../../lib/auth/apiHelpers'
 import { getPrismaClient } from '../../../../lib/config/database'
+import { revealSecret } from '../../../../lib/crypto/encryption'
 
 // kubelet-wuhrai REST API 客户端类
 class KubeletWuhraiAPIClient {
@@ -243,13 +244,14 @@ export async function POST(request: NextRequest) {
         }
 
         const defaultApiKey = apiKeys.find(key => key.isDefault) || apiKeys[0]
+        const runtimeApiKey = revealSecret(defaultApiKey.apiKey)
 
         // 构建SSH配置
         const sshConfig = {
           host: server.ip,
           port: server.port,
           username: server.username,
-          password: server.password || undefined,
+          password: revealSecret(server.password) || undefined,
           timeout: 60000
         }
 
@@ -257,7 +259,7 @@ export async function POST(request: NextRequest) {
         const { buildEnvironmentVariables, generateKubeletArgs } = await import('../../../config/kubelet-wuhrai-providers')
         const envVars = buildEnvironmentVariables(
           body.model,
-          defaultApiKey.apiKey,
+          runtimeApiKey,
           defaultApiKey.provider === 'openai-compatible' ? (defaultApiKey.baseUrl || undefined) : undefined
         )
         const envString = Object.entries(envVars)
@@ -271,7 +273,7 @@ export async function POST(request: NextRequest) {
           config: {
             provider: body.provider,
             model: body.model,
-            apiKey: defaultApiKey.apiKey,
+            apiKey: runtimeApiKey,
             baseUrl: defaultApiKey.provider === 'openai-compatible' ? (defaultApiKey.baseUrl || undefined) : undefined,
             maxIterations: 20,
             streamingOutput: false

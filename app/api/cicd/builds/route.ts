@@ -21,6 +21,10 @@ const BuildSchema = z.object({
   logs: z.string().optional()
 })
 
+function canWriteCICD(user: { role: string; permissions: string[] }) {
+  return user.role === 'admin' || user.role === 'manager' || user.permissions.includes('cicd:write')
+}
+
 // 获取构建记录列表
 export async function GET(request: NextRequest) {
   try {
@@ -29,7 +33,6 @@ export async function GET(request: NextRequest) {
       return authResult.response
     }
 
-    const { user } = authResult
     const { searchParams } = new URL(request.url)
     const page = parseInt(searchParams.get('page') || '1')
     const limit = parseInt(searchParams.get('limit') || '10')
@@ -41,9 +44,8 @@ export async function GET(request: NextRequest) {
     const prisma = await getPrismaClient()
 
     // 构建查询条件
-    const where: any = {
-      userId: user.id
-    }
+    // 构建记录属于团队交付资产，不按创建人隔离。
+    const where: any = {}
 
     if (jenkinsConfigId) {
       where.jenkinsConfigId = jenkinsConfigId
@@ -79,7 +81,8 @@ export async function GET(request: NextRequest) {
           pipeline: {
             select: {
               id: true,
-              name: true
+              name: true,
+              project: { select: { id: true, name: true } }
             }
           },
           user: {
@@ -130,6 +133,9 @@ export async function POST(request: NextRequest) {
     }
 
     const { user } = authResult
+    if (!canWriteCICD(user)) {
+      return NextResponse.json({ success: false, error: '没有构建记录写入权限' }, { status: 403 })
+    }
     const body = await request.json()
 
     // 验证输入数据
@@ -145,11 +151,11 @@ export async function POST(request: NextRequest) {
     const data = validationResult.data
     const prisma = await getPrismaClient()
 
-    // 验证Jenkins配置是否存在且属于当前用户
+    // Jenkins 配置属于可信团队共享资产。
     const jenkinsConfig = await prisma.jenkinsConfig.findFirst({
       where: {
         id: data.jenkinsConfigId,
-        userId: user.id
+        isActive: true
       }
     })
 
@@ -165,7 +171,7 @@ export async function POST(request: NextRequest) {
       const pipeline = await prisma.pipeline.findFirst({
         where: {
           id: data.pipelineId,
-          userId: user.id
+          isActive: true
         }
       })
 
@@ -211,7 +217,8 @@ export async function POST(request: NextRequest) {
         pipeline: {
           select: {
             id: true,
-            name: true
+            name: true,
+            project: { select: { id: true, name: true } }
           }
         }
       }

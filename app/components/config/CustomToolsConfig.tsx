@@ -45,7 +45,7 @@ import {
   CopyOutlined  // 🔧 新增复制图标
 } from '@ant-design/icons'
 
-const { Title, Text } = Typography
+const { Text } = Typography
 const { Panel } = Collapse
 const { TextArea } = Input
 const { Option } = Select
@@ -141,8 +141,7 @@ const CustomToolsConfig: React.FC = () => {
 
       if (data.success) {
         message.success('自定义工具配置保存成功')
-        setConfig(newConfig)
-        console.log('🔧 [CustomToolsConfig] 配置已保存到数据库:', newConfig)
+        setConfig(data.data?.config || newConfig)
       } else {
         message.error(data.error || '保存失败')
       }
@@ -155,37 +154,76 @@ const CustomToolsConfig: React.FC = () => {
   }
 
   // 测试自定义工具
-  const testCustomTool = async (tool: CustomTool) => {
-    setTesting([...testing, tool.id])
-    try {
-      const response = await fetch('/api/config/custom-tools/test', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          name: tool.name,
-          command: tool.command,
-          args: tool.args,
-          env: tool.env,
-          workingDirectory: tool.workingDirectory,
-          timeout: tool.timeout
-        })
-      })
-      
-      const data = await response.json()
-      
-      if (data.success) {
-        message.success(`工具 "${tool.name}" 测试成功`)
-      } else {
-        message.error(`工具 "${tool.name}" 测试失败: ${data.error}`)
+  const testCustomTool = (tool: CustomTool) => {
+    const exactCommand = [tool.command, ...(Array.isArray(tool.args) ? tool.args : [])]
+      .map(part => /\s/.test(part) ? JSON.stringify(part) : part)
+      .join(' ')
+
+    Modal.confirm({
+      title: `确认真实测试：${tool.name}`,
+      width: 720,
+      okText: '确认执行',
+      cancelText: '取消',
+      okButtonProps: { danger: true },
+      content: (
+        <Space direction="vertical" className="w-full">
+          <Alert
+            type="warning"
+            showIcon
+            message="命令将在运行 Agent 的服务器上真实执行"
+            description="请确认命令、参数和工作目录无误。执行结果和操作人会写入审计日志。"
+          />
+          <Text strong>完整命令</Text>
+          <TextArea value={exactCommand} autoSize={{ minRows: 2, maxRows: 6 }} readOnly />
+          <Text type="secondary">工作目录：{tool.workingDirectory || '/tmp'}　超时：{tool.timeout || config.defaultTimeout}ms</Text>
+        </Space>
+      ),
+      onOk: async () => {
+        setTesting(current => Array.from(new Set([...current, tool.id])))
+        try {
+          const response = await fetch('/api/config/custom-tools/test', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ toolId: tool.id, confirmed: true })
+          })
+          const data = await response.json()
+          const result = data.data || {}
+
+          if (!response.ok || !data.success) {
+            Modal.error({
+              title: `工具“${tool.name}”测试失败`,
+              width: 720,
+              content: (
+                <Space direction="vertical" className="w-full">
+                  <Text type="danger">{data.error || '执行失败'}</Text>
+                  <Text>退出码：{result.exitCode ?? '-'}</Text>
+                  {result.stderr && <TextArea value={result.stderr} autoSize={{ minRows: 3, maxRows: 12 }} readOnly />}
+                </Space>
+              )
+            })
+            return
+          }
+
+          Modal.success({
+            title: `工具“${tool.name}”真实测试成功`,
+            width: 720,
+            content: (
+              <Space direction="vertical" className="w-full">
+                <Text>退出码：{result.exitCode}　耗时：{result.executionTimeMs}ms</Text>
+                <Text strong>标准输出</Text>
+                <TextArea value={result.stdout || '(无输出)'} autoSize={{ minRows: 3, maxRows: 12 }} readOnly />
+                {result.stderr && <><Text strong>标准错误</Text><TextArea value={result.stderr} autoSize={{ minRows: 2, maxRows: 8 }} readOnly /></>}
+              </Space>
+            )
+          })
+        } catch (error) {
+          console.error('真实测试工具失败:', error)
+          message.error('真实测试工具失败')
+        } finally {
+          setTesting(current => current.filter(id => id !== tool.id))
+        }
       }
-    } catch (error) {
-      console.error('测试工具失败:', error)
-      message.error('测试工具失败')
-    } finally {
-      setTesting(testing.filter(id => id !== tool.id))
-    }
+    })
   }
 
   // 添加或编辑工具
@@ -196,7 +234,7 @@ const CustomToolsConfig: React.FC = () => {
         name: values.name,
         description: values.description,
         command: values.command,
-        args: values.args ? values.args.split(' ').filter((arg: string) => arg.trim()) : [],
+        args: values.args ? values.args.split('\n').map((arg: string) => arg.trim()).filter(Boolean) : [],
         workingDirectory: values.workingDirectory,
         env: values.env ? JSON.parse(values.env) : {},
         category: values.category,
@@ -261,7 +299,7 @@ const CustomToolsConfig: React.FC = () => {
         name: tool.name,
         description: tool.description,
         command: tool.command,
-        args: Array.isArray(tool.args) ? tool.args.join(' ') : '',
+        args: Array.isArray(tool.args) ? tool.args.join('\n') : '',
         workingDirectory: tool.workingDirectory,
         env: JSON.stringify(tool.env || {}, null, 2),
         category: tool.category,
@@ -432,25 +470,14 @@ const CustomToolsConfig: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      {/* 页面标题 */}
-      <div>
-        <Title level={3} className="!text-white !mb-2">
-          <CodeOutlined className="mr-2" />
-          自定义工具配置
-        </Title>
-        <Text className="text-gray-400">
-          配置和管理自定义命令行工具和脚本
-        </Text>
-      </div>
-
       {/* 全局设置 */}
       <Card title="全局设置" className="glass-card">
         <Row gutter={24}>
           <Col span={6}>
             <div className="flex items-center justify-between">
               <div>
-                <Text strong className="text-white">启用自定义工具</Text>
-                <div className="text-xs text-gray-400 mt-1">
+                <Text strong>启用自定义工具</Text>
+                <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">
                   启用后可以使用配置的自定义工具
                 </div>
               </div>
@@ -467,7 +494,7 @@ const CustomToolsConfig: React.FC = () => {
           </Col>
           <Col span={6}>
             <div>
-              <Text strong className="text-white block mb-1">默认超时时间</Text>
+              <Text strong className="mb-1 block">默认超时时间</Text>
               <Input
                 type="number"
                 value={config.defaultTimeout / 1000}
@@ -484,7 +511,7 @@ const CustomToolsConfig: React.FC = () => {
           </Col>
           <Col span={6}>
             <div>
-              <Text strong className="text-white block mb-1">最大并发数</Text>
+              <Text strong className="mb-1 block">最大并发数</Text>
               <Input
                 type="number"
                 value={config.maxConcurrency}
@@ -502,7 +529,7 @@ const CustomToolsConfig: React.FC = () => {
           </Col>
           <Col span={6}>
             <div>
-              <Text strong className="text-white block mb-1">日志级别</Text>
+              <Text strong className="mb-1 block">日志级别</Text>
               <Select
                 value={config.logLevel}
                 onChange={(logLevel) => {
@@ -575,7 +602,7 @@ const CustomToolsConfig: React.FC = () => {
         {config.tools.length === 0 ? (
           <div className="text-center py-12">
             <CodeOutlined className="text-4xl text-gray-500 mb-4" />
-            <Text className="text-gray-400 block mb-4">
+            <Text type="secondary" className="mb-4 block">
               尚未配置自定义工具
             </Text>
             <Button
@@ -668,9 +695,9 @@ const CustomToolsConfig: React.FC = () => {
               <Form.Item
                 name="args"
                 label="参数"
-                extra="多个参数用空格分隔"
+                extra="每行填写一个参数；参数本身可以包含空格，不需要额外加引号"
               >
-                <Input placeholder="例如: analyze.py --verbose" />
+                <TextArea rows={3} placeholder={'例如:\nanalyze.py\n--verbose'} />
               </Form.Item>
             </Col>
           </Row>
@@ -687,9 +714,9 @@ const CustomToolsConfig: React.FC = () => {
             <Col span={12}>
               <Form.Item
                 name="timeout"
-                label="超时时间(秒)"
+                label="超时时间(毫秒)"
               >
-                <Input type="number" placeholder="30" />
+                <Input type="number" placeholder="30000" />
               </Form.Item>
             </Col>
           </Row>

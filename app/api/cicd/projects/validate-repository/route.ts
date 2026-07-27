@@ -5,6 +5,7 @@ import { z } from 'zod'
 import { RepositoryInfo, ProjectDetectionResult, PROJECT_TEMPLATES } from '../../../../types/project-template'
 import { GitOperations } from '../../../../../lib/git/gitOperations'
 import { decryptCredentials } from '../../../../../lib/crypto/encryption'
+import { spawn } from 'node:child_process'
 
 // 仓库验证请求schema
 const RepositoryValidationSchema = z.object({
@@ -49,7 +50,6 @@ async function validateGitRepository(
       const credentialRecord = await prisma.gitCredential.findFirst({
         where: {
           id: credentialId,
-          userId,
           isActive: true
         }
       })
@@ -74,7 +74,6 @@ async function validateGitRepository(
         const prisma = await getPrismaClient()
         const defaultCredential = await prisma.gitCredential.findFirst({
           where: {
-            userId,
             platform: detectedPlatform,
             isDefault: true,
             isActive: true
@@ -119,92 +118,116 @@ async function validateGitRepository(
   }
 }
 
-// 检查仓库可访问性
-async function checkRepositoryAccessibility(url: string): Promise<boolean> {
+async function resolveSVNCredentials(credentialId?: string) {
+  if (!credentialId) return undefined
+  const prisma = await getPrismaClient()
+  const credential = await prisma.gitCredential.findFirst({
+    where: { id: credentialId, isActive: true }
+  })
+  if (!credential) throw new Error('指定的仓库认证配置不存在')
+  return decryptCredentials(credential.encryptedCredentials) as {
+    username?: string
+    password?: string
+  }
+}
+
+function runSVN(args: string[], credentials?: { username?: string; password?: string }): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const authArgs = [
+      '--non-interactive',
+      '--no-auth-cache',
+      ...(credentials?.username ? ['--username', credentials.username] : []),
+      ...(credentials?.password ? ['--password-from-stdin'] : [])
+    ]
+    const child = spawn('svn', [...args, ...authArgs], {
+      stdio: ['pipe', 'pipe', 'pipe']
+    })
+    let stdout = ''
+    let stderr = ''
+    const timer = setTimeout(() => {
+      child.kill('SIGTERM')
+      reject(new Error('SVN 仓库检查超时'))
+    }, 20_000)
+
+    child.stdout.on('data', chunk => {
+      stdout += chunk.toString()
+      if (stdout.length > 2 * 1024 * 1024) child.kill('SIGTERM')
+    })
+    child.stderr.on('data', chunk => {
+      stderr += chunk.toString()
+      if (stderr.length > 64 * 1024) child.kill('SIGTERM')
+    })
+    child.once('error', error => {
+      clearTimeout(timer)
+      reject(error.message.includes('ENOENT') ? new Error('服务端未安装 SVN 客户端') : error)
+    })
+    child.once('close', code => {
+      clearTimeout(timer)
+      if (code === 0) resolve(stdout)
+      else reject(new Error(stderr.trim().split('\n').slice(-2).join(' ') || `SVN 命令退出码 ${code}`))
+    })
+    child.stdin.end(credentials?.password ? `${credentials.password}\n` : '')
+  })
+}
+
+async function validateSVNRepository(url: string, credentialId?: string): Promise<RepositoryInfo> {
   try {
-    // 使用git ls-remote命令检查仓库可访问性
-    const { exec } = require('child_process')
-    const { promisify } = require('util')
-    const execAsync = promisify(exec)
+    const credentials = await resolveSVNCredentials(credentialId)
+    await runSVN(['info', '--xml', url], credentials)
+    const listing = await runSVN(['list', '--xml', url], credentials)
+    const entries = Array.from(listing.matchAll(/<name>([^<]+)<\/name>/g), match => match[1])
+    const branches = entries.includes('trunk') ? ['trunk'] : []
+    if (entries.includes('branches')) {
+      try {
+        const branchListing = await runSVN(['list', '--xml', `${url.replace(/\/$/, '')}/branches`], credentials)
+        branches.push(...Array.from(branchListing.matchAll(/<name>([^<]+)<\/name>/g), match => match[1]))
+      } catch {
+        // branches 目录无读取权限时，仓库本身仍然是可用的。
+      }
+    }
 
-    // 设置超时时间为10秒
-    const timeout = 10000
-    const command = `git ls-remote --heads "${url}"`
+    let projectType: string | undefined
+    let packageManager: string | undefined
+    if (entries.includes('package.json')) {
+      projectType = 'nodejs-api'
+      packageManager = entries.includes('pnpm-lock.yaml') ? 'pnpm' : entries.includes('yarn.lock') ? 'yarn' : 'npm'
+    } else if (entries.includes('pom.xml') || entries.includes('mvnw')) {
+      projectType = 'spring-boot'
+      packageManager = 'maven'
+    } else if (entries.includes('requirements.txt') || entries.includes('pyproject.toml')) {
+      projectType = 'python-flask'
+      packageManager = 'pip'
+    } else if (entries.includes('Dockerfile')) {
+      projectType = 'docker-app'
+    }
 
-    await execAsync(command, { timeout })
-    return true
+    return {
+      url,
+      type: 'svn',
+      accessible: true,
+      branches,
+      defaultBranch: entries.includes('trunk') ? 'trunk' : undefined,
+      projectType,
+      packageManager,
+      hasDockerfile: entries.includes('Dockerfile'),
+      hasCI: entries.some(name => ['Jenkinsfile', '.gitlab-ci.yml', '.github'].includes(name))
+    }
   } catch (error) {
-    console.log('仓库可访问性检查失败:', error instanceof Error ? error.message : '未知错误')
-    return false
+    return {
+      url,
+      type: 'svn',
+      accessible: false,
+      error: error instanceof Error ? error.message : 'SVN 仓库验证失败'
+    }
   }
 }
 
-// 获取分支列表（模拟）
-async function getBranches(url: string): Promise<string[]> {
-  // 实际实现中应该使用git ls-remote --heads命令
-  // 这里返回常见的分支名称
-  const commonBranches = ['main', 'master', 'develop', 'dev']
-  
-  // 模拟根据仓库URL返回不同的分支
-  if (url.includes('legacy')) {
-    return ['master', 'develop', 'release']
-  }
-  
-  return commonBranches
-}
-
-// 获取默认分支
-function getDefaultBranch(branches: string[]): string {
-  if (branches.includes('main')) return 'main'
-  if (branches.includes('master')) return 'master'
-  return branches[0] || 'main'
-}
-
-// 检测项目类型（模拟）
-async function detectProjectType(url: string): Promise<ProjectDetectionResult> {
-  // 实际实现中应该克隆仓库并分析文件结构
-  // 这里模拟检测过程
-  
-  const frameworks: string[] = []
-  let detectedType = ''
-  let packageManager = ''
-  let hasDockerfile = false
-  let hasCI = false
-
-  // 模拟根据URL或仓库名称推测项目类型
-  const repoName = url.split('/').pop()?.toLowerCase() || ''
-  
-  if (repoName.includes('react') || repoName.includes('frontend')) {
-    detectedType = 'react-app'
-    frameworks.push('React')
-    packageManager = 'npm'
-  } else if (repoName.includes('vue')) {
-    detectedType = 'vue-app'
-    frameworks.push('Vue')
-    packageManager = 'npm'
-  } else if (repoName.includes('next')) {
-    detectedType = 'nextjs-app'
-    frameworks.push('Next.js', 'React')
-    packageManager = 'npm'
-  } else if (repoName.includes('node') || repoName.includes('api')) {
-    detectedType = 'nodejs-api'
-    frameworks.push('Node.js')
-    packageManager = 'npm'
-  } else if (repoName.includes('spring') || repoName.includes('java')) {
-    detectedType = 'spring-boot'
-    frameworks.push('Spring Boot', 'Java')
-    packageManager = 'maven'
-  } else if (repoName.includes('python') || repoName.includes('flask')) {
-    detectedType = 'python-flask'
-    frameworks.push('Python', 'Flask')
-    packageManager = 'pip'
-  }
-
-  // 检测Docker和CI配置（模拟）
-  hasDockerfile = Math.random() > 0.7
-  hasCI = Math.random() > 0.6
-
-  // 生成建议
+// GitOperations 已经通过浅克隆读取真实文件结构，这里只把检测结果映射成模板建议。
+function buildDetection(repositoryInfo: RepositoryInfo): ProjectDetectionResult {
+  const detectedType = repositoryInfo.projectType || ''
+  const frameworks = detectedType
+    ? PROJECT_TEMPLATES.find(item => item.id === detectedType)?.tags || []
+    : []
   const suggestions = PROJECT_TEMPLATES
     .filter(template => {
       if (!detectedType) return template.id === 'custom'
@@ -215,7 +238,7 @@ async function detectProjectType(url: string): Promise<ProjectDetectionResult> {
     .map(template => ({
       template,
       reason: template.id === detectedType 
-        ? '基于仓库名称和结构检测'
+        ? '基于仓库真实文件结构检测'
         : '基于检测到的技术栈推荐',
       confidence: template.id === detectedType ? 0.9 : 0.6
     }))
@@ -224,11 +247,11 @@ async function detectProjectType(url: string): Promise<ProjectDetectionResult> {
 
   return {
     detectedType,
-    confidence: detectedType ? 0.8 : 0.3,
+    confidence: detectedType ? 0.9 : 0,
     suggestions,
-    packageManager,
-    hasDockerfile,
-    hasCI,
+    packageManager: repositoryInfo.packageManager,
+    hasDockerfile: repositoryInfo.hasDockerfile === true,
+    hasCI: repositoryInfo.hasCI === true,
     frameworks
   }
 }
@@ -263,19 +286,13 @@ export async function POST(request: NextRequest) {
     if (type === 'git') {
       repositoryInfo = await validateGitRepository(url, user.id, credentialId)
     } else {
-      // SVN支持（如果需要）
-      repositoryInfo = {
-        url,
-        type: 'svn',
-        accessible: false,
-        error: 'SVN仓库验证暂未实现'
-      }
+      repositoryInfo = await validateSVNRepository(url, credentialId)
     }
 
     // 如果仓库可访问，获取项目检测结果
     let detection: ProjectDetectionResult | undefined
     if (repositoryInfo.accessible) {
-      detection = await detectProjectType(url)
+      detection = buildDetection(repositoryInfo)
     }
 
     console.log('✅ 仓库验证完成:', { 

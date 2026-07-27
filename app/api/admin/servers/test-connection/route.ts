@@ -4,19 +4,10 @@ import { getPrismaClient } from '../../../../../lib/config/database'
 import {
   performSSHConnectionTest,
   createSSHConfig,
+  createSSHConfigFromServer,
   validateSSHConfig
 } from '../../../../../lib/utils/sshConnectionUtils'
-
-// 简单的网络可达性测试函数
-async function testServerReachability(ip: string, port: number): Promise<boolean> {
-  try {
-    // 这里应该实现真实的网络连接测试
-    // 目前返回随机结果作为占位符
-    return Math.random() > 0.3 // 70%成功率
-  } catch {
-    return false
-  }
-}
+import { canWriteTeamAssets } from '../../../../../lib/auth/teamAccess'
 
 // 响应辅助函数
 function successResponse(data: any) {
@@ -52,6 +43,9 @@ export async function POST(request: NextRequest) {
     const authResult = await requireAuth(request)
     if (!authResult.success) {
       return authResult.response
+    }
+    if (!canWriteTeamAssets(authResult.user, 'servers:write')) {
+      return errorResponse('权限不足', '需要主机管理权限', 403)
     }
 
     const body = await request.json()
@@ -102,6 +96,9 @@ export async function PUT(request: NextRequest) {
     if (!authResult.success) {
       return authResult.response
     }
+    if (!canWriteTeamAssets(authResult.user, 'servers:write')) {
+      return errorResponse('权限不足', '需要主机管理权限', 403)
+    }
 
     const body = await request.json()
     const { serverIds } = body
@@ -137,11 +134,12 @@ export async function PUT(request: NextRequest) {
     const results = await Promise.all(
       servers.map(async (server) => {
         try {
-          // 这里应该实现真实的SSH连接测试
-          // 目前返回基本的连接状态
-          const isReachable = await testServerReachability(server.ip, server.port)
+          const testResult = await performSSHConnectionTest(
+            createSSHConfigFromServer(server),
+            server.name
+          )
 
-          if (isReachable) {
+          if (testResult.success) {
             // 更新服务器状态
             await prisma.server.update({
               where: { id: server.id },
@@ -154,13 +152,9 @@ export async function PUT(request: NextRequest) {
             return {
               serverId: server.id,
               connected: true,
-              message: '连接成功',
+              message: testResult.message,
               testTime: Date.now(),
-              systemInfo: {
-                hostname: server.hostname,
-                ip: server.ip,
-                port: server.port
-              }
+              systemInfo: testResult.systemInfo
             }
           } else {
             // 更新服务器状态
@@ -174,10 +168,10 @@ export async function PUT(request: NextRequest) {
             return {
               serverId: server.id,
               connected: false,
-              message: '连接失败',
+              message: testResult.message,
               testTime: Date.now(),
-              errorCode: 'ECONNREFUSED',
-              errorMessage: '无法连接到服务器'
+              errorCode: 'SSH_CONNECTION_FAILED',
+              errorMessage: testResult.error || '无法连接到服务器'
             }
           }
         } catch (error) {

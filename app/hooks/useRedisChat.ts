@@ -2,6 +2,25 @@ import { useState, useCallback, useEffect, useRef } from 'react'
 import { message } from 'antd'
 import { copyWithFeedback } from '../utils/clipboard'
 import { ChatMessage, ChatSession, RedisChatConfig } from '../types/chat'
+import type { CICDContextSelection } from '../types/cicd-ai'
+
+interface SendMessageModelConfig {
+  model: string
+  apiKey: string
+  baseUrl?: string
+  provider?: string
+  hostId?: string
+  isK8sMode?: boolean
+  mcpToolsEnabled?: boolean
+  mcpServers?: any[]
+  targetHostIds?: string[]
+  targetHosts?: Array<{ id: string; name: string; ip: string }>
+  batchLabel?: string
+  networkDeviceIds?: string[]
+  networkTargets?: Array<{ id: string; name: string; managementIp: string; type: string; vendor: string; platform: string; readOnly: boolean }>
+  networkBatchLabel?: string
+  cicdContext?: CICDContextSelection
+}
 
 // 从文本内容解析执行流程数据
 const parseExecutionFlowFromText = (content: string): any[] => {
@@ -372,15 +391,15 @@ ${executionResults}
 ${error instanceof Error ? error.message : '未知API认证错误'}
 
 🔧 **解决建议**：
-1. **立即修复**：联系管理员更新服务器上的API Key
-2. **检查配置**：验证 47.99.137.248 服务器上的环境变量
-3. **API Key状态**：确认 DeepSeek API Key 是否过期或无效
+1. **立即修复**：联系管理员更新后端服务器上的 API Key
+2. **检查配置**：验证 kubelet-wuhrai 服务环境变量（DEEPSEEK_API_KEY 等）
+3. **API Key 状态**：确认 LLM provider 的 API Key 是否过期或无效
 4. **服务重启**：更新配置后重启 kubelet-wuhrai 服务
 
 💡 **技术提示**：
-- 服务器位置：47.99.137.248:2081
-- 检查命令：\`curl http://47.99.137.248:2081/api/health\`
-- 配置文件：通常在环境变量或配置文件中
+- 后端地址：参见前端 .env.local 里 IMPROVE_API_BASE_URL
+- 检查命令：\`curl $IMPROVE_API_BASE_URL/api/health\`
+- 配置文件：systemd unit 或 environment 文件
 
 📊 **系统状态**：API认证失败，需要管理员更新配置`
     } else if (hasExecutionError) {
@@ -502,57 +521,52 @@ export function useRedisChat(options: UseRedisChatOptions = {}) {
     enabled: boolean
     requireApproval: boolean
   }>({
-    enabled: false,    // 默认关闭，等待从localStorage或后端加载
-    requireApproval: false
+    enabled: true,
+    requireApproval: true
   })
 
   // 添加AbortController用于中断请求
   const abortControllerRef = useRef<AbortController | null>(null)
 
-  // 🔥 新增: 从localStorage加载安全配置（优先级最高）
+  // 后端配置是唯一权威来源；localStorage 只在后端暂时不可用时作为缓存。
   useEffect(() => {
+    const applySecurityConfig = (value: any) => {
+      const normalized = {
+        enabled: value?.enabled ?? true,
+        requireApproval: value?.requireApproval ?? true
+      }
+      setSecurityConfig(normalized)
+      localStorage.setItem('securityConfig', JSON.stringify(normalized))
+    }
+
     const loadSecurityConfig = async () => {
       try {
-        // 🔥 优先从localStorage读取（用户刚刚设置的最新配置）
-        const saved = localStorage.getItem('securityConfig')
-        if (saved) {
-          const config = JSON.parse(saved)
-          setSecurityConfig({
-            enabled: config.enabled ?? false,
-            requireApproval: config.requireApproval ?? false
-          })
-          console.log('🔐 从localStorage加载安全配置:', config)
-          return
-        }
-
-        // 如果localStorage没有，尝试从后端API获取
         const response = await fetch('/api/config/security', {
           credentials: 'include'  // 包含认证cookie
         })
         if (response.ok) {
           const data = await response.json()
           if (data.success && data.data) {
-            const backendConfig = data.data
-            setSecurityConfig({
-              enabled: backendConfig.enabled ?? false,
-              requireApproval: backendConfig.requireApproval ?? false
-            })
-            // 同步到localStorage作为缓存
-            localStorage.setItem('securityConfig', JSON.stringify({
-              enabled: backendConfig.enabled,
-              requireApproval: backendConfig.requireApproval
-            }))
-            console.log('🔐 从后端API加载安全配置:', backendConfig)
+            applySecurityConfig(data.data)
+            console.log('🔐 从后端API加载安全配置:', data.data)
             return
           }
         }
-
-        // 如果都失败，保持默认值（false）
-        console.log('🔐 无法加载配置，使用默认值（关闭询问）')
       } catch (error) {
-        console.error('加载安全配置失败:', error)
-        // 保持默认的 false 值
+        console.warn('从后端加载安全配置失败，将尝试本地缓存:', error)
       }
+
+      try {
+        const saved = localStorage.getItem('securityConfig')
+        if (saved) {
+          applySecurityConfig(JSON.parse(saved))
+          return
+        }
+      } catch (error) {
+        console.warn('本地安全配置缓存无效:', error)
+      }
+
+      applySecurityConfig({ enabled: true, requireApproval: true })
     }
 
     // 初始加载
@@ -561,31 +575,51 @@ export function useRedisChat(options: UseRedisChatOptions = {}) {
     // 🔥 监听storage事件,当配置更新时重新加载
     const handleStorageChange = (e: StorageEvent) => {
       if (e.key === 'securityConfig') {
-        console.log('🔐 检测到安全配置更新，重新加载')
         loadSecurityConfig()
       }
     }
 
+    const handleConfigUpdated = (event: Event) => {
+      applySecurityConfig((event as CustomEvent).detail)
+    }
+
     window.addEventListener('storage', handleStorageChange)
-    return () => window.removeEventListener('storage', handleStorageChange)
+    window.addEventListener('security-config-updated', handleConfigUpdated)
+    return () => {
+      window.removeEventListener('storage', handleStorageChange)
+      window.removeEventListener('security-config-updated', handleConfigUpdated)
+    }
   }, [])
 
   // Redis API 调用函数
   const apiCall = useCallback(async (url: string, options: RequestInit = {}) => {
-    const response = await fetch(url, {
-      ...options,
-      headers: {
-        'Content-Type': 'application/json',
-        ...options.headers,
-      },
-    })
+    const timeoutController = new AbortController()
+    const timeoutId = window.setTimeout(() => timeoutController.abort(), 10000)
 
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({ error: '请求失败' }))
-      throw new Error(errorData.error || '请求失败')
+    try {
+      const response = await fetch(url, {
+        ...options,
+        headers: {
+          'Content-Type': 'application/json',
+          ...options.headers,
+        },
+        signal: options.signal || timeoutController.signal,
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: '请求失败' }))
+        throw new Error(errorData.error || '请求失败')
+      }
+
+      return await response.json()
+    } catch (error) {
+      if (timeoutController.signal.aborted) {
+        throw new Error('会话服务请求超时，请检查 Redis 服务')
+      }
+      throw error
+    } finally {
+      window.clearTimeout(timeoutId)
     }
-
-    return response.json()
   }, [])
 
   // 创建新会话
@@ -749,6 +783,8 @@ export function useRedisChat(options: UseRedisChatOptions = {}) {
         ...aiMessage,
         content: result.data || result.message || '抱歉，我无法处理您的请求。',
         metadata: {
+          ...aiMessage.metadata,
+          isThinking: false,
           tokenUsage: result.metadata?.usage || result.metadata?.tokenUsage,
           model: result.model || requestBody.model,
           executionTime: result.executionTime,
@@ -779,7 +815,11 @@ export function useRedisChat(options: UseRedisChatOptions = {}) {
       const errorMessage: ChatMessage = {
         ...aiMessage,
         content: errorContent,
-        status: 'error' as const
+        status: 'error' as const,
+        metadata: {
+          ...aiMessage.metadata,
+          isThinking: false
+        }
       }
 
       setMessages(prev => prev.map(msg =>
@@ -792,7 +832,7 @@ export function useRedisChat(options: UseRedisChatOptions = {}) {
   }, [addMessageToRedis])
 
   // 发送消息（支持流式传输）
-  const sendMessage = useCallback(async (content: string, modelConfig?: { model: string; apiKey: string; baseUrl?: string; provider?: string; hostId?: string; isK8sMode?: boolean }) => {
+  const sendMessage = useCallback(async (content: string, modelConfig?: SendMessageModelConfig) => {
     console.log('🚀 [sendMessage] 函数被调用，准备检查自定义工具配置...')
 
     if (!content.trim() || isLoading) return
@@ -820,7 +860,15 @@ export function useRedisChat(options: UseRedisChatOptions = {}) {
         id: `msg_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
         type: 'user',
         content: content.trim(),
-        timestamp: new Date()
+        timestamp: new Date(),
+        metadata: {
+          targetHosts: modelConfig?.targetHosts,
+          batchMode: (modelConfig?.targetHostIds?.length || 0) > 1,
+          targetCount: modelConfig?.targetHostIds?.length || undefined,
+          batchLabel: modelConfig?.batchLabel,
+          networkTargets: modelConfig?.networkTargets,
+          cicdContext: modelConfig?.cicdContext
+        }
       }
 
       // 添加用户消息到本地状态
@@ -836,7 +884,13 @@ export function useRedisChat(options: UseRedisChatOptions = {}) {
         content: '', // 初始为空，将通过加载动画组件显示
         timestamp: new Date(),
         metadata: {
-          isThinking: true // 标记为思考状态
+          isThinking: true, // 标记为思考状态
+          targetHosts: modelConfig?.targetHosts,
+          batchMode: (modelConfig?.targetHostIds?.length || 0) > 1,
+          targetCount: modelConfig?.targetHostIds?.length || undefined,
+          batchLabel: modelConfig?.batchLabel,
+          networkTargets: modelConfig?.networkTargets,
+          cicdContext: modelConfig?.cicdContext
         }
       }
 
@@ -848,8 +902,12 @@ export function useRedisChat(options: UseRedisChatOptions = {}) {
       const isK8sModeValue = modelConfig?.isK8sMode !== undefined ? modelConfig.isK8sMode : false
       
       // 🔥 强制模式切换：根据模式修改查询内容，确保AI使用正确工具
-      const enhanceQueryWithModeInstruction = (originalQuery: string, isK8sMode: boolean, customToolsConfig: any) => {
+      const enhanceQueryWithModeInstruction = (originalQuery: string, isK8sMode: boolean, customToolsConfig: any, targetHostCount: number) => {
         let instruction = ''
+
+        if (targetHostCount > 1) {
+          instruction += `[批量执行模式] 用户已明确选择 ${targetHostCount} 台目标主机。只生成一份通用命令，只调用一次 host_fanout，selector 必须传空字符串以覆盖全部所选主机；不得逐台调用工具或逐台请求模型。命令只审核一次，由程序并发执行。收到所有主机的真实执行结果后，必须统一总结结果、异常、风险和后续建议。\n\n`
+        }
 
         // 🔧 如果有启用的自定义工具，仅列出可用工具，不强制要求优先使用
         if (customToolsConfig?.enabled && customToolsConfig.tools?.length > 0) {
@@ -891,8 +949,37 @@ export function useRedisChat(options: UseRedisChatOptions = {}) {
         console.warn('🔧 [自定义工具] 读取配置失败:', error)
       }
 
+      // 自定义工具只能由用户明确点选或点名。配置页的工具按钮会写入
+      // “使用{工具名}工具”，因此无需把全部工具暴露给每次普通运维对话。
+      // 这既避免模型误选无关脚本，也缩小了可执行能力边界。
+      const explicitlyRequestedTools = Array.isArray(customToolsConfigForPrompt?.tools)
+        ? customToolsConfigForPrompt.tools.filter((tool: any) => {
+            if (!tool?.isActive) return false
+            const name = String(tool.name || '').trim()
+            const id = String(tool.id || '').trim()
+            return Boolean((name && content.includes(name)) || (id && content.includes(id)))
+          })
+        : []
+      const requestedCustomToolsConfig = {
+        ...(customToolsConfigForPrompt || {}),
+        enabled: customToolsConfigForPrompt?.enabled === true && explicitlyRequestedTools.length > 0,
+        tools: explicitlyRequestedTools
+      }
+
       // 🔧 使用自定义工具配置增强查询
-      const enhancedQuery = enhanceQueryWithModeInstruction(content, isK8sModeValue, customToolsConfigForPrompt)
+      let enhancedQuery = enhanceQueryWithModeInstruction(
+        content,
+        isK8sModeValue,
+        requestedCustomToolsConfig,
+        modelConfig?.targetHostIds?.length || 0
+      )
+
+      if ((modelConfig?.networkDeviceIds?.length || 0) > 0) {
+        const targetLines = (modelConfig?.networkTargets || []).map(target =>
+          `- ${target.name} (${target.managementIp}) ${target.vendor}/${target.platform} ${target.readOnly ? '[只读保护]' : '[允许创建变更计划]'}`
+        ).join('\n')
+        enhancedQuery = `[网络设备模式]\n用户已通过 @ 明确选择 ${modelConfig?.networkDeviceIds?.length} 台网络设备：\n${targetLines}\n只允许调用 network_device_operation 工具。先 action=list 核对目标；查询或诊断使用 action=inspect；涉及配置时使用 action=plan 创建持久化计划并等待人工审批，不得使用协调主机 bash 模拟设备命令。收到真实结果后统一总结异常、风险和建议。\n\n${enhancedQuery}`
+      }
 
       const requestBody: any = {
         query: enhancedQuery, // 🔥 使用增强的查询内容
@@ -901,7 +988,12 @@ export function useRedisChat(options: UseRedisChatOptions = {}) {
         temperature: config.temperature,
         maxTokens: config.maxTokens,
         hostId: modelConfig?.hostId || config.hostId, // 必须指定远程主机
+        targetHostIds: modelConfig?.targetHostIds || [],
+        networkDeviceIds: modelConfig?.networkDeviceIds || [],
+        networkBatchLabel: modelConfig?.networkBatchLabel,
+        cicdContext: modelConfig?.cicdContext,
         isK8sMode: isK8sModeValue, // 🔥 修复：明确传递isK8sMode值
+        mcpServers: modelConfig?.mcpToolsEnabled ? (modelConfig.mcpServers || []) : [],
         // 流式传输配置
         config: {
           hostId: modelConfig?.hostId || config.hostId,
@@ -912,10 +1004,12 @@ export function useRedisChat(options: UseRedisChatOptions = {}) {
           isK8sMode: isK8sModeValue, // 🔥 修复：明确传递isK8sMode值
           maxIterations: 20,
           streamingOutput: true,
+          mcpClientEnabled: modelConfig?.mcpToolsEnabled === true,
           requireApproval: securityConfig.enabled && securityConfig.requireApproval  // 🔥 新增: 命令执行询问
         },
         // 优化：添加会话上下文信息，用于kubelet-wuhrai后端会话管理
         sessionId: session.id, // 传递会话ID给kubelet-wuhrai
+        currentMessageId: userMessage.id,
         sessionContext: {
           session_id: session.id, // kubelet-wuhrai标准格式
           user_id: 'wuhr_user', // 用户标识
@@ -931,10 +1025,108 @@ export function useRedisChat(options: UseRedisChatOptions = {}) {
         })
       }
 
+      // 斜杠发布命令走结构化 CI/CD API，不交给模型自由生成 shell 命令。
+      if (content.trim().startsWith('/发布执行')) {
+        const actionResponse = await fetch('/api/ai/cicd/actions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({
+            action: 'deploy',
+            cicdContext: modelConfig?.cicdContext || {}
+          }),
+          signal
+        })
+        const actionResult = await actionResponse.json().catch(() => ({
+          success: false,
+          error: `交付操作请求失败：HTTP ${actionResponse.status}`
+        }))
+
+        const actionData = actionResult.data || {}
+        const actionContent = actionResult.state === 'awaiting_approval'
+          ? `## 发布申请已提交\n\n- 任务：${actionData.deploymentName || modelConfig?.cicdContext?.deploymentName || '-'}\n- 环境：${actionData.environment || '-'}\n- 状态：等待审批\n- 待审批：${actionData.pendingApprovals || 0} 人\n\n[前往审批中心](${actionData.approvalUrl || '/approval-management?type=deployment&status=pending'})\n\n审批通过后系统才会执行发布。`
+          : actionResponse.ok
+            ? `## 发布操作已受理\n\n- 状态：${actionData.status || actionResult.state || '已受理'}\n- 结果：${actionResult.message || '部署已经开始'}\n\n执行进度和真实日志已写入发布任务，可使用 \`/状态检查\` 继续查询。`
+            : `## 发布操作被阻止\n\n${actionResult.error || actionResult.message || '当前发布任务不能执行'}\n\n系统没有执行任何发布命令。`
+
+        const actionMessage: ChatMessage = {
+          ...aiMessage,
+          content: actionContent,
+          status: actionResponse.ok ? 'success' : 'error',
+          metadata: {
+            ...aiMessage.metadata,
+            isThinking: false,
+            cicdContext: modelConfig?.cicdContext,
+            model: requestBody.model
+          }
+        }
+        setMessages(prev => prev.map(item => item.id === aiMessage.id ? actionMessage : item))
+        await addMessageToRedis(session.id, actionMessage)
+
+        // 普通 SSH 部署在后台完成后，将全部真实日志再交给模型做一次最终总结。
+        // Jenkins 入队状态不等于完成，因此这里只展示“已入队”，不伪造最终结论。
+        if (actionResponse.ok && actionResult.state === 'started' && actionData.deploymentId) {
+          let finalDeployment: any = null
+          for (let attempt = 0; attempt < 150 && !signal.aborted; attempt++) {
+            await new Promise(resolve => window.setTimeout(resolve, 4000))
+            if (signal.aborted) break
+            const statusResponse = await fetch(`/api/cicd/deployments/${actionData.deploymentId}/status`, {
+              credentials: 'include',
+              signal
+            })
+            if (!statusResponse.ok) continue
+            const statusResult = await statusResponse.json()
+            const statusData = statusResult.data
+            if (statusData && ['success', 'failed', 'cancelled', 'rolled_back'].includes(statusData.status)) {
+              finalDeployment = statusData
+              break
+            }
+          }
+
+          if (finalDeployment && !signal.aborted) {
+            const finalSummary = await generateDevOpsSummary(
+              content,
+              JSON.stringify({
+                deploymentId: finalDeployment.id,
+                name: finalDeployment.name,
+                status: finalDeployment.status,
+                duration: finalDeployment.duration,
+                logs: finalDeployment.logs,
+                logStats: finalDeployment.logStats
+              }, null, 2),
+              isK8sModeValue,
+              requestBody.hostId,
+              requestBody.apiKey,
+              requestBody.provider,
+              requestBody.model,
+              requestBody.baseUrl,
+              undefined,
+              signal
+            )
+            const resultMessage: ChatMessage = {
+              id: `msg_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
+              type: 'ai',
+              content: finalSummary,
+              timestamp: new Date(),
+              status: finalDeployment.status === 'success' ? 'success' : 'error',
+              metadata: {
+                isThinking: false,
+                cicdContext: modelConfig?.cicdContext,
+                model: requestBody.model
+              }
+            }
+            setMessages(prev => [...prev, resultMessage])
+            await addMessageToRedis(session.id, resultMessage)
+          }
+        }
+        setIsLoading(false)
+        return
+      }
+
       // 🔧 自定义工具集成 - 如果前面已经获取过配置，直接使用
       try {
         // 使用之前已经获取的配置
-        const customToolsConfig = customToolsConfigForPrompt
+        const customToolsConfig = requestedCustomToolsConfig
         console.log('🔧 [自定义工具] 使用已获取的配置:', customToolsConfig)
 
         if (customToolsConfig?.enabled && Array.isArray(customToolsConfig.tools)) {
@@ -967,6 +1159,8 @@ export function useRedisChat(options: UseRedisChatOptions = {}) {
                 description: tool.description,
                 command: tool.command,
                 args: tool.args || [],
+                env: tool.env || {},
+                workingDirectory: tool.workingDirectory || '',
                 category: tool.category,
                 timeout: tool.timeout
               }
@@ -1079,6 +1273,10 @@ export function useRedisChat(options: UseRedisChatOptions = {}) {
           const decoder = new TextDecoder()
           let buffer = ''
           let fullResponse = ''
+          // 后端 Agent 的 text 事件是同一文本块的累计快照。始终保留最后一个
+          // 快照，流结束后直接作为真实答复使用，避免二次总结根据不完整事件臆测结果。
+          let latestAgentText = ''
+          let approvalRejected = false
 
           try {
             while (true) {
@@ -1149,6 +1347,22 @@ export function useRedisChat(options: UseRedisChatOptions = {}) {
                           const result = parsed.metadata.result
                           let outputText = ''
 
+                          const extractResultContent = (value: any): string => {
+                            if (typeof value === 'string') return value
+                            if (Array.isArray(value)) {
+                              return value
+                                .map(item => {
+                                  if (typeof item === 'string') return item
+                                  if (typeof item?.text === 'string') return item.text
+                                  return JSON.stringify(item)
+                                })
+                                .filter(Boolean)
+                                .join('\n')
+                            }
+                            if (value == null) return ''
+                            return JSON.stringify(value, null, 2)
+                          }
+
                           console.log('📄 [命令输出]', {
                             hasStdout: !!result.stdout,
                             hasStderr: !!result.stderr,
@@ -1173,6 +1387,27 @@ export function useRedisChat(options: UseRedisChatOptions = {}) {
                             outputText += `❌ 错误: ${result.error}\n`
                           }
 
+                          // MCP 等结构化工具通常返回 content 数组，而不是 stdout。
+                          // 将它作为真实工具输出写入执行流和后续持久化记录。
+                          if (!outputText && result.content !== undefined) {
+                            const contentText = extractResultContent(result.content)
+                            if (contentText) outputText = `\n💬 AI回复:\n${contentText}\n`
+                          }
+
+                          if (!outputText && result.structuredContent !== undefined) {
+                            const structuredText = extractResultContent(result.structuredContent)
+                            if (structuredText) outputText = `\n💬 AI回复:\n${structuredText}\n`
+                          }
+
+                          // host_fanout 返回 summary + results 的结构化对象。原样保存到执行流，
+                          // 让批量每台主机的真实退出码、输出和错误可追溯，而不只显示模型总结。
+                          if (!outputText && result && typeof result === 'object') {
+                            const resultText = extractResultContent(result)
+                            if (resultText && resultText !== '{}') {
+                              outputText = `\n💬 AI回复:\n${resultText}\n`
+                            }
+                          }
+
                           if (outputText) {
                             console.log('✅ [第二次] 显示输出，长度:', outputText.length)
                             setStreamingMessage(prev => prev + outputText)
@@ -1195,8 +1430,11 @@ export function useRedisChat(options: UseRedisChatOptions = {}) {
                           setStreamingMessage(prev => prev + outputContent)
                           fullResponse += outputContent
                         }
-                        // 🔥 完全跳过text类型，不在执行流程中显示AI分析
-                        console.log('⏭️ [跳过] text类型的AI分析，执行流程只显示命令输出')
+                        if (outputContent && parsed.type === 'text') {
+                          latestAgentText = outputContent
+                        }
+                        // text 不混入实时执行步骤，但会在流结束后作为后端真实答复展示和持久化。
+                        console.log('📝 [后端答复] 已更新最终文本快照')
                         break
                       case 'command_approval_request':
                         // 🔥 命令批准请求 - 将批准请求数据添加到消息的metadata中
@@ -1261,6 +1499,7 @@ export function useRedisChat(options: UseRedisChatOptions = {}) {
                       case 'command_rejected':
                         // 🔥 命令已拒绝 - 从metadata的pendingApprovals数组中移除对应的批准请求并显示拒绝消息
                         console.log('❌ [命令批准] 命令已拒绝')
+                        approvalRejected = true
 
                         const rejectText = `\n命令已拒绝: ${parsed.content || '用户拒绝执行'}\n`
                         setStreamingMessage(prev => prev + rejectText)
@@ -1317,6 +1556,8 @@ export function useRedisChat(options: UseRedisChatOptions = {}) {
                           content: errorSummaryContent,
                           status: 'error' as const, // 标记为错误状态
                           metadata: {
+                            ...aiMessage.metadata,
+                            isThinking: false,
                             tokenUsage: parsed.metadata?.tokenUsage,
                             model: requestBody.model,
                             executionTime: parsed.metadata?.executionTime,
@@ -1348,7 +1589,11 @@ export function useRedisChat(options: UseRedisChatOptions = {}) {
                           const completedMessage: ChatMessage = {
                             ...aiMessage,
                             content: parsed.response,
+                            status: approvalRejected ? 'rejected' : 'success',
                             metadata: {
+                              ...aiMessage.metadata,
+                              isThinking: false,
+                              approvalRejected,
                               tokenUsage: parsed.usage || parsed.tokenUsage,
                               model: requestBody.model,
                               executionTime: parsed.executionTime,
@@ -1379,6 +1624,10 @@ export function useRedisChat(options: UseRedisChatOptions = {}) {
             }
           } finally {
             reader.releaseLock()
+          }
+
+          if (latestAgentText.trim()) {
+            fullResponse += `\n💬 AI回复:\n${latestAgentText.trim()}\n`
           }
 
           // 🔥 流式数据接收完毕，开始生成专业总结
@@ -1415,21 +1664,22 @@ export function useRedisChat(options: UseRedisChatOptions = {}) {
             ))
           }
 
-          // 生成专业总结内容（流式）
-          console.log('🚀 [调试] 正在调用generateDevOpsSummary...')
+          // 后端已经基于真实工具结果生成最终答复时，直接使用它。只有旧后端没有
+          // 返回最终文本时才保留兼容性的总结回退。
+          console.log('🚀 [调试] 正在确定最终真实答复...')
           try {
-            const finalSummaryContent = await generateDevOpsSummary(
-              content, // 用户原始查询
-              fullResponse, // 执行过程和结果
-              requestBody.isK8sMode,
-              requestBody.hostId,
-              requestBody.apiKey,
-              requestBody.provider,
-              requestBody.model,
-              requestBody.baseUrl,
-              realTimeStreamCallback, // 🔥 传递实时流式回调
-              signal // 传递signal用于中断
-            )
+            const finalSummaryContent = latestAgentText.trim() || await generateDevOpsSummary(
+                content, // 用户原始查询
+                fullResponse, // 执行过程和结果
+                requestBody.isK8sMode,
+                requestBody.hostId,
+                requestBody.apiKey,
+                requestBody.provider,
+                requestBody.model,
+                requestBody.baseUrl,
+                realTimeStreamCallback, // 🔥 传递实时流式回调
+                signal // 传递signal用于中断
+              )
 
             console.log('🎉 [调试] 流式总结生成完成:', {
               summaryLength: finalSummaryContent?.length || 0,
@@ -1455,7 +1705,11 @@ export function useRedisChat(options: UseRedisChatOptions = {}) {
             const finalMessage: ChatMessage = {
               ...aiMessage,
               content: contentToShow,
+              status: approvalRejected ? 'rejected' : 'success',
               metadata: {
+                ...aiMessage.metadata,
+                isThinking: false,
+                approvalRejected,
                 model: requestBody.model,
                 executionMode: 'remote' as const,
                 hostId: requestBody.hostId,
@@ -1479,7 +1733,11 @@ export function useRedisChat(options: UseRedisChatOptions = {}) {
             const fallbackMessage: ChatMessage = {
               ...aiMessage,
               content: '执行完成，详细信息请查看执行流程。',
+              status: approvalRejected ? 'rejected' : 'success',
               metadata: {
+                ...aiMessage.metadata,
+                isThinking: false,
+                approvalRejected,
                 model: requestBody.model,
                 hostId: requestBody.hostId,
                 agentStreamData: parsedStreamData.length > 0 ? parsedStreamData : undefined // 🔥 保存执行流程数据到Redis
@@ -1566,7 +1824,9 @@ export function useRedisChat(options: UseRedisChatOptions = {}) {
       // 清理AbortController
       abortControllerRef.current = null
     }
-  }, [isLoading, currentSession, createNewSession, addMessageToRedis, config, messages.length, executeNonStreamingCall])
+  // securityConfig 必须参与依赖，否则用户在当前页面开启安全控制后，
+  // 回调仍会捕获首次渲染时的旧值并把 requireApproval=false 发送给 Agent。
+  }, [isLoading, currentSession, createNewSession, addMessageToRedis, config, messages.length, executeNonStreamingCall, securityConfig])
 
   // 停止生成（包括流式传输） - 真正中断请求
   const stopGeneration = useCallback(() => {

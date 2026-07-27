@@ -11,60 +11,70 @@ datasource db {
 }
 
 model User {
-  id                     String                  @id @default(cuid())
-  username               String                  @unique @db.VarChar(50)
-  email                  String                  @unique @db.VarChar(255)
-  password               String                  @db.VarChar(255)
-  role                   UserRole                @default(viewer)
-  permissions            String[]
-  isActive               Boolean                 @default(false)
-  lastLoginAt            DateTime?
-  createdAt              DateTime                @default(now())
-  updatedAt              DateTime                @updatedAt
-  approvalStatus         UserApprovalStatus      @default(pending)
-  approvedAt             DateTime?
-  approvedBy             String?
-  rejectedReason         String?
-  realName               String?                 @db.VarChar(100)
-  phone                  String?                 @db.VarChar(20)
-  department             String?                 @db.VarChar(100)
-  avatar                 String?                 @db.VarChar(500)
-  apiKeys                ApiKey[]
-  approvalRecords        ApprovalRecord[]
-  approvalWorkflows      ApprovalWorkflow[]
-  authLogs               AuthLog[]
-  sessions               AuthSession[]
-  builds                 Build[]
-  chatSessions           ChatSession[]
-  cicdProjects           CICDProject[]
-  customToolsConfig      CustomToolsConfig?      @relation("CustomToolsConfig")
-  deploymentApprovals    DeploymentApproval[]
-  deploymentTemplates    DeploymentTemplate[]
-  deployments            Deployment[]
-  elkConfigs             ELKConfig[]
-  elkViewerConfig        ELKViewerConfig?
-  gitCredentials         GitCredential[]
-  grafanaConfigs         GrafanaConfig[]
-  infoNotifications      InfoNotification[]      @relation("InfoNotificationUser")
-  jenkinsConfigApprovers JenkinsConfigApprover[] @relation("JenkinsConfigApprover")
-  jenkinsConfigs         JenkinsConfig[]
-  jenkinsJobApprovals    JenkinsJobApproval[]    @relation("JenkinsJobApprovalApprover")
-  jenkinsJobConfigs      JenkinsJobConfig[]
-  jenkinsJobExecutions   JenkinsJobExecution[]   @relation("JenkinsJobExecutionRequester")
-  jenkinsJobGroups       JenkinsJobGroup[]
-  jenkinsJobNotifiers    JenkinsJobNotifier[]    @relation("JenkinsJobNotifier")
-  kibanaDashboards       KibanaDashboard[]
-  mcpToolsConfig         MCPToolsConfig?         @relation("MCPToolsConfig")
-  modelConfigs           ModelConfig[]
-  notifications          Notification[]
-  pipelines              Pipeline[]
-  securityConfig         SecurityConfig?         @relation("SecurityConfig")
-  serverGroups           ServerGroup[]
-  servers                Server[]
-  userModelSelection     UserModelSelection?
-  permissionGroups       UserPermissionGroup[]
-  approver               User?                   @relation("UserApproval", fields: [approvedBy], references: [id])
-  approvedUsers          User[]                  @relation("UserApproval")
+  id                      String                    @id @default(cuid())
+  username                String                    @unique @db.VarChar(50)
+  email                   String                    @unique @db.VarChar(255)
+  password                String                    @db.VarChar(255)
+  role                    UserRole                  @default(viewer)
+  permissions             String[]
+  isActive                Boolean                   @default(false)
+  lastLoginAt             DateTime?
+  createdAt               DateTime                  @default(now())
+  updatedAt               DateTime                  @updatedAt
+  approvalStatus          UserApprovalStatus        @default(pending)
+  approvedAt              DateTime?
+  approvedBy              String?
+  rejectedReason          String?
+  realName                String?                   @db.VarChar(100)
+  phone                   String?                   @db.VarChar(20)
+  department              String?                   @db.VarChar(100)
+  avatar                  String?                   @db.VarChar(500)
+  apiKeys                 ApiKey[]
+  approvalRecords         ApprovalRecord[]
+  approvalWorkflows       ApprovalWorkflow[]
+  authLogs                AuthLog[]
+  sessions                AuthSession[]
+  builds                  Build[]
+  chatSessions            ChatSession[]
+  cicdProjects            CICDProject[]
+  cicdAIReports           CICDAIReport[]
+  customToolsConfig       CustomToolsConfig?        @relation("CustomToolsConfig")
+  deploymentApprovals     DeploymentApproval[]
+  deploymentTemplates     DeploymentTemplate[]
+  deployments             Deployment[]
+  elkConfigs              ELKConfig[]
+  elkViewerConfig         ELKViewerConfig?
+  gitCredentials          GitCredential[]
+  grafanaConfigs          GrafanaConfig[]
+  healing_logs            healing_logs[]
+  healing_rules           healing_rules[]
+  infoNotifications       InfoNotification[]        @relation("InfoNotificationUser")
+  jenkinsConfigApprovers  JenkinsConfigApprover[]   @relation("JenkinsConfigApprover")
+  jenkinsConfigs          JenkinsConfig[]
+  jenkinsJobApprovals     JenkinsJobApproval[]      @relation("JenkinsJobApprovalApprover")
+  jenkinsJobConfigs       JenkinsJobConfig[]
+  jenkinsJobExecutions    JenkinsJobExecution[]     @relation("JenkinsJobExecutionRequester")
+  jenkinsJobGroups        JenkinsJobGroup[]
+  jenkinsJobNotifiers     JenkinsJobNotifier[]      @relation("JenkinsJobNotifier")
+  kibanaDashboards        KibanaDashboard[]
+  knowledge_apps          knowledge_apps[]
+  knowledge_bases         knowledge_bases[]
+  knowledge_conversations knowledge_conversations[]
+  knowledge_workflows     knowledge_workflows[]
+  mcpToolsConfig          MCPToolsConfig?           @relation("MCPToolsConfig")
+  modelConfigs            ModelConfig[]
+  model_providers         model_providers[]
+  network_device_groups   network_device_groups[]
+  network_devices         network_devices[]
+  notifications           Notification[]
+  pipelines               Pipeline[]
+  securityConfig          SecurityConfig?           @relation("SecurityConfig")
+  serverGroups            ServerGroup[]
+  servers                 Server[]
+  userModelSelection      UserModelSelection?
+  permissionGroups        UserPermissionGroup[]
+  approver                User?                     @relation("UserApproval", fields: [approvedBy], references: [id])
+  approvedUsers           User[]                    @relation("UserApproval")
 
   @@index([email])
   @@index([username])
@@ -191,6 +201,194 @@ model SystemConfig {
   @@index([category])
   @@index([isPublic])
   @@map("system_configs")
+}
+
+/// 由人工或 AI 固化后的确定性运维作业；命令版本变化后需要重新审批。
+model AutomationJob {
+  id              String          @id @default(cuid())
+  name            String          @db.VarChar(120)
+  description     String?
+  command         String
+  targetServerIds Json
+  cronExpression  String?         @db.VarChar(100)
+  enabled         Boolean         @default(false)
+  riskLevel       String          @default("medium") @db.VarChar(20)
+  approvalMode    String          @default("every_run") @db.VarChar(30)
+  version         Int             @default(1)
+  approvedVersion Int?
+  nextRunAt       DateTime?
+  lastRunAt       DateTime?
+  createdById     String          @db.VarChar(100)
+  createdByName   String?         @db.VarChar(100)
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  runs            AutomationRun[]
+
+  @@index([enabled, nextRunAt])
+  @@index([createdById])
+  @@map("automation_jobs")
+}
+
+/// 每次作业执行均保存命令与目标快照，确保后续修改不会改变历史审计证据。
+model AutomationRun {
+  id              String         @id @default(cuid())
+  jobId           String?
+  jobName         String         @db.VarChar(120)
+  triggerType     String         @default("manual") @db.VarChar(30)
+  status          String         @default("pending") @db.VarChar(30)
+  riskLevel       String         @db.VarChar(20)
+  commandSnapshot String
+  targetSnapshot  Json
+  requestedById   String         @db.VarChar(100)
+  requestedByName String?        @db.VarChar(100)
+  approvedById    String?        @db.VarChar(100)
+  approvedByName  String?        @db.VarChar(100)
+  approvedAt      DateTime?
+  startedAt       DateTime?
+  completedAt     DateTime?
+  output          Json?
+  summary         String?
+  error           String?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  job             AutomationJob? @relation(fields: [jobId], references: [id], onDelete: SetNull)
+
+  @@index([jobId])
+  @@index([status, createdAt])
+  @@index([requestedById])
+  @@map("automation_runs")
+}
+
+/// 汇聚主机、网络、交付和自动化失败的团队事件记录。
+model OperationalIncident {
+  id             String    @id @default(cuid())
+  source         String    @db.VarChar(50)
+  externalId     String?   @db.VarChar(150)
+  fingerprint    String    @unique @db.VarChar(255)
+  title          String    @db.VarChar(255)
+  description    String?
+  severity       String    @default("warning") @db.VarChar(20)
+  status         String    @default("open") @db.VarChar(30)
+  resourceType   String?   @db.VarChar(50)
+  resourceId     String?   @db.VarChar(150)
+  assigneeId     String?   @db.VarChar(100)
+  assigneeName   String?   @db.VarChar(100)
+  occurrences    Int       @default(1)
+  firstSeenAt    DateTime  @default(now())
+  lastSeenAt     DateTime  @default(now())
+  acknowledgedAt DateTime?
+  resolvedAt     DateTime?
+  metadata       Json?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([status, severity])
+  @@index([source, lastSeenAt])
+  @@index([resourceType, resourceId])
+  @@map("operational_incidents")
+}
+
+/// Kubernetes 集群映射到实际运行 Agent 与 kubeconfig 的主机，凭据不进入浏览器。
+model K8sCluster {
+  id                String    @id @default(cuid())
+  name              String    @db.VarChar(120)
+  description       String?
+  serverId          String    @db.VarChar(100)
+  contextName       String    @db.VarChar(255)
+  defaultNamespace  String    @default("default") @db.VarChar(255)
+  environment       String?   @db.VarChar(50)
+  tags              String[]
+  status            String    @default("unknown") @db.VarChar(30)
+  kubernetesVersion String?   @db.VarChar(100)
+  lastVerifiedAt    DateTime?
+  lastError         String?
+  createdById       String    @db.VarChar(100)
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@index([serverId])
+  @@index([status])
+  @@map("k8s_clusters")
+}
+
+/// 供运维团队共享并可被 AI 引用的运行手册、故障案例和规范文档。
+/// 内容与分块均保存在数据库中，不依赖容器临时文件系统。
+model RunbookDocument {
+  id            String         @id @default(cuid())
+  title         String         @db.VarChar(255)
+  description   String?
+  sourceType    String         @default("manual") @db.VarChar(30)
+  sourceName    String?        @db.VarChar(255)
+  mimeType      String?        @db.VarChar(100)
+  content       String
+  contentHash   String         @db.VarChar(64)
+  tags          String[]
+  status        String         @default("active") @db.VarChar(30)
+  createdById   String         @db.VarChar(100)
+  createdByName String?        @db.VarChar(100)
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  chunks        RunbookChunk[]
+
+  @@index([status, updatedAt])
+  @@index([createdById])
+  @@index([contentHash])
+  @@map("runbook_documents")
+}
+
+/// 文档分块用于稳定的关键词检索和来源引用；后续可在同一记录上扩展向量索引。
+model RunbookChunk {
+  id         String          @id @default(cuid())
+  documentId String
+  chunkIndex Int
+  content    String
+  tokenCount Int?
+  createdAt  DateTime        @default(now())
+  document   RunbookDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@unique([documentId, chunkIndex])
+  @@index([documentId])
+  @@map("runbook_chunks")
+}
+
+/// 外部告警源只保存接入密钥哈希，原始密钥仅在创建时返回一次。
+model AlertSource {
+  id             String    @id @default(cuid())
+  name           String    @db.VarChar(120)
+  sourceType     String    @default("alertmanager") @db.VarChar(40)
+  tokenHash      String    @unique @db.VarChar(64)
+  enabled        Boolean   @default(true)
+  lastReceivedAt DateTime?
+  lastError      String?
+  createdById    String    @db.VarChar(100)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([enabled])
+  @@map("alert_sources")
+}
+
+/// Docker Registry / Harbor 制品仓库接入。密码经平台密钥加密，列表接口永不返回明文。
+model ArtifactRepository {
+  id                String    @id @default(cuid())
+  name              String    @db.VarChar(120)
+  repositoryType    String    @default("docker_registry") @db.VarChar(40)
+  baseUrl           String    @db.VarChar(500)
+  projectName       String?   @db.VarChar(255)
+  username          String?   @db.VarChar(255)
+  passwordEncrypted String?
+  verifyTls         Boolean   @default(true)
+  isDefault         Boolean   @default(false)
+  status            String    @default("unknown") @db.VarChar(30)
+  lastVerifiedAt    DateTime?
+  lastError         String?
+  createdById       String    @db.VarChar(100)
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@index([status])
+  @@index([isDefault])
+  @@map("artifact_repositories")
 }
 
 model ApiKey {
@@ -491,6 +689,7 @@ model CICDProject {
   user                 User               @relation(fields: [userId], references: [id], onDelete: Cascade)
   deployments          Deployment[]
   pipelines            Pipeline[]
+  aiReports            CICDAIReport[]
 
   @@index([userId])
   @@index([serverId])
@@ -595,21 +794,22 @@ model JenkinsJobGroupMapping {
 }
 
 model Pipeline {
-  id             String      @id @default(cuid())
+  id             String         @id @default(cuid())
   projectId      String
-  name           String      @db.VarChar(100)
+  name           String         @db.VarChar(100)
   description    String?
-  jenkinsJobName String      @db.VarChar(200)
+  jenkinsJobName String         @db.VarChar(200)
   parameters     Json?
   triggers       Json?
   stages         Json?
-  isActive       Boolean     @default(true)
+  isActive       Boolean        @default(true)
   userId         String
-  createdAt      DateTime    @default(now())
-  updatedAt      DateTime    @updatedAt
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
   builds         Build[]
-  project        CICDProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  user           User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  aiReports      CICDAIReport[]
+  project        CICDProject    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user           User           @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([projectId])
   @@index([userId])
@@ -618,28 +818,29 @@ model Pipeline {
 }
 
 model Build {
-  id              String        @id @default(cuid())
+  id              String         @id @default(cuid())
   jenkinsConfigId String
   pipelineId      String?
   buildNumber     Int
-  jenkinsJobName  String        @db.VarChar(200)
-  status          BuildStatus   @default(pending)
-  result          String?       @db.VarChar(50)
+  jenkinsJobName  String         @db.VarChar(200)
+  status          BuildStatus    @default(pending)
+  result          String?        @db.VarChar(50)
   startedAt       DateTime?
   completedAt     DateTime?
   duration        Int?
-  queueId         String?       @db.VarChar(100)
-  buildUrl        String?       @db.VarChar(500)
+  queueId         String?        @db.VarChar(100)
+  buildUrl        String?        @db.VarChar(500)
   parameters      Json?
   artifacts       Json?
   logs            String?
   userId          String
-  createdAt       DateTime      @default(now())
-  updatedAt       DateTime      @updatedAt
-  jenkinsConfig   JenkinsConfig @relation(fields: [jenkinsConfigId], references: [id], onDelete: Cascade)
-  pipeline        Pipeline?     @relation(fields: [pipelineId], references: [id])
-  user            User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  jenkinsConfig   JenkinsConfig  @relation(fields: [jenkinsConfigId], references: [id], onDelete: Cascade)
+  pipeline        Pipeline?      @relation(fields: [pipelineId], references: [id])
+  user            User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   deployments     Deployment[]
+  aiReports       CICDAIReport[]
 
   @@index([jenkinsConfigId])
   @@index([pipelineId])
@@ -688,6 +889,7 @@ model Deployment {
   project             CICDProject?         @relation(fields: [projectId], references: [id], onDelete: Cascade)
   template            DeploymentTemplate?  @relation(fields: [templateId], references: [id])
   user                User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  aiReports           CICDAIReport[]
 
   @@index([projectId])
   @@index([userId])
@@ -699,6 +901,52 @@ model Deployment {
   @@index([scheduledAt])
   @@index([createdAt])
   @@map("deployments")
+}
+
+/// CI/CD AI 分析、质量门禁和发布后验证的持久化审计记录。
+model CICDAIReport {
+  id              String       @id @default(cuid())
+  reportType      String       @db.VarChar(50)
+  status          String       @default("generating") @db.VarChar(30)
+  verdict         String       @default("unknown") @db.VarChar(30)
+  riskLevel       String       @default("unknown") @db.VarChar(30)
+  summary         String?
+  analysis        String?
+  recommendations Json         @default("[]")
+  evidence        Json         @default("[]")
+  qualityGate     Json
+  inputSnapshot   Json
+  rawResponse     String?
+  error           String?
+  promptVersion   String       @default("cicd-report-v1") @db.VarChar(50)
+  modelProvider   String?      @db.VarChar(100)
+  modelName       String?      @db.VarChar(200)
+  modelConfigId   String?
+  projectId       String?
+  pipelineId      String?
+  buildId         String?
+  deploymentId    String?
+  userId          String
+  startedAt       DateTime     @default(now())
+  completedAt     DateTime?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+  project         CICDProject? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  pipeline        Pipeline?    @relation(fields: [pipelineId], references: [id], onDelete: SetNull)
+  build           Build?       @relation(fields: [buildId], references: [id], onDelete: SetNull)
+  deployment      Deployment?  @relation(fields: [deploymentId], references: [id], onDelete: SetNull)
+  user            User         @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@index([reportType])
+  @@index([status])
+  @@index([verdict])
+  @@index([projectId])
+  @@index([pipelineId])
+  @@index([buildId])
+  @@index([deploymentId])
+  @@index([userId])
+  @@index([createdAt])
+  @@map("cicd_ai_reports")
 }
 
 model DeploymentApproval {
@@ -902,31 +1150,35 @@ model GitCredential {
 }
 
 model ModelConfig {
-  id                 String               @id @default(cuid())
-  userId             String
-  modelName          String               @db.VarChar(100)
-  displayName        String               @db.VarChar(100)
-  provider           String               @db.VarChar(50)
-  apiKey             String               @db.VarChar(500)
-  baseUrl            String?              @db.VarChar(500)
-  description        String?
-  isActive           Boolean              @default(true)
-  isDefault          Boolean              @default(false)
-  createdAt          DateTime             @default(now())
-  updatedAt          DateTime             @updatedAt
-  commandValidation  Boolean              @default(true)
-  enableToolUseShim  Boolean              @default(false)
-  externalTools      Boolean              @default(false)
-  mcpClientEnabled   Boolean              @default(false)
-  privilegedBlocking Boolean              @default(true)
-  requireApproval    Boolean              @default(true)
-  skipPermissions    Boolean              @default(false)
-  toolConfigPaths    String[]             @default([])
-  user               User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
-  userModelSelection UserModelSelection[]
+  id                      String               @id @default(cuid())
+  userId                  String
+  modelName               String               @db.VarChar(100)
+  displayName             String               @db.VarChar(100)
+  provider                String               @db.VarChar(50)
+  apiKey                  String               @db.VarChar(500)
+  baseUrl                 String?              @db.VarChar(500)
+  description             String?
+  isActive                Boolean              @default(true)
+  isDefault               Boolean              @default(false)
+  createdAt               DateTime             @default(now())
+  updatedAt               DateTime             @updatedAt
+  commandValidation       Boolean              @default(true)
+  enableToolUseShim       Boolean              @default(false)
+  externalTools           Boolean              @default(false)
+  mcpClientEnabled        Boolean              @default(false)
+  privilegedBlocking      Boolean              @default(true)
+  requireApproval         Boolean              @default(true)
+  skipPermissions         Boolean              @default(false)
+  toolConfigPaths         String[]             @default([])
+  supportsFunctionCalling Boolean              @default(true)
+  providerConnectionId    String?
+  providerConnection      model_providers?     @relation(fields: [providerConnectionId], references: [id], onDelete: Cascade)
+  user                    User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userModelSelection      UserModelSelection[]
 
-  @@unique([userId, modelName])
+  @@unique([providerConnectionId, modelName])
   @@index([userId])
+  @@index([providerConnectionId])
   @@index([provider])
   @@index([isActive])
   @@index([isDefault])
@@ -934,22 +1186,23 @@ model ModelConfig {
 }
 
 model PresetModel {
-  id                String    @id @default(cuid())
-  name              String    @db.VarChar(100)
-  displayName       String    @db.VarChar(100)
-  provider          String    @db.VarChar(50)
+  id                String               @id @default(cuid())
+  name              String               @db.VarChar(100)
+  displayName       String               @db.VarChar(100)
+  provider          String               @db.VarChar(50)
   description       String?
   contextLength     Int?
   maxTokens         Int?
   supportedFeatures String[]
-  isActive          Boolean   @default(true)
-  category          String?   @db.VarChar(50)
-  series            String?   @db.VarChar(50)
-  sortOrder         Int?      @default(0)
+  isActive          Boolean              @default(true)
+  category          String?              @db.VarChar(50)
+  series            String?              @db.VarChar(50)
+  sortOrder         Int?                 @default(0)
   releaseDate       DateTime?
-  tags              String[]  @default([])
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
+  tags              String[]             @default([])
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+  providerCatalog   ModelProviderCatalog @relation(fields: [provider], references: [id], onDelete: Cascade)
 
   @@unique([name, provider])
   @@index([provider])
@@ -958,6 +1211,29 @@ model PresetModel {
   @@index([series])
   @@index([sortOrder])
   @@map("preset_models")
+}
+
+model ModelProviderCatalog {
+  id                     String            @id @db.VarChar(50)
+  displayName            String            @db.VarChar(100)
+  adapter                String            @db.VarChar(50)
+  defaultBaseUrl         String?           @db.VarChar(500)
+  apiKeyRequired         Boolean           @default(true)
+  baseUrlEditable        Boolean           @default(false)
+  supportsModelDiscovery Boolean           @default(false)
+  docsUrl                String?           @db.VarChar(500)
+  description            String?
+  color                  String?           @db.VarChar(20)
+  isActive               Boolean           @default(true)
+  sortOrder              Int               @default(0)
+  createdAt              DateTime          @default(now())
+  updatedAt              DateTime          @updatedAt
+  connections            model_providers[]
+  presetModels           PresetModel[]
+
+  @@index([isActive])
+  @@index([sortOrder])
+  @@map("model_provider_catalogs")
 }
 
 model UserModelSelection {
@@ -1088,6 +1364,561 @@ model SecurityConfig {
   @@map("security_configs")
 }
 
+model device_configs {
+  id              String          @id
+  deviceId        String
+  version         Int
+  content         String
+  contentHash     String          @db.VarChar(64)
+  contentSize     Int
+  changeType      String          @default("MANUAL") @db.VarChar(20)
+  changedBy       String?         @db.VarChar(100)
+  changeReason    String?         @db.VarChar(500)
+  changeDetails   Json?
+  previousVersion Int?
+  diffLines       Int?
+  isActive        Boolean         @default(false)
+  isVerified      Boolean         @default(false)
+  backupPath      String?         @db.VarChar(500)
+  backupUrl       String?         @db.VarChar(500)
+  tags            String[]
+  createdAt       DateTime        @default(now())
+  network_devices network_devices @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  @@index([createdAt])
+  @@index([deviceId])
+  @@index([isActive])
+  @@index([version])
+}
+
+model document_chunks {
+  id                  String              @id
+  documentId          String
+  content             String
+  chunkIndex          Int
+  startPos            Int?
+  endPos              Int?
+  vectorId            String?             @db.VarChar(100)
+  isIndexed           Boolean             @default(false)
+  indexedAt           DateTime?
+  metadata            Json?
+  createdAt           DateTime            @default(now())
+  knowledge_documents knowledge_documents @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@index([documentId])
+  @@index([documentId, isIndexed])
+}
+
+model healing_logs {
+  id               String           @id
+  ruleId           String
+  moduleType       ModuleType
+  deviceId         String?
+  serverId         String?
+  triggeredBy      String           @db.VarChar(100)
+  triggerReason    String?
+  status           HealingStatus
+  startedAt        DateTime?
+  completedAt      DateTime?
+  duration         Int?
+  actions          Json
+  success          Boolean          @default(false)
+  errorMessage     String?
+  rollbackExecuted Boolean          @default(false)
+  rollbackSuccess  Boolean?
+  rollbackDetails  Json?
+  approvalRequired Boolean          @default(false)
+  approvedBy       String?          @db.VarChar(100)
+  approvedAt       DateTime?
+  approvalComment  String?          @db.VarChar(500)
+  userId           String
+  createdAt        DateTime         @default(now())
+  network_devices  network_devices? @relation(fields: [deviceId], references: [id])
+  healing_rules    healing_rules    @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+  users            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([createdAt])
+  @@index([deviceId])
+  @@index([moduleType])
+  @@index([ruleId])
+  @@index([serverId])
+  @@index([status])
+  @@index([userId])
+}
+
+model healing_rules {
+  id                  String             @id
+  name                String             @db.VarChar(100)
+  description         String?
+  moduleType          ModuleType
+  enabled             Boolean            @default(true)
+  priority            Int                @default(100)
+  triggerType         HealingTriggerType
+  triggerCondition    Json
+  actions             Json
+  requireApproval     Boolean            @default(true)
+  maxExecutionsPerDay Int                @default(10)
+  cooldownPeriod      Int                @default(300)
+  rollbackOnFailure   Boolean            @default(true)
+  rollbackActions     Json?
+  notifyOnSuccess     Boolean            @default(true)
+  notifyOnFailure     Boolean            @default(true)
+  notifyChannels      String[]
+  executions          Int                @default(0)
+  successCount        Int                @default(0)
+  failureCount        Int                @default(0)
+  lastExecutedAt      DateTime?
+  userId              String
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime
+  healing_logs        healing_logs[]
+  users               User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([enabled])
+  @@index([moduleType])
+  @@index([triggerType])
+  @@index([userId])
+}
+
+model knowledge_apps {
+  id                      String                    @id
+  userId                  String
+  name                    String                    @db.VarChar(100)
+  description             String?
+  icon                    String?                   @db.VarChar(50)
+  color                   String?                   @db.VarChar(20)
+  workflowId              String
+  llmProviderId           String?
+  llmModel                String?                   @db.VarChar(100)
+  welcomeMessage          String?
+  suggestedQueries        String[]
+  systemPrompt            String?
+  temperature             Float?                    @default(0.7)
+  maxTokens               Int?                      @default(2000)
+  isPublished             Boolean                   @default(false)
+  publishedAt             DateTime?
+  visibility              AppVisibility             @default(PRIVATE)
+  dailyLimit              Int?
+  rateLimitPerMinute      Int?
+  usageCount              Int                       @default(0)
+  lastUsedAt              DateTime?
+  createdAt               DateTime                  @default(now())
+  updatedAt               DateTime
+  model_providers         model_providers?          @relation(fields: [llmProviderId], references: [id])
+  users                   User                      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  knowledge_workflows     knowledge_workflows       @relation(fields: [workflowId], references: [id])
+  knowledge_conversations knowledge_conversations[]
+
+  @@index([llmProviderId])
+  @@index([userId])
+  @@index([userId, isPublished])
+  @@index([workflowId])
+}
+
+model knowledge_bases {
+  id                                                                   String                @id
+  userId                                                               String
+  name                                                                 String                @db.VarChar(100)
+  description                                                          String?
+  icon                                                                 String?               @db.VarChar(50)
+  color                                                                String?               @db.VarChar(20)
+  embeddingProviderId                                                  String
+  embeddingModel                                                       String                @db.VarChar(100)
+  embeddingDimension                                                   Int
+  vectorDBProviderId                                                   String?
+  collectionName                                                       String                @db.VarChar(100)
+  chunkSize                                                            Int                   @default(500)
+  chunkOverlap                                                         Int                   @default(50)
+  separators                                                           String[]              @default(["\\n\\n", "\\n", "。", ".", " "])
+  defaultTopK                                                          Int                   @default(5)
+  defaultThreshold                                                     Float                 @default(0.5)
+  rerankingEnabled                                                     Boolean               @default(false)
+  rerankingModel                                                       String?               @db.VarChar(100)
+  documentCount                                                        Int                   @default(0)
+  chunkCount                                                           Int                   @default(0)
+  totalSize                                                            BigInt                @default(0)
+  status                                                               KnowledgeBaseStatus   @default(ACTIVE)
+  indexStatus                                                          IndexStatus           @default(PENDING)
+  lastIndexedAt                                                        DateTime?
+  createdAt                                                            DateTime              @default(now())
+  updatedAt                                                            DateTime
+  model_providers_knowledge_bases_embeddingProviderIdTomodel_providers model_providers       @relation("knowledge_bases_embeddingProviderIdTomodel_providers", fields: [embeddingProviderId], references: [id])
+  users                                                                User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  model_providers_knowledge_bases_vectorDBProviderIdTomodel_providers  model_providers?      @relation("knowledge_bases_vectorDBProviderIdTomodel_providers", fields: [vectorDBProviderId], references: [id])
+  knowledge_documents                                                  knowledge_documents[]
+  knowledge_workflows                                                  knowledge_workflows[] @relation("WorkflowKnowledgeBases")
+
+  @@index([embeddingProviderId])
+  @@index([userId])
+  @@index([userId, status])
+  @@index([vectorDBProviderId])
+}
+
+model knowledge_conversations {
+  id                 String               @id
+  applicationId      String
+  userId             String
+  title              String?              @db.VarChar(255)
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime
+  knowledge_apps     knowledge_apps       @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  users              User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  knowledge_messages knowledge_messages[]
+
+  @@index([applicationId])
+  @@index([userId])
+}
+
+model knowledge_documents {
+  id              String            @id
+  knowledgeBaseId String
+  name            String            @db.VarChar(255)
+  type            DocumentType
+  mimeType        String?           @db.VarChar(100)
+  size            BigInt
+  hash            String?           @db.VarChar(64)
+  storagePath     String?           @db.VarChar(500)
+  content         String?
+  status          DocumentStatus    @default(PENDING)
+  processedAt     DateTime?
+  processingError String?
+  chunkCount      Int               @default(0)
+  metadata        Json?
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime
+  document_chunks document_chunks[]
+  knowledge_bases knowledge_bases   @relation(fields: [knowledgeBaseId], references: [id], onDelete: Cascade)
+
+  @@unique([knowledgeBaseId, hash])
+  @@index([knowledgeBaseId])
+  @@index([knowledgeBaseId, status])
+}
+
+model knowledge_messages {
+  id                      String                  @id
+  conversationId          String
+  role                    KnowledgeMessageRole
+  content                 String
+  metadata                Json?
+  tokenCount              Int?
+  feedback                MessageFeedback?
+  feedbackAt              DateTime?
+  createdAt               DateTime                @default(now())
+  knowledge_conversations knowledge_conversations @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId])
+}
+
+model knowledge_workflows {
+  id                  String                @id
+  userId              String
+  name                String                @db.VarChar(100)
+  description         String?
+  icon                String?               @db.VarChar(50)
+  definition          Json
+  version             Int                   @default(1)
+  isPublished         Boolean               @default(false)
+  publishedAt         DateTime?
+  publishedVersion    Int?
+  status              WorkflowStatus        @default(DRAFT)
+  createdAt           DateTime              @default(now())
+  updatedAt           DateTime
+  knowledge_apps      knowledge_apps[]
+  users               User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workflow_executions workflow_executions[]
+  knowledge_bases     knowledge_bases[]     @relation("WorkflowKnowledgeBases")
+
+  @@index([userId])
+  @@index([userId, status])
+}
+
+model model_providers {
+  id                                                                   String               @id
+  userId                                                               String
+  name                                                                 String               @db.VarChar(100)
+  type                                                                 ProviderType
+  category                                                             ProviderCategory
+  baseUrl                                                              String?              @db.VarChar(500)
+  apiKey                                                               String?              @db.VarChar(500)
+  secretKey                                                            String?              @db.VarChar(500)
+  config                                                               Json?
+  isDefault                                                            Boolean              @default(false)
+  isActive                                                             Boolean              @default(true)
+  lastTestedAt                                                         DateTime?
+  testResult                                                           String?              @db.VarChar(500)
+  createdAt                                                            DateTime             @default(now())
+  updatedAt                                                            DateTime
+  providerKey                                                          String               @default("openai-compatible") @db.VarChar(50)
+  adapter                                                              String               @default("openai-compatible") @db.VarChar(50)
+  modelConfigs                                                         ModelConfig[]
+  providerCatalog                                                      ModelProviderCatalog @relation(fields: [providerKey], references: [id])
+  knowledge_apps                                                       knowledge_apps[]
+  knowledge_bases_knowledge_bases_embeddingProviderIdTomodel_providers knowledge_bases[]    @relation("knowledge_bases_embeddingProviderIdTomodel_providers")
+  knowledge_bases_knowledge_bases_vectorDBProviderIdTomodel_providers  knowledge_bases[]    @relation("knowledge_bases_vectorDBProviderIdTomodel_providers")
+  users                                                                User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([isActive])
+  @@index([userId, category])
+  @@index([userId])
+  @@index([providerKey])
+}
+
+model network_alerts {
+  id              String           @id
+  deviceId        String?
+  interfaceId     String?
+  type            String           @db.VarChar(50)
+  level           String           @db.VarChar(20)
+  category        String?          @db.VarChar(50)
+  title           String           @db.VarChar(255)
+  message         String
+  metric          String?          @db.VarChar(100)
+  threshold       Float?
+  currentValue    Float?
+  unit            String?          @db.VarChar(20)
+  severity        String?          @db.VarChar(20)
+  impact          String?
+  isResolved      Boolean          @default(false)
+  resolvedAt      DateTime?
+  resolvedBy      String?          @db.VarChar(100)
+  resolution      String?
+  isNotified      Boolean          @default(false)
+  notifiedAt      DateTime?
+  notifyChannels  String[]
+  relatedAlerts   String[]
+  incidentId      String?          @db.VarChar(100)
+  healingAttempts Int              @default(0)
+  lastHealingAt   DateTime?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime
+  network_devices network_devices? @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  @@index([createdAt])
+  @@index([deviceId])
+  @@index([interfaceId])
+  @@index([isResolved])
+  @@index([level])
+  @@index([type])
+}
+
+model network_device_groups {
+  id              String            @id
+  name            String            @db.VarChar(100)
+  description     String?
+  color           String?           @db.VarChar(20)
+  icon            String?           @db.VarChar(50)
+  category        String?           @db.VarChar(50)
+  parentId        String?
+  userId          String
+  isPublic        Boolean           @default(false)
+  sharedWith      String[]
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime
+  users           User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  network_devices network_devices[]
+
+  @@index([category])
+  @@index([parentId])
+  @@index([userId])
+}
+
+model network_devices {
+  id                    String                 @id
+  name                  String                 @db.VarChar(100)
+  displayName           String?                @db.VarChar(100)
+  type                  DeviceType
+  vendor                DeviceVendor
+  model                 String                 @db.VarChar(100)
+  serialNumber          String?                @db.VarChar(100)
+  ip                    String                 @unique @db.VarChar(45)
+  snmpPort              Int                    @default(161)
+  sshPort               Int                    @default(22)
+  httpPort              Int?
+  httpsPort             Int?
+  sshUsername           String?                @db.VarChar(100)
+  sshPassword           String?                @db.VarChar(500)
+  sshKeyPath            String?                @db.VarChar(500)
+  snmpVersion           String                 @default("v2c") @db.VarChar(10)
+  snmpCommunity         String?                @db.VarChar(100)
+  snmpUsername          String?                @db.VarChar(100)
+  snmpAuthPass          String?                @db.VarChar(500)
+  snmpPrivPass          String?                @db.VarChar(500)
+  status                DeviceStatus           @default(UNKNOWN)
+  isActive              Boolean                @default(true)
+  lastPolled            DateTime?
+  uptime                BigInt?
+  lastOnline            DateTime?
+  location              String?                @db.VarChar(200)
+  datacenter            String?                @db.VarChar(100)
+  rack                  String?                @db.VarChar(50)
+  rackUnit              Int?
+  building              String?                @db.VarChar(100)
+  floor                 String?                @db.VarChar(50)
+  room                  String?                @db.VarChar(100)
+  osVersion             String?                @db.VarChar(100)
+  firmwareVersion       String?                @db.VarChar(100)
+  bootromVersion        String?                @db.VarChar(100)
+  hardwareVersion       String?                @db.VarChar(100)
+  cpuUsage              Float?
+  memoryUsage           Float?
+  memoryTotal           BigInt?
+  temperature           Float?
+  fanStatus             String?                @db.VarChar(50)
+  powerStatus           String?                @db.VarChar(50)
+  groupId               String?
+  tags                  String[]
+  description           String?
+  notes                 String?
+  userId                String
+  createdAt             DateTime               @default(now())
+  updatedAt             DateTime
+  createdBy             String?                @db.VarChar(100)
+  updatedBy             String?                @db.VarChar(100)
+  device_configs        device_configs[]
+  healing_logs          healing_logs[]
+  network_alerts        network_alerts[]
+  network_device_groups network_device_groups? @relation(fields: [groupId], references: [id])
+  users                 User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  network_interfaces    network_interfaces[]
+  network_metrics       network_metrics[]
+  network_topology      network_topology[]
+
+  @@index([datacenter])
+  @@index([groupId])
+  @@index([ip])
+  @@index([isActive])
+  @@index([status])
+  @@index([type])
+  @@index([userId])
+  @@index([vendor])
+}
+
+model network_interfaces {
+  id               String          @id
+  deviceId         String
+  ifIndex          Int
+  name             String          @db.VarChar(100)
+  alias            String?         @db.VarChar(200)
+  type             String?         @db.VarChar(50)
+  macAddress       String?         @db.VarChar(20)
+  mtu              Int?
+  ipAddress        String?         @db.VarChar(45)
+  subnetMask       String?         @db.VarChar(45)
+  ipv6Address      String?         @db.VarChar(50)
+  adminStatus      String          @db.VarChar(20)
+  operStatus       String          @db.VarChar(20)
+  speed            BigInt?
+  duplex           String?         @db.VarChar(20)
+  vlanId           Int?
+  vlanMode         String?         @db.VarChar(20)
+  allowedVlans     String?         @db.VarChar(500)
+  nativeVlan       Int?
+  inOctets         BigInt?
+  outOctets        BigInt?
+  inUcastPkts      BigInt?
+  outUcastPkts     BigInt?
+  inBroadcastPkts  BigInt?
+  outBroadcastPkts BigInt?
+  inErrors         BigInt?
+  outErrors        BigInt?
+  inDiscards       BigInt?
+  outDiscards      BigInt?
+  crcErrors        BigInt?
+  bandwidth        BigInt?
+  utilization      Float?
+  isTrunkMember    Boolean         @default(false)
+  trunkId          String?         @db.VarChar(50)
+  lastUpdated      DateTime        @default(now())
+  createdAt        DateTime        @default(now())
+  network_devices  network_devices @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  @@unique([deviceId, ifIndex])
+  @@index([deviceId])
+  @@index([name])
+  @@index([operStatus])
+}
+
+model network_metrics {
+  id               String           @id
+  deviceId         String?
+  interfaceId      String?
+  timestamp        DateTime         @default(now())
+  cpuUsage         Float?
+  cpuLoad1         Float?
+  cpuLoad5         Float?
+  cpuLoad15        Float?
+  memoryUsage      Float?
+  memoryUsed       BigInt?
+  memoryFree       BigInt?
+  temperature      Float?
+  fanSpeed         Int?
+  powerConsumption Float?
+  bandwidth        BigInt?
+  packetRate       BigInt?
+  utilization      Float?
+  errorRate        Float?
+  discardRate      Float?
+  arpEntries       Int?
+  macEntries       Int?
+  routeEntries     Int?
+  bgpPeers         Int?
+  ospfNeighbors    Int?
+  tcpConnections   Int?
+  udpConnections   Int?
+  network_devices  network_devices? @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  @@index([deviceId])
+  @@index([interfaceId])
+  @@index([timestamp])
+}
+
+model network_topology {
+  id              String          @id
+  sourceDeviceId  String
+  sourcePort      String          @db.VarChar(100)
+  sourcePortId    String?         @db.VarChar(100)
+  targetDeviceId  String
+  targetPort      String          @db.VarChar(100)
+  targetPortId    String?         @db.VarChar(100)
+  linkType        String          @db.VarChar(20)
+  protocol        String?         @db.VarChar(20)
+  linkSpeed       BigInt?
+  discovered      Boolean         @default(false)
+  discoveryMethod String?         @db.VarChar(20)
+  status          String          @default("active") @db.VarChar(20)
+  lastVerified    DateTime        @default(now())
+  distance        Int?
+  metadata        Json?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime
+  network_devices network_devices @relation(fields: [sourceDeviceId], references: [id], onDelete: Cascade)
+
+  @@index([sourceDeviceId])
+  @@index([status])
+  @@index([targetDeviceId])
+}
+
+model workflow_executions {
+  id                  String              @id
+  workflowId          String
+  status              ExecutionStatus     @default(RUNNING)
+  input               Json
+  output              Json?
+  logs                Json?
+  error               String?
+  executionTime       Int?
+  tokenUsage          Json?
+  triggeredBy         String?             @db.VarChar(100)
+  triggerSource       String?             @db.VarChar(50)
+  startedAt           DateTime            @default(now())
+  completedAt         DateTime?
+  knowledge_workflows knowledge_workflows @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+
+  @@index([startedAt])
+  @@index([workflowId])
+  @@index([workflowId, status])
+}
+
 enum UserRole {
   admin
   manager
@@ -1176,6 +2007,7 @@ enum DeploymentStatus {
   deploying
   success
   failed
+  cancelled
   rolled_back
 }
 
@@ -1192,4 +2024,156 @@ enum ApprovalType {
   cicd_pipeline
   system_config
   jenkins_job
+}
+
+enum AppVisibility {
+  PRIVATE
+  TEAM
+  PUBLIC
+}
+
+enum DeviceStatus {
+  ONLINE
+  OFFLINE
+  WARNING
+  ERROR
+  UNKNOWN
+  MAINTENANCE
+}
+
+enum DeviceType {
+  SWITCH
+  ROUTER
+  FIREWALL
+  LOAD_BALANCER
+  WIRELESS_CONTROLLER
+}
+
+enum DeviceVendor {
+  CISCO
+  HUAWEI
+  H3C
+  JUNIPER
+  ARISTA
+  RUIJIE
+  MAIPU
+  OTHER
+}
+
+enum DocumentStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+enum DocumentType {
+  PDF
+  DOCX
+  DOC
+  TXT
+  MD
+  HTML
+  CSV
+  XLSX
+  XLS
+  PPTX
+  PPT
+  JSON
+  URL
+  OTHER
+}
+
+enum ExecutionStatus {
+  RUNNING
+  COMPLETED
+  FAILED
+  CANCELLED
+  TIMEOUT
+}
+
+enum HealingStatus {
+  PENDING
+  APPROVED
+  RUNNING
+  SUCCESS
+  FAILED
+  CANCELLED
+  TIMEOUT
+}
+
+enum HealingTriggerType {
+  ALERT
+  METRIC
+  EVENT
+  SCHEDULE
+  MANUAL
+}
+
+enum IndexStatus {
+  PENDING
+  INDEXING
+  COMPLETED
+  FAILED
+  PARTIAL
+}
+
+enum KnowledgeBaseStatus {
+  ACTIVE
+  ARCHIVED
+  DELETED
+}
+
+enum KnowledgeMessageRole {
+  USER
+  ASSISTANT
+  SYSTEM
+}
+
+enum MessageFeedback {
+  POSITIVE
+  NEGATIVE
+}
+
+enum ModuleType {
+  SERVER
+  NETWORK
+  K8S
+  DATABASE
+  CACHE
+}
+
+enum ProviderCategory {
+  LLM
+  EMBEDDING
+  VECTOR_DB
+}
+
+enum ProviderType {
+  OPENAI
+  AZURE_OPENAI
+  ANTHROPIC
+  QWEN
+  ERNIE
+  OLLAMA
+  VLLM
+  OPENAI_COMPATIBLE
+  OPENAI_EMBEDDING
+  AZURE_EMBEDDING
+  QWEN_EMBEDDING
+  BGE
+  OLLAMA_EMBEDDING
+  PGVECTOR
+  MILVUS
+  QDRANT
+  ELASTICSEARCH
+  PINECONE
+  WEAVIATE
+  CHROMA
+}
+
+enum WorkflowStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
 }

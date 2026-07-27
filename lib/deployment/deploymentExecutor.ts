@@ -4,6 +4,7 @@ import * as fs from 'fs'
 import * as path from 'path'
 import { promisify } from 'util'
 import { GitCredentialService } from '../git/gitCredentialService'
+import { revealSecret } from '../crypto/encryption'
 
 export interface DeploymentConfig {
   deploymentId: string
@@ -560,7 +561,7 @@ export class DeploymentExecutor {
           host: host.ip || host.hostname,
           port: host.port || 22,
           username: host.username || 'deploy',
-          password: host.password,
+          password: revealSecret(host.password) || undefined,
           keyPath: host.keyPath,
           authType: actualAuthType
         }

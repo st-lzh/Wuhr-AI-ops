@@ -677,7 +677,7 @@ const JenkinsDeploymentsPage: React.FC = () => {
             <RocketOutlined className="mr-2" />
             Jenkins部署
           </Title>
-          <Paragraph className="text-gray-600 mb-0">
+          <Paragraph type="secondary" className="mb-0">
             专门管理Jenkins部署任务，确保配置正确和执行可靠
           </Paragraph>
         </div>

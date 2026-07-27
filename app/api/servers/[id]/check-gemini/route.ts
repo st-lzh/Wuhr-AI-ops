@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '../../../../../lib/auth/apiHelpers-new'
 import { getPrismaClient } from '../../../../../lib/config/database'
 import { executeSSHCommand } from '../../../../../lib/ssh/client'
+import { revealSecret } from '../../../../../lib/crypto/encryption'
 
 // 检查远程主机的Gemini CLI安装状态
 export async function GET(
@@ -37,7 +38,7 @@ export async function GET(
       host: server.ip,
       port: server.port,
       username: server.username,
-      password: server.password || undefined,
+      password: revealSecret(server.password) || undefined,
       timeout: 30000
     }
 
@@ -175,7 +176,7 @@ export async function POST(
       host: server.ip,
       port: server.port,
       username: server.username,
-      password: server.password || undefined,
+      password: revealSecret(server.password) || undefined,
       timeout: 30000
     }
 

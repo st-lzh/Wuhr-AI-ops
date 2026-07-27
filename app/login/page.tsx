@@ -114,7 +114,7 @@ function LoginForm() {
         {/* Logo和标题 */}
         <div className="text-center mb-8">
           <img 
-            src="https://wuhrai-wordpress.oss-cn-hangzhou.aliyuncs.com/%E5%9B%BE%E6%A0%87/%E5%88%9B%E5%BB%BA%E8%B5%9B%E5%8D%9A%E6%9C%8B%E5%85%8B%E5%9B%BE%E6%A0%87%20%283%29.png"
+            src="/wuhr-ai.svg"
             alt="Wuhr AI Logo"
             className="w-16 h-16 mx-auto mb-4"
           />

@@ -3,7 +3,8 @@ import { requireAuth } from '../../../../../../lib/auth/apiHelpers-new'
 import { getPrismaClient } from '../../../../../../lib/config/database'
 import { notificationService } from '../../../../../../lib/services/notificationService'
 import { infoNotificationService } from '../../../../../../lib/notifications/infoNotificationService'
-import { deploymentExecutionService } from '../../../../../../lib/services/deploymentExecutionService'
+import { broadcastRealtimeNotification } from '../../../../../../lib/notifications/realtimeBroadcastService'
+import { triggerApprovedDeployment } from '../../../../../../lib/services/deploymentTriggerService'
 
 // 处理部署审批
 export async function POST(
@@ -142,15 +143,11 @@ export async function POST(
 
         // 发送实时通知更新
         try {
-          const response = await fetch(`${process.env.NEXTAUTH_URL || 'http://localhost:3000'}/api/notifications/broadcast`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              type: 'deployment_status_update',
-              deploymentId,
-              status: 'approved',
-              userId: deployment.user.id
-            })
+          await broadcastRealtimeNotification({
+            type: 'deployment_status_update',
+            deploymentId,
+            status: 'approved',
+            userId: deployment.user.id,
           })
         } catch (broadcastError) {
           console.error('❌ 发送实时状态更新失败:', broadcastError)
@@ -191,12 +188,8 @@ export async function POST(
         try {
           // 异步触发部署，不阻塞审批响应
           setImmediate(async () => {
-            const deploymentSuccess = await deploymentExecutionService.triggerDeployment(deploymentId)
-            if (deploymentSuccess) {
-              console.log(`✅ 自动部署执行成功: ${deploymentId}`)
-            } else {
-              console.log(`❌ 自动部署执行失败: ${deploymentId}`)
-            }
+            const triggerResult = await triggerApprovedDeployment(deploymentId, user.id)
+            console.log(`部署审批后触发结果: ${triggerResult.state} - ${deploymentId}`)
           })
         } catch (deployError) {
           console.error('❌ 触发自动部署失败:', deployError)

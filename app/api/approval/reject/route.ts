@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { requireAuth } from '../../../../lib/auth/apiHelpers-new'
+import { getBackendApiKey, getBackendBaseUrl } from '../../../../lib/improve/backendProxy'
 
 /**
  * 拒绝命令执行 API路由
@@ -6,17 +8,24 @@ import { NextRequest, NextResponse } from 'next/server'
  */
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json()
-    const { approvalId, hostInfo, reason } = body
+    const authResult = await requireAuth(request)
+    if (!authResult.success) return authResult.response
 
-    if (!approvalId || !hostInfo) {
+    const body = await request.json()
+    const { approvalId, reason } = body
+
+    if (!approvalId) {
       return NextResponse.json(
         { success: false, message: '缺少必要参数' },
         { status: 400 }
       )
     }
 
-    const baseUrl = `http://${hostInfo.ip}:${hostInfo.port || 2081}`
+    const apiKey = getBackendApiKey()
+    if (!apiKey) {
+      return NextResponse.json({ success: false, message: '后端 API key 未配置' }, { status: 500 })
+    }
+    const baseUrl = getBackendBaseUrl().replace(/\/$/, '')
 
     console.log('🔐 [拒绝命令] 发送请求到后端:', `${baseUrl}/api/approval/${approvalId}/reject`)
 
@@ -25,10 +34,12 @@ export async function POST(request: NextRequest) {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        'X-API-Key': apiKey,
       },
       body: JSON.stringify({
         reason: reason || '用户拒绝'
       }),
+      signal: AbortSignal.timeout(15_000),
     })
 
     // 先获取文本，再尝试解析JSON

@@ -1,9 +1,10 @@
 // 邮件通知服务
 import { EmailNotification, NotificationResult } from './types'
+import nodemailer from 'nodemailer'
 
 class EmailNotificationService {
   private smtpConfig = {
-    host: process.env.SMTP_HOST || 'localhost',
+    host: process.env.SMTP_HOST || '',
     port: parseInt(process.env.SMTP_PORT || '587'),
     secure: process.env.SMTP_SECURE === 'true',
     auth: {
@@ -26,23 +27,32 @@ class EmailNotificationService {
         }
       }
 
-      console.log(`📧 发送邮件: ${notification.subject} -> ${notification.to.join(', ')}`)
+      const transporter = nodemailer.createTransport({
+        host: this.smtpConfig.host,
+        port: this.smtpConfig.port,
+        secure: this.smtpConfig.secure,
+        auth: this.smtpConfig.auth.user && this.smtpConfig.auth.pass
+          ? this.smtpConfig.auth
+          : undefined,
+        connectionTimeout: 10_000,
+        greetingTimeout: 10_000,
+        socketTimeout: 20_000
+      })
+      const info = await transporter.sendMail({
+        from: process.env.SMTP_FROM || this.smtpConfig.auth.user,
+        to: notification.to,
+        subject: notification.subject,
+        text: notification.textContent,
+        html: notification.htmlContent
+      })
+      transporter.close()
 
-      // 模拟邮件发送（实际项目中应该使用nodemailer等库）
-      const success = Math.random() > 0.1 // 90% 成功率
-      
-      if (success) {
-        const messageId = `email_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
-        
-        console.log(`✅ 邮件发送成功: ${messageId}`)
-        return {
-          success: true,
-          channel: 'email',
-          messageId,
-          sentAt: new Date()
-        }
-      } else {
-        throw new Error('模拟邮件发送失败')
+      console.log(`✅ 邮件发送成功: ${info.messageId}`)
+      return {
+        success: true,
+        channel: 'email',
+        messageId: info.messageId,
+        sentAt: new Date()
       }
 
     } catch (error) {
@@ -98,7 +108,10 @@ class EmailNotificationService {
 
   // 检查SMTP是否已配置
   private isConfigured(): boolean {
-    return !!(this.smtpConfig.host && this.smtpConfig.auth.user && this.smtpConfig.auth.pass)
+    const sender = process.env.SMTP_FROM || this.smtpConfig.auth.user
+    const authComplete = (!this.smtpConfig.auth.user && !this.smtpConfig.auth.pass)
+      || Boolean(this.smtpConfig.auth.user && this.smtpConfig.auth.pass)
+    return Boolean(this.smtpConfig.host && sender && authComplete)
   }
 
   // 模板渲染

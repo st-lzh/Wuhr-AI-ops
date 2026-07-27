@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '../../../../../lib/auth/apiHelpers-new'
 import { getPrismaClient } from '../../../../../lib/config/database'
+import { protectSecret } from '../../../../../lib/crypto/encryption'
 
 // 预设模型列表
 const PRESET_MODELS = {
@@ -171,7 +172,7 @@ export async function PUT(
     const updateData: any = {}
     if (name !== undefined) updateData.name = name
     if (provider !== undefined) updateData.provider = provider
-    if (apiKey !== undefined && apiKey !== '***') updateData.apiKey = apiKey
+    if (apiKey !== undefined && apiKey !== '***') updateData.apiKey = protectSecret(apiKey)
     if (baseUrl !== undefined) updateData.baseUrl = baseUrl
     if (isDefault !== undefined) updateData.isDefault = isDefault
     updateData.config = config

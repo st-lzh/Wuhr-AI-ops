@@ -1,6 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '../../../../../lib/auth/apiHelpers-new'
 import { getPrismaClient } from '../../../../../lib/config/database'
+import { canWriteTeamAssets } from '../../../../../lib/auth/teamAccess'
+import { z } from 'zod'
+
+const DeploymentUpdateSchema = z.object({
+  name: z.string().trim().min(1).max(100),
+  description: z.string().max(2000).optional().nullable(),
+  environment: z.enum(['dev', 'test', 'staging', 'prod']),
+  version: z.string().max(100).optional().nullable(),
+  deployScript: z.string().max(100000).optional().nullable(),
+  rollbackScript: z.string().max(100000).optional().nullable(),
+  scheduledAt: z.string().datetime().optional().nullable(),
+  deploymentHosts: z.array(z.string().min(1)).min(1).max(64),
+  notificationUsers: z.array(z.string().min(1)).max(100).default([]),
+  approvalUsers: z.array(z.string().min(1)).min(1).max(20)
+})
 
 // 获取部署详情
 export async function GET(
@@ -91,18 +106,22 @@ export async function PUT(
     }
 
     const { user } = authResult
+    if (!canWriteTeamAssets(user, 'cicd:write')) {
+      return NextResponse.json({ success: false, error: '没有部署任务写入权限' }, { status: 403 })
+    }
     const deploymentId = params.id
-    const body = await request.json()
+    const parsed = DeploymentUpdateSchema.safeParse(await request.json())
+    if (!parsed.success) return NextResponse.json({ success: false, error: '部署任务信息校验失败', details: parsed.error.flatten() }, { status: 400 })
+    const body = parsed.data
 
     console.log(`📝 更新部署任务: ${deploymentId}`)
 
     const prisma = await getPrismaClient()
 
-    // 检查部署是否存在且属于当前用户
+    // 部署任务属于可信团队共享资产。
     const existingDeployment = await prisma.deployment.findFirst({
       where: {
-        id: deploymentId,
-        userId: user.id
+        id: deploymentId
       }
     })
 
@@ -113,20 +132,45 @@ export async function PUT(
       }, { status: 404 })
     }
 
-    // 更新部署任务
-    const updatedDeployment = await prisma.deployment.update({
-      where: { id: deploymentId },
-      data: {
-        name: body.name,
-        description: body.description,
-        environment: body.environment,
-        version: body.version,
-        scheduledAt: body.scheduledAt ? new Date(body.scheduledAt) : null,
-        deploymentHosts: body.deploymentHosts || [],
-        notificationUsers: body.notificationUsers || [],
-        approvalUsers: body.approvalUsers || [],
-        updatedAt: new Date()
-      }
+    if (!['pending', 'rejected', 'failed'].includes(existingDeployment.status)) {
+      return NextResponse.json({ success: false, error: `当前状态 ${existingDeployment.status} 不允许修改；已审批任务请新建部署版本，避免审批后配置被替换` }, { status: 409 })
+    }
+    if (body.environment === 'prod' && !body.rollbackScript?.trim()) {
+      return NextResponse.json({ success: false, error: '生产环境必须配置真实回滚脚本' }, { status: 400 })
+    }
+
+    const [serverCount, eligibleApprovers] = await Promise.all([
+      prisma.server.count({ where: { id: { in: body.deploymentHosts }, isActive: true } }),
+      prisma.user.findMany({
+        where: {
+          id: { in: body.approvalUsers }, isActive: true, approvalStatus: 'approved',
+          OR: [{ role: 'admin' }, { role: 'manager' }, { permissions: { has: 'cicd:write' } }]
+        },
+        select: { id: true }
+      })
+    ])
+    if (serverCount !== new Set(body.deploymentHosts).size) return NextResponse.json({ success: false, error: '部分部署主机不存在或已停用' }, { status: 400 })
+    if (eligibleApprovers.length !== new Set(body.approvalUsers).size) return NextResponse.json({ success: false, error: '部分审批人员不可用或没有部署审批权限' }, { status: 400 })
+
+    // 修改执行配置后删除旧审批并重新生成，防止“审批 A、执行 B”。
+    const updatedDeployment = await prisma.$transaction(async tx => {
+      await tx.deploymentApproval.deleteMany({ where: { deploymentId } })
+      const deployment = await tx.deployment.update({
+        where: { id: deploymentId },
+        data: {
+          name: body.name, description: body.description, environment: body.environment,
+          version: body.version, deployScript: body.deployScript, rollbackScript: body.rollbackScript,
+          scheduledAt: body.scheduledAt ? new Date(body.scheduledAt) : null,
+          deploymentHosts: Array.from(new Set(body.deploymentHosts)),
+          notificationUsers: Array.from(new Set(body.notificationUsers)),
+          approvalUsers: Array.from(new Set(body.approvalUsers)),
+          requireApproval: true, status: 'pending', startedAt: null, completedAt: null,
+          updatedAt: new Date()
+        }
+      })
+      await tx.deploymentApproval.createMany({ data: Array.from(new Set(body.approvalUsers)).map((approverId, index) => ({ deploymentId, approverId, status: 'pending', level: index + 1, isRequired: true })) })
+      await tx.systemLog.create({ data: { level: 'warn', category: 'deployment', message: `更新部署并重置审批：${deployment.name}`, source: 'cicd-api', userId: user.id, details: { deploymentId, environment: deployment.environment, hostCount: body.deploymentHosts.length } } })
+      return deployment
     })
 
     console.log(`✅ 部署任务更新成功: ${updatedDeployment.name}`)
@@ -161,17 +205,19 @@ export async function DELETE(
     }
 
     const { user } = authResult
+    if (!canWriteTeamAssets(user, 'cicd:write')) {
+      return NextResponse.json({ success: false, error: '没有部署任务写入权限' }, { status: 403 })
+    }
     const deploymentId = params.id
 
     console.log(`🗑️ 删除部署任务: ${deploymentId}`)
 
     const prisma = await getPrismaClient()
 
-    // 检查部署是否存在且属于当前用户
+    // 部署任务属于可信团队共享资产。
     const existingDeployment = await prisma.deployment.findFirst({
       where: {
-        id: deploymentId,
-        userId: user.id
+        id: deploymentId
       }
     })
 

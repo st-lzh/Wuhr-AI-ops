@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '../../../../lib/auth/apiHelpers-new'
 import { getPrismaClient } from '../../../../lib/config/database'
 import { z } from 'zod'
+import { canWriteTeamAssets } from '../../../../lib/auth/teamAccess'
 
 // 部署模板验证schema
 const DeploymentTemplateSchema = z.object({
@@ -75,8 +76,7 @@ export async function POST(request: NextRequest) {
     const user = authResult.user
 
     // 检查权限
-    const userPermissions = user.permissions || []
-    if (user.role !== 'admin' && !userPermissions.includes('cicd:write')) {
+    if (!canWriteTeamAssets(user, 'cicd:write')) {
       return NextResponse.json(
         { success: false, error: '没有权限创建部署模板' },
         { status: 403 }
@@ -151,8 +151,7 @@ export async function PUT(request: NextRequest) {
     const user = authResult.user
 
     // 检查权限
-    const userPermissions = user.permissions || []
-    if (user.role !== 'admin' && !userPermissions.includes('cicd:write')) {
+    if (!canWriteTeamAssets(user, 'cicd:write')) {
       return NextResponse.json(
         { success: false, error: '没有权限修改部署模板' },
         { status: 403 }
@@ -250,8 +249,7 @@ export async function DELETE(request: NextRequest) {
     const user = authResult.user
 
     // 检查权限
-    const userPermissions = user.permissions || []
-    if (user.role !== 'admin' && !userPermissions.includes('cicd:write')) {
+    if (!canWriteTeamAssets(user, 'cicd:write')) {
       return NextResponse.json(
         { success: false, error: '没有权限删除部署模板' },
         { status: 403 }

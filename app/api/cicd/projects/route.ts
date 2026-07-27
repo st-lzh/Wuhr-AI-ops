@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '../../../../lib/auth/apiHelpers-new'
 import { getPrismaClient } from '../../../../lib/config/database'
 import { z } from 'zod'
+import { canWriteTeamAssets } from '../../../../lib/auth/teamAccess'
 
 // CI项目验证schema - 只保留CI相关字段
 const CICDProjectSchema = z.object({
@@ -52,9 +53,8 @@ export async function GET(request: NextRequest) {
     })
 
     // 构建查询条件
-    const where: any = {
-      userId: user.id
-    }
+    // 单个可信运维团队共享项目资产，用户字段只记录创建人。
+    const where: any = {}
 
     if (search) {
       where.OR = [
@@ -122,6 +122,9 @@ export async function POST(request: NextRequest) {
     }
 
     const { user } = authResult
+    if (!canWriteTeamAssets(user, 'cicd:write')) {
+      return NextResponse.json({ success: false, error: '权限不足' }, { status: 403 })
+    }
     const body = await request.json()
 
     // 验证输入数据
@@ -140,8 +143,7 @@ export async function POST(request: NextRequest) {
     // 检查项目名称是否已存在
     const existingProject = await prisma.cICDProject.findFirst({
       where: {
-        name: data.name,
-        userId: user.id
+        name: data.name
       }
     })
 
@@ -191,5 +193,3 @@ export async function POST(request: NextRequest) {
     }, { status: 500 })
   }
 }
-
-

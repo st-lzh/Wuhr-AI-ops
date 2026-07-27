@@ -15,7 +15,6 @@ export async function GET(
       return authResult.response
     }
 
-    const { user } = authResult
     const deploymentId = params.id
 
     const prisma = await getPrismaClient()
@@ -50,18 +49,6 @@ export async function GET(
         success: false,
         error: '部署任务不存在'
       }, { status: 404 })
-    }
-
-    // 权限检查：只有管理员、任务创建者或有查看权限的用户可以查看日志
-    const canView = user.role === 'admin' || 
-                   deployment.user.id === user.id ||
-                   (user.permissions && user.permissions.includes('cicd:read'))
-
-    if (!canView) {
-      return NextResponse.json({
-        success: false,
-        error: '没有权限查看此部署任务的日志'
-      }, { status: 403 })
     }
 
     // 检查是否为Jenkins部署任务

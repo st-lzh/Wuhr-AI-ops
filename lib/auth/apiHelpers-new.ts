@@ -7,6 +7,12 @@ import { getPrismaClient } from '../config/database'
 const userCache = new Map<string, { user: any; timestamp: number }>()
 const CACHE_TTL = 5 * 60 * 1000 // 5分钟缓存
 
+/** 用户、角色或权限发生变更后主动失效认证缓存，避免旧权限继续生效五分钟。 */
+export function invalidateUserAuthCache(userId?: string) {
+  if (userId) userCache.delete(userId)
+  else userCache.clear()
+}
+
 // 认证中间件
 export async function requireAuth(
   request: NextRequest
@@ -50,6 +56,28 @@ export async function requireAuth(
       }
     }
 
+    const prisma = await getPrismaClient()
+
+    // 新签发的访问令牌必须绑定一个仍然有效的持久化会话。
+    // 没有 jti 的旧令牌只为滚动升级保留，过期后会自然退出。
+    if (decoded.tokenId) {
+      const activeSession = await prisma.authSession.findFirst({
+        where: {
+          refreshTokenId: decoded.tokenId,
+          userId: decoded.userId,
+          isActive: true,
+          expiresAt: { gt: new Date() }
+        },
+        select: { id: true }
+      })
+      if (!activeSession) {
+        return {
+          success: false,
+          response: NextResponse.json({ success: false, error: '会话已失效' }, { status: 401 })
+        }
+      }
+    }
+
     // 检查用户缓存
     const cacheKey = decoded.userId
     const cached = userCache.get(cacheKey)
@@ -61,7 +89,6 @@ export async function requireAuth(
     }
 
     // 获取用户信息
-    const prisma = await getPrismaClient()
     const user = await prisma.user.findFirst({
       where: {
         id: decoded.userId,

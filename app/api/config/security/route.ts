@@ -1,24 +1,31 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { requireAuth } from '../../../../lib/auth/apiHelpers-new'
+import { canWriteTeamAssets } from '../../../../lib/auth/teamAccess'
 
-const BACKEND_BASE_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:2081'
+// 后端 base URL：从 server-side env IMPROVE_API_BASE_URL 取（与 lib/improve/backendProxy.ts 一致）
+// 默认 localhost:8888（开发用）；生产 .env.local 应设到实际 backend 入口（如 nginx 反代地址）
+const BACKEND_BASE_URL = process.env.IMPROVE_API_BASE_URL || 'http://localhost:8888'
+
+// 后端 admin API key；启用 --http-auth 时所有 /api/* 请求都需带这个 header
+function backendHeaders(): Record<string, string> {
+  const h: Record<string, string> = { 'Content-Type': 'application/json' }
+  const key = process.env.IMPROVE_API_KEY
+  if (key) h['X-API-Key'] = key
+  return h
+}
 
 // GET /api/config/security - 获取安全配置
 export async function GET(request: NextRequest) {
   try {
-    // 获取后端主机信息(从查询参数或默认值)
-    const searchParams = request.nextUrl.searchParams
-    const hostIp = searchParams.get('hostIp') || '47.99.137.248'
-    const hostPort = searchParams.get('hostPort') || '2081'
-
-    const backendUrl = `http://${hostIp}:${hostPort}/api/config/security`
+    const authResult = await requireAuth(request)
+    if (!authResult.success) return authResult.response
+    const backendUrl = `${BACKEND_BASE_URL}/api/config/security`
 
     console.log(`📡 [Security Config] 获取安全配置: ${backendUrl}`)
 
     const response = await fetch(backendUrl, {
       method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers: backendHeaders(),
     })
 
     if (!response.ok) {
@@ -52,22 +59,19 @@ export async function GET(request: NextRequest) {
 // POST /api/config/security - 更新安全配置
 export async function POST(request: NextRequest) {
   try {
+    const authResult = await requireAuth(request)
+    if (!authResult.success) return authResult.response
+    if (!canWriteTeamAssets(authResult.user, 'config:write')) {
+      return NextResponse.json({ success: false, error: '权限不足' }, { status: 403 })
+    }
     const body = await request.json()
-
-    // 获取后端主机信息
-    const searchParams = request.nextUrl.searchParams
-    const hostIp = searchParams.get('hostIp') || '47.99.137.248'
-    const hostPort = searchParams.get('hostPort') || '2081'
-
-    const backendUrl = `http://${hostIp}:${hostPort}/api/config/security`
+    const backendUrl = `${BACKEND_BASE_URL}/api/config/security`
 
     console.log(`📡 [Security Config] 更新安全配置: ${backendUrl}`, body)
 
     const response = await fetch(backendUrl, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers: backendHeaders(),
       body: JSON.stringify(body),
     })
 

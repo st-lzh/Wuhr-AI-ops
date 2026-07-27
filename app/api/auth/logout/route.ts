@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getPrismaClient } from '../../../../lib/config/database'
-import { verifyToken } from '../../../../lib/auth/jwt-edge'
+import { verifyRefreshToken, verifyToken } from '../../../../lib/auth/jwt-edge'
 
 export async function POST(request: NextRequest) {
   try {
@@ -13,9 +13,16 @@ export async function POST(request: NextRequest) {
     if (accessToken || refreshToken) {
       try {
         const prisma = await getPrismaClient()
+        let tokenId: string | undefined
+        if (refreshToken) tokenId = (await verifyRefreshToken(refreshToken)).jti
+        if (!tokenId && accessToken) tokenId = (await verifyToken(accessToken, 'access'))?.tokenId
 
-        // 由于已禁用refresh token功能，这里不需要处理refresh token
-        // 只需要清除cookies即可
+        if (tokenId) {
+          await prisma.authSession.updateMany({
+            where: { refreshTokenId: tokenId, isActive: true },
+            data: { isActive: false, lastUsedAt: new Date() }
+          })
+        }
       } catch (error) {
         console.warn('清理会话时出错:', error)
       }

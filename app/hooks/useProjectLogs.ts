@@ -181,14 +181,8 @@ export function useProjectLogs({
   useEffect(() => {
     if (!projectId || !enabled) return
 
-    // 只获取历史日志，不启用实时连接（避免404死循环）
-    fetchLogs().catch((err) => {
-      console.error('获取项目日志失败:', err)
-      // 如果是404错误，不再重试
-      if (err.message.includes('404')) {
-        setError('项目日志功能暂不可用')
-      }
-    })
+    fetchLogs()
+    if (realtime) connectRealtime()
 
     return () => {
       // 清理资源
@@ -202,7 +196,7 @@ export function useProjectLogs({
       }
       setConnected(false)
     }
-  }, [projectId, enabled, fetchLogs])
+  }, [projectId, enabled, realtime, fetchLogs, connectRealtime])
 
   // 组件卸载时清理
   useEffect(() => {

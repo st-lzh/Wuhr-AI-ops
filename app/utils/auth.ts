@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server'
-import { verifyToken as jwtVerifyToken } from '../../lib/auth/jwt'
+import { verifyToken as jwtVerifyToken } from '../../lib/auth/jwt-edge'
 import { getPrismaClient } from '../../lib/config/database'
 
 /**

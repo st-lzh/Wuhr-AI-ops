@@ -10,6 +10,7 @@ import {
   createUsernamePasswordCredentials,
   GitCredentialData
 } from '../../../../lib/crypto/encryption'
+import { canWriteTeamAssets } from '../../../../lib/auth/teamAccess'
 
 // Git认证配置验证schema
 const GitCredentialSchema = z.object({
@@ -52,7 +53,6 @@ export async function GET(request: NextRequest) {
 
     const credentials = await prisma.gitCredential.findMany({
       where: {
-        userId: user.id,
         isActive: true
       },
       select: {
@@ -95,6 +95,9 @@ export async function POST(request: NextRequest) {
     }
 
     const { user } = authResult
+    if (!canWriteTeamAssets(user, 'config:write')) {
+      return NextResponse.json({ success: false, error: '没有接入凭据写入权限' }, { status: 403 })
+    }
     const body = await request.json()
 
     // 验证输入数据
@@ -174,7 +177,6 @@ export async function POST(request: NextRequest) {
     if (isDefault) {
       await prisma.gitCredential.updateMany({
         where: {
-          userId: user.id,
           platform,
           isDefault: true
         },

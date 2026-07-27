@@ -118,12 +118,12 @@ const TemplatesPage: React.FC = () => {
     if (!editingTemplate) return
     
     try {
-      const response = await fetch(`/api/cicd/templates/${editingTemplate.id}`, {
+      const response = await fetch('/api/cicd/templates', {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(values),
+        body: JSON.stringify({ id: editingTemplate.id, ...values }),
       })
       
       const data = await response.json()
@@ -146,7 +146,7 @@ const TemplatesPage: React.FC = () => {
   // 删除模板
   const handleDelete = async (id: string) => {
     try {
-      const response = await fetch(`/api/cicd/templates/${id}`, {
+      const response = await fetch(`/api/cicd/templates?id=${encodeURIComponent(id)}`, {
         method: 'DELETE',
       })
       
@@ -300,7 +300,7 @@ const TemplatesPage: React.FC = () => {
             <FileTextOutlined className="mr-2" />
             模板管理
           </Title>
-          <Paragraph className="text-gray-600 mb-0">
+          <Paragraph type="secondary" className="mb-0">
             管理部署模板，支持Kubernetes、Docker、Shell和Ansible等多种类型的部署模板
           </Paragraph>
         </div>

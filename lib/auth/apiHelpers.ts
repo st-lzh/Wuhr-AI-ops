@@ -4,6 +4,7 @@ import { ZodSchema, ZodError } from 'zod'
 import { verifyToken } from './jwt-edge'
 import { getPrismaClient } from '../config/database'
 import { ApiResponse, AuthError } from '../../app/types/api'
+import { grantsPermission } from './accessPolicy'
 
 // 简化的数据库实例
 export const db = {} as any
@@ -159,6 +160,24 @@ export async function requireAuth(
 
     // 获取用户信息
     const prisma = await getPrismaClient()
+    if (decoded.tokenId) {
+      const activeSession = await prisma.authSession.findFirst({
+        where: {
+          refreshTokenId: decoded.tokenId,
+          userId: decoded.userId,
+          isActive: true,
+          expiresAt: { gt: new Date() }
+        },
+        select: { id: true }
+      })
+      if (!activeSession) {
+        return {
+          success: false,
+          response: NextResponse.json({ success: false, error: '会话已失效' }, { status: 401 })
+        }
+      }
+    }
+
     const user = await prisma.user.findFirst({
       where: {
         id: decoded.userId,
@@ -207,12 +226,7 @@ export async function requirePermission(
 
   const { user } = authResult
 
-  // 硬编码超级管理员：admin@wuhr.ai 拥有所有权限
-  if (user.email === 'admin@wuhr.ai') {
-    return { success: true, user: { ...user, role: 'admin' } }
-  }
-
-  if (!user.permissions.includes(requiredPermission) && user.role !== 'admin') {
+  if (!grantsPermission(user.role, user.permissions || [], requiredPermission)) {
     return {
       success: false,
       response: errorResponse('权限不足', `需要权限: ${requiredPermission}`, 403)

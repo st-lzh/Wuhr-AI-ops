@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { verifyToken } from './lib/auth/jwt-edge'
+import { grantsPermission, requiredPermissionForRequest } from './lib/auth/accessPolicy'
 
 // 定义路由保护规则 - 只有这些路径是公开的
 const PUBLIC_PATHS = [
@@ -8,6 +9,8 @@ const PUBLIC_PATHS = [
   '/auth',
   '/api/auth/login',
   '/api/auth/register',
+  '/api/internal/scheduler',
+  '/api/hooks/alerts',
 
   '/api/version',
   '/api/models',
@@ -15,14 +18,6 @@ const PUBLIC_PATHS = [
   '/api/health',
   '/test-http-api'
 ]
-
-// 角色权限映射
-const ROLE_PATHS = {
-  admin: ['/admin', '/config', '/monitor', '/servers', '/tools', '/ai', '/'],
-  manager: ['/monitor', '/servers', '/tools', '/ai', '/'],
-  developer: ['/tools', '/ai', '/'],
-  viewer: ['/monitor', '/ai', '/'],
-}
 
 /**
  * 检查路径是否为公开路径
@@ -36,15 +31,6 @@ function isPublicPath(pathname: string): boolean {
 /**
  * 检查用户是否有权限访问路径
  */
-function hasPermissionForPath(pathname: string, role: string): boolean {
-  // 管理员可以访问所有路径
-  if (role === 'admin') return true
-  
-  // 检查角色权限
-  const allowedPaths = ROLE_PATHS[role as keyof typeof ROLE_PATHS] || []
-  return allowedPaths.some(path => pathname === '/' ? path === '/' : pathname.startsWith(path))
-}
-
 /**
  * 从请求中提取Token
  */
@@ -120,7 +106,8 @@ export async function middleware(request: NextRequest) {
     // 检查用户角色权限
     const userRole = payload.role || 'viewer'
     
-    if (!hasPermissionForPath(pathname, userRole)) {
+    const requiredPermission = requiredPermissionForRequest(pathname, request.method)
+    if (!grantsPermission(userRole, payload.permissions || [], requiredPermission)) {
       // 权限不足处理
       if (pathname.startsWith('/api/')) {
         return createApiErrorResponse(403, 'Insufficient permissions')
@@ -133,6 +120,7 @@ export async function middleware(request: NextRequest) {
     requestHeaders.set('x-user-id', payload.userId)
     requestHeaders.set('x-user-role', userRole)
     requestHeaders.set('x-user-email', payload.username || '')
+    requestHeaders.set('x-user-permissions', JSON.stringify(payload.permissions || []))
 
     return NextResponse.next({
       request: {

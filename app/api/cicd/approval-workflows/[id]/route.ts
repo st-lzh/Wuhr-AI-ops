@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '../../../../../lib/auth/apiHelpers-new'
 import { getPrismaClient } from '../../../../../lib/config/database'
 import { z } from 'zod'
+import { canWriteTeamAssets } from '../../../../../lib/auth/teamAccess'
 
 // 审批工作流更新验证schema
 const UpdateApprovalWorkflowSchema = z.object({
@@ -60,15 +61,13 @@ export async function GET(
       return authResult.response
     }
 
-    const { user } = authResult
     const workflowId = params.id
     const prisma = await getPrismaClient()
 
     // 查询工作流详情
     const workflow = await prisma.approvalWorkflow.findFirst({
       where: {
-        id: workflowId,
-        userId: user.id
+        id: workflowId
       },
       include: {
         project: {
@@ -153,6 +152,9 @@ export async function PUT(
     }
 
     const { user } = authResult
+    if (!canWriteTeamAssets(user, 'cicd:write')) {
+      return NextResponse.json({ success: false, error: '没有审批工作流写入权限' }, { status: 403 })
+    }
     const workflowId = params.id
     const body = await request.json()
 
@@ -169,11 +171,10 @@ export async function PUT(
     const data = validationResult.data
     const prisma = await getPrismaClient()
 
-    // 验证工作流是否存在且属于当前用户
+    // 审批工作流是团队共享资产，写权限在入口统一校验。
     const existingWorkflow = await prisma.approvalWorkflow.findFirst({
       where: {
-        id: workflowId,
-        userId: user.id
+        id: workflowId
       }
     })
 
@@ -211,7 +212,6 @@ export async function PUT(
     if (data.isDefault === true) {
       await prisma.approvalWorkflow.updateMany({
         where: {
-          userId: user.id,
           environment: existingWorkflow.environment,
           projectId: existingWorkflow.projectId,
           isDefault: true,
@@ -271,14 +271,16 @@ export async function DELETE(
     }
 
     const { user } = authResult
+    if (!canWriteTeamAssets(user, 'cicd:write')) {
+      return NextResponse.json({ success: false, error: '没有审批工作流写入权限' }, { status: 403 })
+    }
     const workflowId = params.id
     const prisma = await getPrismaClient()
 
-    // 验证工作流是否存在且属于当前用户
+    // 审批工作流是团队共享资产，写权限在入口统一校验。
     const existingWorkflow = await prisma.approvalWorkflow.findFirst({
       where: {
-        id: workflowId,
-        userId: user.id
+        id: workflowId
       }
     })
 

@@ -93,91 +93,27 @@ export function addProjectLog(
   })
 }
 
-// 模拟项目创建过程的日志记录
+// 项目创建成功后写入持久化审计日志，不伪造并不存在的中间执行阶段。
 export async function recordProjectCreationLogs(
   projectId: string, 
   userId: string, 
   projectData: any
 ): Promise<void> {
-  try {
-    // 开始创建
-    addProjectLog(projectId, 'info', 'project_create', '开始创建项目...', { 
-      step: 'start',
-      userId 
-    })
-    
-    await new Promise(resolve => setTimeout(resolve, 500))
-    
-    // 验证配置
-    addProjectLog(projectId, 'info', 'validation', '验证项目配置...', { 
-      step: 'validation',
-      name: projectData.name,
-      environment: projectData.environment
-    })
-    
-    await new Promise(resolve => setTimeout(resolve, 800))
-    
-    // Git仓库检查
-    if (projectData.repositoryUrl) {
-      addProjectLog(projectId, 'info', 'git_validation', '检查Git仓库连接...', { 
-        step: 'git_check',
-        repository: projectData.repositoryUrl
-      })
-      
-      await new Promise(resolve => setTimeout(resolve, 1200))
-      
-      addProjectLog(projectId, 'success', 'git_validation', 'Git仓库连接成功', { 
-        step: 'git_check',
-        repository: projectData.repositoryUrl
-      })
+  const { getPrismaClient } = await import('../config/database')
+  const prisma = await getPrismaClient()
+  await prisma.systemLog.create({
+    data: {
+      level: 'info',
+      category: 'cicd_project',
+      message: `CI/CD 项目「${projectData.name}」创建成功`,
+      source: 'project-api',
+      userId,
+      details: {
+        projectId,
+        environment: projectData.environment,
+        repositoryType: projectData.repositoryType,
+        hasBuildScript: Boolean(projectData.buildScript)
+      }
     }
-    
-    await new Promise(resolve => setTimeout(resolve, 600))
-    
-    // 构建脚本配置
-    if (projectData.buildScript) {
-      addProjectLog(projectId, 'info', 'build_config', '配置构建脚本...', { 
-        step: 'build_setup',
-        hasScript: true
-      })
-      
-      await new Promise(resolve => setTimeout(resolve, 400))
-      
-      addProjectLog(projectId, 'success', 'build_config', '构建脚本配置完成', { 
-        step: 'build_setup',
-        hasScript: true
-      })
-    }
-    
-    await new Promise(resolve => setTimeout(resolve, 300))
-    
-    // 部署脚本配置
-    if (projectData.deployScript) {
-      addProjectLog(projectId, 'info', 'deploy_config', '配置部署脚本...', { 
-        step: 'deploy_setup',
-        hasScript: true
-      })
-      
-      await new Promise(resolve => setTimeout(resolve, 500))
-      
-      addProjectLog(projectId, 'success', 'deploy_config', '部署脚本配置完成', { 
-        step: 'deploy_setup',
-        hasScript: true
-      })
-    }
-    
-    await new Promise(resolve => setTimeout(resolve, 400))
-    
-    // 完成创建
-    addProjectLog(projectId, 'success', 'project_create', '项目创建完成！', { 
-      step: 'completed',
-      projectId: projectId
-    })
-    
-  } catch (error) {
-    addProjectLog(projectId, 'error', 'project_create', `项目创建失败: ${error}`, { 
-      step: 'error',
-      error: error instanceof Error ? error.message : String(error)
-    })
-  }
+  })
 }

@@ -12,6 +12,7 @@ export interface SSHConnectionConfig {
   password?: string
   privateKey?: string
   passphrase?: string
+  timeout?: number
 }
 
 export interface SSHConnectionResult {

@@ -1,8 +1,11 @@
 # Ubuntu基础镜像 - 完整支持原生模块
-FROM node:20-slim AS deps
+# 固定已经验收过的 Node 20 slim 镜像摘要，避免上游标签漂移，
+# 也让离线/弱网环境可以稳定复用本地 BuildKit 缓存。
+FROM node:20-slim@sha256:2cf067cfed83d5ea958367df9f966191a942351a2df77d6f0193e162b5febfc0 AS deps
 WORKDIR /app
 # 安装必要的构建工具
-RUN apt-get update && apt-get install -y \
+RUN sed -i 's|http://deb.debian.org|http://mirrors.aliyun.com|g' /etc/apt/sources.list.d/debian.sources && \
+    apt-get -o Acquire::Retries=5 update && apt-get -o Acquire::Retries=5 install -y --no-install-recommends \
     python3 \
     make \
     g++ \
@@ -13,28 +16,40 @@ RUN npm config set registry https://registry.npmmirror.com/ && \
     pnpm config set registry https://registry.npmmirror.com/ && \
     pnpm install --frozen-lockfile
 
-FROM node:20-slim AS builder
+FROM node:20-slim@sha256:2cf067cfed83d5ea958367df9f966191a942351a2df77d6f0193e162b5febfc0 AS builder
 WORKDIR /app
-RUN apt-get update && apt-get install -y \
+RUN sed -i 's|http://deb.debian.org|http://mirrors.aliyun.com|g' /etc/apt/sources.list.d/debian.sources && \
+    apt-get -o Acquire::Retries=5 update && apt-get -o Acquire::Retries=5 install -y --no-install-recommends \
     python3 \
     make \
     g++ \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* && \
+    npm install -g pnpm@10.7.1
 COPY --from=deps /app/node_modules ./node_modules
 COPY --from=deps /app/package.json ./package.json
 COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1 \
+    NODE_OPTIONS="--max-old-space-size=4096" \
     SKIP_ENV_VALIDATION=1 \
+    PRISMA_ENGINES_MIRROR="https://registry.npmmirror.com/-/binary/prisma" \
     DATABASE_URL="postgresql://placeholder:placeholder@placeholder:5432/placeholder" \
     REDIS_URL="redis://placeholder:6379"
-RUN npx pnpm prisma generate && npx pnpm build
+RUN pnpm prisma generate && pnpm build
 
-FROM node:20-slim AS runner
+FROM node:20-slim@sha256:2cf067cfed83d5ea958367df9f966191a942351a2df77d6f0193e162b5febfc0 AS runner
 WORKDIR /app
-ENV NODE_ENV=development TZ=Asia/Shanghai NEXT_TELEMETRY_DISABLED=1
+# Docker 会自动注入 HOSTNAME=<容器 ID>；Next standalone 若直接使用该值，
+# 会只监听容器自身地址，导致宿主机 3000 端口转发返回 502。
+ENV NODE_ENV=production \
+    TZ=Asia/Shanghai \
+    NEXT_TELEMETRY_DISABLED=1 \
+    HOSTNAME=0.0.0.0 \
+    PORT=3000
 # 安装运行时依赖
-RUN apt-get update && apt-get install -y \
+RUN sed -i 's|http://deb.debian.org|http://mirrors.aliyun.com|g' /etc/apt/sources.list.d/debian.sources && \
+    apt-get -o Acquire::Retries=5 update && apt-get -o Acquire::Retries=5 install -y --no-install-recommends \
     postgresql-client \
+    subversion \
     curl \
     && rm -rf /var/lib/apt/lists/* && \
     npm install -g pnpm@10.7.1 && \
@@ -43,11 +58,22 @@ RUN apt-get update && apt-get install -y \
 
 COPY --from=builder --chown=wuhr:wuhr /app/.next/standalone ./
 COPY --from=builder --chown=wuhr:wuhr /app/.next/static ./.next/static
+COPY --from=builder --chown=wuhr:wuhr /app/public ./public
 COPY --from=builder --chown=wuhr:wuhr /app/prisma ./prisma
+COPY --from=builder --chown=wuhr:wuhr /app/lib/config/db-seed.cjs ./lib/config/db-seed.cjs
+COPY --from=builder --chown=wuhr:wuhr /app/lib/generated/prisma ./lib/generated/prisma
+COPY --from=builder --chown=wuhr:wuhr /app/scripts/deployment-scheduler-worker.cjs ./scripts/deployment-scheduler-worker.cjs
 COPY --from=builder --chown=wuhr:wuhr /app/package.json ./
 COPY --from=builder --chown=wuhr:wuhr /app/node_modules ./node_modules
 
-RUN mkdir -p /app/data /app/logs /app/public && chown -R wuhr:wuhr /app
+RUN mkdir -p /app/data /app/logs /app/public && chown -R wuhr:wuhr /app/data /app/logs /app/public
+
+# Next.js 文件追踪可能把动态 import 对应的 TypeScript 原文件和 Prisma 类型声明
+# 一并带入 standalone。运行时只使用已编译 JS，发布镜像必须移除这些应用源码、
+# source map 与环境文件。
+RUN rm -f /app/lib/logging/projectLogManager.ts /app/utils/httpApiClient.ts && \
+    find /app/lib/generated/prisma -type f \( -name '*.ts' -o -name '*.tsx' -o -name '*.map' \) -delete && \
+    find /app -maxdepth 2 -type f \( -name '.env' -o -name '.env.*' \) -delete
 
 # 修复pnpm符号链接问题 - 为ssh2创建直接软链接
 RUN cd /app/node_modules && \
@@ -57,4 +83,4 @@ RUN cd /app/node_modules && \
 
 USER wuhr
 EXPOSE 3000
-CMD ["node", "server.js"]
+CMD ["sh", "-c", "npx prisma migrate deploy && node lib/config/db-seed.cjs && exec node server.js"]

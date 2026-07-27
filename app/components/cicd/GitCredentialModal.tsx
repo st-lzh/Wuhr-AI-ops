@@ -328,7 +328,7 @@ const GitCredentialModal: React.FC<GitCredentialModalProps> = ({
             </Option>
             <Option value="gitee">
               <Space>
-                <img src="/icons/gitee.svg" alt="Gitee" style={{ width: 14, height: 14 }} />
+                <SafetyOutlined />
                 Gitee
               </Space>
             </Option>

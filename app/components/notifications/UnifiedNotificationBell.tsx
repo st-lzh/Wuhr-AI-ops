@@ -23,7 +23,7 @@ interface InfoNotification {
 
 interface ApprovalNotification {
   id: string
-  type: 'user_registration' | 'cicd_approval' | 'jenkins_job'
+  type: 'user_registration' | 'cicd_approval' | 'jenkins_job' | 'network_change' | 'automation_approval'
   title: string
   message: string
   data: any
@@ -63,7 +63,8 @@ const UnifiedNotificationBell: React.FC<UnifiedNotificationBellProps> = ({
     }
     
     try {
-      const response = await fetch('/api/notifications/info?limit=10&includeRead=false')
+      // 普通信息与待审批任务分别计数，避免同一条审批通知在角标中重复出现。
+      const response = await fetch('/api/notifications/info?limit=10&includeRead=false&type=info')
       const data = await response.json()
       
       if (process.env.NODE_ENV === 'development') {
@@ -71,7 +72,7 @@ const UnifiedNotificationBell: React.FC<UnifiedNotificationBellProps> = ({
           success: data.success,
           notificationCount: data.data?.notifications?.length || 0,
           unreadCount: data.data?.unreadCount || 0,
-          requestUrl: '/api/notifications/info?limit=10&includeRead=false'
+          requestUrl: '/api/notifications/info?limit=10&includeRead=false&type=info'
         })
       }
 
@@ -112,98 +113,21 @@ const UnifiedNotificationBell: React.FC<UnifiedNotificationBellProps> = ({
     if (!user) return
 
     try {
-      // 同时获取Jenkins审批任务和信息通知中的审批通知
-      const [pendingApprovalsResponse, infoNotificationsResponse] = await Promise.all([
-        fetch('/api/notifications/pending-approvals'),
-        fetch('/api/notifications/info?limit=50&includeRead=false') // 获取所有信息通知，然后过滤
-      ])
-
+      // 待审批接口统一汇总用户注册、交付部署和 Jenkins 审批任务，
+      // 它是右上角“审批通知”的唯一数据源。
+      const pendingApprovalsResponse = await fetch('/api/notifications/pending-approvals')
       const pendingApprovalsData = await pendingApprovalsResponse.json()
-      const infoNotificationsData = await infoNotificationsResponse.json()
-
-      console.log('🔍 [审批通知] API响应详情:', {
-        pendingApprovals: {
-          success: pendingApprovalsData.success,
-          count: pendingApprovalsData.data?.notifications?.length || 0,
-          total: pendingApprovalsData.data?.total || 0
-        },
-        infoNotifications: {
-          success: infoNotificationsData.success,
-          count: infoNotificationsData.data?.notifications?.length || 0,
-          total: infoNotificationsData.data?.total || 0,
-          unreadCount: infoNotificationsData.data?.unreadCount || 0
-        }
-      })
-
-      let allApprovalNotifications: any[] = []
-      let totalUnreadCount = 0
-
-      // 添加Jenkins审批任务
-      if (pendingApprovalsData.success) {
-        allApprovalNotifications = [...(pendingApprovalsData.data.notifications || [])]
-        totalUnreadCount += pendingApprovalsData.data.total || 0
-        console.log('🔍 [审批通知] Jenkins审批任务:', allApprovalNotifications.length)
+      if (!pendingApprovalsData.success) {
+        throw new Error(pendingApprovalsData.error || '获取待审批任务失败')
       }
 
-      // 添加信息通知中的审批通知
-      if (infoNotificationsData.success) {
-        const allInfoNotifications = infoNotificationsData.data.notifications || []
-
-        console.log('🔍 [审批通知] 信息通知详情:', {
-          totalCount: allInfoNotifications.length,
-          notificationTypes: allInfoNotifications.map((n: any) => ({ id: n.id, type: n.type, title: n.title, isRead: n.isRead }))
-        })
-
-        const approvalInfoNotifications = allInfoNotifications
-          .filter((n: any) => {
-            // 检查多种审批相关的类型
-            const approvalTypes = ['deployment_approval', 'approval', 'cicd_approval']
-            const isApprovalType = approvalTypes.includes(n.type)
-            const hasApprovalAction = n.metadata && n.metadata.action === 'approval_required'
-
-            console.log(`🔍 [审批通知] 检查通知 ${n.id}:`, {
-              type: n.type,
-              isApprovalType,
-              hasApprovalAction,
-              metadata: n.metadata,
-              willInclude: isApprovalType || hasApprovalAction
-            })
-
-            return isApprovalType || hasApprovalAction
-          })
-          .map((n: any) => ({
-            ...n,
-            // 转换为审批通知格式
-            id: n.id,
-            type: n.type,
-            title: n.title,
-            message: n.content,
-            data: n.metadata || {},
-            createdAt: n.createdAt,
-            canApprove: true // 设置为可审批
-          }))
-
-        console.log('🔍 [审批通知] 过滤结果:', {
-          totalNotifications: allInfoNotifications.length,
-          approvalNotifications: approvalInfoNotifications.length,
-          approvalTypes: approvalInfoNotifications.map((n: any) => n.type),
-          approvalTitles: approvalInfoNotifications.map((n: any) => n.title)
-        })
-
-        allApprovalNotifications = [...allApprovalNotifications, ...approvalInfoNotifications]
-        totalUnreadCount += approvalInfoNotifications.length
-      }
-
-      // 去重（基于ID）
-      const uniqueNotifications = allApprovalNotifications.filter((notification, index, self) =>
-        index === self.findIndex(n => n.id === notification.id)
+      const notifications = pendingApprovalsData.data?.notifications || []
+      notifications.sort((a: ApprovalNotification, b: ApprovalNotification) =>
+        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
       )
 
-      // 按时间排序
-      uniqueNotifications.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-
-      setApprovalNotifications(uniqueNotifications.slice(0, 10)) // 限制显示数量
-      setApprovalUnreadCount(totalUnreadCount)
+      setApprovalNotifications(notifications.slice(0, 10))
+      setApprovalUnreadCount(pendingApprovalsData.data?.total ?? notifications.length)
 
     } catch (error) {
       console.error('获取审批通知失败:', error)
@@ -267,6 +191,18 @@ const UnifiedNotificationBell: React.FC<UnifiedNotificationBellProps> = ({
   // 处理审批操作
   const handleApprovalAction = async (notification: ApprovalNotification, action: 'approve' | 'reject', comment?: string) => {
     try {
+      if (notification.type === 'network_change') {
+        const response = await fetch(`/api/network/changes/${notification.data.changeId}/${action}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ reason: comment || `在通知中心${action === 'approve' ? '批准' : '拒绝'}` }),
+        })
+        const data = await response.json()
+        if (!response.ok || !data.success) throw new Error(data.error || '网络变更审批失败')
+        message.success(`网络变更已${action === 'approve' ? '批准' : '拒绝'}`)
+        await fetchApprovalNotifications()
+        return
+      }
       // 确定正确的通知ID格式
       let notificationId = notification.id
 
@@ -348,11 +284,9 @@ const UnifiedNotificationBell: React.FC<UnifiedNotificationBellProps> = ({
       // 标记为已读
       if (!notification.isRead) {
         await markInfoNotificationAsRead(notification.id)
+      } else {
+        setInfoNotifications(prev => prev.filter(n => n.id !== notification.id))
       }
-
-      // 从列表中移除
-      setInfoNotifications(prev => prev.filter(n => n.id !== notification.id))
-      setInfoUnreadCount(prev => Math.max(0, prev - 1))
 
       message.success('通知已忽略')
     } catch (error) {
@@ -390,6 +324,8 @@ const UnifiedNotificationBell: React.FC<UnifiedNotificationBellProps> = ({
       'jenkins_complete': '🎉',
       'user_registration': '👤',
       'cicd_approval': '🔄',
+      'network_change': '🌐',
+      'automation_approval': '⚙️',
       'system_info': 'ℹ️',
       'system_warning': '⚠️',
       'system_error': '🚨'
@@ -424,8 +360,18 @@ const UnifiedNotificationBell: React.FC<UnifiedNotificationBellProps> = ({
         if (process.env.NODE_ENV === 'development') {
           console.log('📬 [统一通知中心] 收到信息通知:', data.data.title)
         }
-        setInfoNotifications(prev => [data.data, ...prev.slice(0, 9)])
-        setInfoUnreadCount(prev => prev + 1)
+        const isApprovalNotification =
+          data.data?.metadata?.isApprovalNotification === true ||
+          data.data?.metadata?.action === 'approval_required' ||
+          (typeof data.data?.type === 'string' && data.data.type.includes('approval'))
+
+        if (isApprovalNotification) {
+          // 审批记录已经持久化，重新读取待审批接口，保证角标与可操作任务一致。
+          fetchApprovalNotifications()
+        } else {
+          setInfoNotifications(prev => [data.data, ...prev.slice(0, 9)])
+          setInfoUnreadCount(prev => prev + 1)
+        }
       } else if (data.type === 'approval_update') {
         if (process.env.NODE_ENV === 'development') {
           console.log('📬 [统一通知中心] 收到审批更新通知，刷新审批数据')
@@ -473,12 +419,12 @@ const UnifiedNotificationBell: React.FC<UnifiedNotificationBellProps> = ({
     }
   }, [user])
 
-  // 初始加载通知 - 仅在用户登录和下拉框打开时加载
+  // 登录后立即加载角标；下拉框打开时再强制刷新详情。
   useEffect(() => {
-    if (user && dropdownVisible) {
-      fetchAllNotifications()
+    if (user) {
+      fetchAllNotifications(true)
     }
-  }, [user, dropdownVisible])
+  }, [user])
 
   // 添加点击时刷新通知数据
   const handleDropdownVisibleChange = (visible: boolean) => {

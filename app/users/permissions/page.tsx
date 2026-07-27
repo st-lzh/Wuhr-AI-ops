@@ -31,8 +31,10 @@ import {
   SettingOutlined,
   ReloadOutlined,
   EyeOutlined,
-  AppstoreOutlined
+  AppstoreOutlined,
+  SafetyCertificateOutlined
 } from '@ant-design/icons'
+import Link from 'next/link'
 import MainLayout from '../../components/layout/MainLayout'
 import { PermissionGuard, PermissionButton } from '../../components/auth/PermissionGuard'
 import { usePermissions } from '../../hooks/usePermissions'
@@ -953,13 +955,16 @@ export default function PermissionsPage() {
       <div className="flex justify-between items-center">
         <div>
           <Title level={2} className="!mb-2">
-            权限管理
+            角色权限
           </Title>
           <Text type="secondary">
-            管理系统权限和用户角色分配
+            统一管理权限字典、用户授权和权限组；固定职责角色在角色模板中维护
           </Text>
         </div>
         <Space>
+          <Link href="/admin/roles">
+            <Button icon={<SafetyCertificateOutlined />}>角色模板</Button>
+          </Link>
           {systemStatus && !systemStatus.isInitialized && (
             <PermissionButton
               type="primary"

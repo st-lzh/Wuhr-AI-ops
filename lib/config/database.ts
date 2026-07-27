@@ -3,6 +3,7 @@ import { PrismaClient } from '../generated/prisma';
 // 简化的数据库配置
 const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined;
+  prismaShutdownHooksRegistered: boolean | undefined;
 };
 
 export const prisma = globalForPrisma.prisma ?? 
@@ -11,9 +12,8 @@ export const prisma = globalForPrisma.prisma ??
     errorFormat: 'minimal'
   });
 
-if (process.env.NODE_ENV !== 'production') {
-  globalForPrisma.prisma = prisma;
-}
+// Next.js 会把不同 API route 编译为独立模块；生产环境同样必须复用连接池。
+globalForPrisma.prisma = prisma;
 
 // 简化的获取客户端函数
 export const getPrismaClient = async (): Promise<PrismaClient> => {
@@ -38,17 +38,15 @@ export const cleanupDatabaseConnections = async (): Promise<void> => {
   }
 };
 
-// 进程退出时清理
-process.on('beforeExit', () => {
-  void prisma.$disconnect();
-});
+// HMR 和多个 route bundle 只能注册一组退出钩子，否则会触发
+// MaxListenersExceededWarning。使用 once，交由宿主进程决定最终退出时机。
+if (!globalForPrisma.prismaShutdownHooksRegistered) {
+  const disconnect = () => {
+    void prisma.$disconnect();
+  };
 
-process.on('SIGINT', () => {
-  void prisma.$disconnect();
-  process.exit(0);
-});
-
-process.on('SIGTERM', () => {
-  void prisma.$disconnect(); 
-  process.exit(0);
-});
+  process.once('beforeExit', disconnect);
+  process.once('SIGINT', disconnect);
+  process.once('SIGTERM', disconnect);
+  globalForPrisma.prismaShutdownHooksRegistered = true;
+}

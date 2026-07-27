@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '../../../../lib/auth/apiHelpers-new'
 import { getPrismaClient } from '../../../../lib/config/database'
 import { executeSSHCommand } from '../../../../lib/ssh/client'
+import { createSSHConfigFromServer } from '../../../../lib/utils/sshConnectionUtils'
 
 // 健康检查响应接口
 interface HealthCheckResponse {
@@ -89,13 +90,7 @@ export async function POST(request: NextRequest) {
     }
 
     // SSH配置
-    const sshConfig = {
-      host: server.ip,
-      port: server.port,
-      username: server.username,
-      password: server.password || undefined,
-      timeout: 30000 // 30秒超时
-    }
+    const sshConfig = { ...createSSHConfigFromServer(server), timeout: 30000 }
 
     try {
       // 1. 测试SSH连接和基本系统信息
@@ -203,20 +198,21 @@ export async function GET(request: NextRequest) {
         id: true,
         name: true,
         ip: true,
-        port: true
+        port: true,
+        username: true,
+        password: true,
+        keyPath: true
       }
     })
 
 
 
-    const results = await Promise.allSettled(
-      servers.map(async (server) => {
-        const sshConfig = {
-          host: server.ip,
-          port: server.port,
-          username: 'root', // 假设使用root用户，实际应该从数据库获取
-          timeout: 10000 // 10秒超时
-        }
+    const results: PromiseSettledResult<{ hostId: string; hostName: string; available: boolean }>[] = []
+    for (let offset = 0; offset < servers.length; offset += 8) {
+      const batch = servers.slice(offset, offset + 8)
+      const batchResults = await Promise.allSettled(
+        batch.map(async (server) => {
+        const sshConfig = { ...createSSHConfigFromServer(server), timeout: 10000 }
 
         try {
           const result = await executeSSHCommand(sshConfig, 'echo "OK" && which kubelet-wuhrai')
@@ -239,8 +235,10 @@ export async function GET(request: NextRequest) {
             available: false
           }
         }
-      })
-    )
+        })
+      )
+      results.push(...batchResults)
+    }
 
     const healthStatus = results.map((result, index) => {
       if (result.status === 'fulfilled') {

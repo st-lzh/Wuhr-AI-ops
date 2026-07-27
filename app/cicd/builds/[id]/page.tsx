@@ -23,6 +23,7 @@ import {
 } from '@ant-design/icons'
 import MainLayout from '../../../components/layout/MainLayout'
 import RealtimeStatusCard from '../../../components/cicd/RealtimeStatusCard'
+import CICDAssistantButton from '../../../components/cicd/CICDAssistantButton'
 
 const { Title, Text } = Typography
 
@@ -35,10 +36,9 @@ interface BuildDetails {
   completedAt?: string
   duration?: number
   queueId?: number
-  jenkinsBuildNumber?: number
   parameters?: any
   logs?: string
-  pipeline: {
+  pipeline?: {
     id: string
     name: string
     jenkinsJobName?: string
@@ -87,8 +87,8 @@ export default function BuildDetailPage() {
 
   // 查看日志
   const handleViewLogs = () => {
-    if (buildDetails?.jenkinsConfig && buildDetails?.jenkinsBuildNumber) {
-      const jenkinsUrl = `${buildDetails.jenkinsConfig.serverUrl}/job/${buildDetails.pipeline.jenkinsJobName}/${buildDetails.jenkinsBuildNumber}/console`
+    if (buildDetails?.jenkinsConfig && buildDetails?.buildNumber && buildDetails.pipeline?.jenkinsJobName) {
+      const jenkinsUrl = `${buildDetails.jenkinsConfig.serverUrl}/job/${buildDetails.pipeline.jenkinsJobName}/${buildDetails.buildNumber}/console`
       window.open(jenkinsUrl, '_blank')
     } else {
       message.info('Jenkins日志暂不可用')
@@ -182,6 +182,24 @@ export default function BuildDetailPage() {
             <Title level={2} className="mb-0">
               构建详情 #{buildDetails.buildNumber}
             </Title>
+            <CICDAssistantButton
+              context={{
+                kind: 'build',
+                projectId: buildDetails.pipeline?.project.id,
+                pipelineId: buildDetails.pipeline?.id,
+                buildId
+              }}
+              intent={buildDetails.status === 'failed' ? 'diagnose' : 'status'}
+            />
+            <CICDAssistantButton
+              context={{
+                kind: 'build',
+                projectId: buildDetails.pipeline?.project.id,
+                pipelineId: buildDetails.pipeline?.id,
+                buildId
+              }}
+              intent="optimize"
+            />
           </Space>
         </div>
 
@@ -221,10 +239,10 @@ export default function BuildDetailPage() {
                   </Tag>
                 </Descriptions.Item>
                 <Descriptions.Item label="流水线">
-                  {buildDetails.pipeline.name}
+                  {buildDetails.pipeline?.name || '未关联流水线'}
                 </Descriptions.Item>
                 <Descriptions.Item label="项目">
-                  {buildDetails.pipeline.project.name}
+                  {buildDetails.pipeline?.project.name || '未关联项目'}
                 </Descriptions.Item>
                 <Descriptions.Item label="开始时间">
                   {new Date(buildDetails.startedAt).toLocaleString()}
@@ -242,7 +260,7 @@ export default function BuildDetailPage() {
                   }
                 </Descriptions.Item>
                 <Descriptions.Item label="Jenkins构建号">
-                  {buildDetails.jenkinsBuildNumber || '-'}
+                  {buildDetails.buildNumber || '-'}
                 </Descriptions.Item>
               </Descriptions>
 
@@ -259,7 +277,7 @@ export default function BuildDetailPage() {
                 <Button
                   icon={<EyeOutlined />}
                   onClick={handleViewLogs}
-                  disabled={!buildDetails.jenkinsConfig || !buildDetails.jenkinsBuildNumber}
+                  disabled={!buildDetails.jenkinsConfig || !buildDetails.pipeline?.jenkinsJobName}
                 >
                   查看Jenkins日志
                 </Button>
@@ -277,7 +295,7 @@ export default function BuildDetailPage() {
         {/* 构建参数 */}
         {buildDetails.parameters && (
           <Card title="构建参数" className="mt-4" size="small">
-            <pre className="bg-gray-50 p-4 rounded text-sm overflow-auto">
+            <pre className="bg-gray-50 p-4 rounded text-sm overflow-auto dark:bg-slate-800 dark:text-slate-200">
               {JSON.stringify(buildDetails.parameters, null, 2)}
             </pre>
           </Card>

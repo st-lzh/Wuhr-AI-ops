@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '../../../../lib/auth/apiHelpers-new'
 import { getPrismaClient } from '../../../../lib/config/database'
+import { getBackendApiKey, getBackendBaseUrl } from '../../../../lib/improve/backendProxy'
 
 // 强制动态渲染
 export const dynamic = 'force-dynamic'
@@ -31,9 +32,13 @@ export async function GET(request: NextRequest) {
 
     const user = authResult.user
 
+    // 只向真正有权处理注册审批的用户返回任务，避免普通成员出现无法操作的角标。
+    const canApproveUserRegistrations =
+      user.role === 'admin' || user.permissions?.includes('admin:users')
+
     // 获取待审批的用户注册
     const prisma = await getPrismaClient()
-    const pendingUsers = await prisma.userRegistration.findMany({
+    const pendingUsers = canApproveUserRegistrations ? await prisma.userRegistration.findMany({
       where: {
         status: 'PENDING'
       },
@@ -49,11 +54,11 @@ export async function GET(request: NextRequest) {
       orderBy: {
         submittedAt: 'asc'
       }
-    })
+    }) : []
 
     // 获取待审批的CI/CD任务（如果用户有权限）
     let pendingCICDApprovals: any[] = []
-    if (user.permissions.includes('cicd:read') || user.role === 'admin' || user.role === 'manager') {
+    if (user.permissions.includes('cicd:write') || user.role === 'admin' || user.role === 'manager') {
       try {
         const prisma = await getPrismaClient()
         pendingCICDApprovals = await prisma.deploymentApproval.findMany({
@@ -154,6 +159,33 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    // 获取网络设备变更审批。网络变更保存在 v1 后端，前端只使用服务端 API key 读取。
+    let pendingNetworkChanges: any[] = []
+    if (user.permissions.includes('network:write') || user.role === 'admin' || user.role === 'manager') {
+      try {
+        const key = getBackendApiKey()
+        if (key) {
+          const response = await fetch(`${getBackendBaseUrl().replace(/\/$/, '')}/api/network/changes`, {
+            headers: { 'X-API-Key': key, 'Accept': 'application/json' },
+            cache: 'no-store',
+          })
+          if (response.ok) {
+            const payload = await response.json()
+            pendingNetworkChanges = (payload.data || []).filter((change: any) => change.status === 'pending')
+          }
+        }
+      } catch (error) {
+        console.warn('获取网络变更审批失败:', error)
+      }
+    }
+
+    const canApproveAutomation = user.role === 'admin' || user.permissions.includes('approvals:write')
+    const pendingAutomationRuns = canApproveAutomation ? await prisma.automationRun.findMany({
+      where: { status: 'awaiting_approval' },
+      orderBy: { createdAt: 'asc' },
+      take: 20
+    }) : []
+
     // 构建通知数据
     const notifications = []
 
@@ -174,7 +206,7 @@ export async function GET(request: NextRequest) {
           createdAt: registration.submittedAt
         },
         createdAt: registration.submittedAt,
-        canApprove: user.role === 'admin' || user.permissions?.includes('admin:users')
+        canApprove: canApproveUserRegistrations
       })
     }
 
@@ -231,6 +263,43 @@ export async function GET(request: NextRequest) {
       })
     }
 
+    for (const change of pendingNetworkChanges) {
+      notifications.push({
+        id: `network_change_${change.id}`,
+        type: 'network_change',
+        title: '网络变更审批',
+        message: `${change.title || change.intent}，风险 ${change.riskLevel}，涉及 ${change.targets?.length || 0} 台设备`,
+        data: {
+          changeId: change.id,
+          riskLevel: change.riskLevel,
+          riskReasons: change.riskReasons,
+          targetCount: change.targets?.length || 0,
+          requesterName: change.requestedBy,
+          actionUrl: `/network/changes?changeId=${change.id}`,
+        },
+        createdAt: change.createdAt,
+        canApprove: true,
+      })
+    }
+
+    for (const run of pendingAutomationRuns) {
+      notifications.push({
+        id: `automation_run_${run.id}`,
+        type: 'automation_approval',
+        title: '自动化作业审批',
+        message: `${run.jobName}（${run.riskLevel}）等待执行审批`,
+        data: {
+          runId: run.id,
+          requesterName: run.requestedByName,
+          riskLevel: run.riskLevel,
+          actionUrl: '/operations/runs'
+        },
+        actionUrl: '/operations/runs',
+        createdAt: run.createdAt,
+        canApprove: false
+      })
+    }
+
     // 按创建时间排序
     notifications.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
 
@@ -242,7 +311,9 @@ export async function GET(request: NextRequest) {
         counts: {
           user: pendingUsers.length,
           cicd: pendingCICDApprovals.length,
-          jenkins: pendingJenkinsApprovals.length
+          jenkins: pendingJenkinsApprovals.length,
+          network: pendingNetworkChanges.length,
+          automation: pendingAutomationRuns.length
         }
       }
     })

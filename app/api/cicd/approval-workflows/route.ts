@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '../../../../lib/auth/apiHelpers-new'
 import { getPrismaClient } from '../../../../lib/config/database'
 import { z } from 'zod'
+import { canWriteTeamAssets } from '../../../../lib/auth/teamAccess'
 
 // 审批工作流验证schema
 const ApprovalWorkflowSchema = z.object({
@@ -69,9 +70,7 @@ export async function GET(request: NextRequest) {
     const prisma = await getPrismaClient()
 
     // 构建查询条件
-    const where: any = {
-      userId: user.id
-    }
+    const where: any = {}
 
     if (environment) {
       where.environment = environment
@@ -143,6 +142,9 @@ export async function POST(request: NextRequest) {
     }
 
     const { user } = authResult
+    if (!canWriteTeamAssets(user, 'cicd:write')) {
+      return NextResponse.json({ success: false, error: '没有审批工作流写入权限' }, { status: 403 })
+    }
     const body = await request.json()
 
     // 验证输入数据
@@ -164,8 +166,7 @@ export async function POST(request: NextRequest) {
     if (data.projectId) {
       const project = await prisma.cICDProject.findFirst({
         where: {
-          id: data.projectId,
-          userId: user.id
+          id: data.projectId
         }
       })
 
@@ -202,7 +203,6 @@ export async function POST(request: NextRequest) {
     if (data.isDefault) {
       await prisma.approvalWorkflow.updateMany({
         where: {
-          userId: user.id,
           environment: data.environment,
           projectId: data.projectId || null,
           isDefault: true

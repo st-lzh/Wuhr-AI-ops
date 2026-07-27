@@ -1,5 +1,6 @@
 // Jenkins任务执行服务
 import { getPrismaClient } from '../config/database'
+import { revealSecret } from '../crypto/encryption'
 
 // 执行Jenkins任务的函数
 export async function executeJenkinsJob(execution: any) {
@@ -17,7 +18,7 @@ export async function executeJenkinsJob(execution: any) {
 
     // 构建Jenkins API URL
     const baseUrl = config.serverUrl.replace(/\/$/, '')
-    const auth = Buffer.from(`${config.username}:${config.apiToken}`).toString('base64')
+    const auth = Buffer.from(`${config.username}:${revealSecret(config.apiToken)}`).toString('base64')
     
     let apiUrl: string
     let method: string = 'POST'

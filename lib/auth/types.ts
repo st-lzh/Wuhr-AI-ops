@@ -5,6 +5,7 @@ export interface AuthTokens {
   refreshToken: string     // 刷新令牌（7天有效）
   expiresAt: number       // 访问令牌过期时间戳
   refreshExpiresAt: number // 刷新令牌过期时间戳
+  refreshTokenId: string   // 与数据库会话绑定的令牌 ID
 }
 
 export interface User {
@@ -159,4 +160,4 @@ export const DEFAULT_ROLES: Role[] = [
       { resource: 'config', actions: ['read'] },
     ]
   }
-] 
+]
