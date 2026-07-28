@@ -198,7 +198,7 @@ EOF
   )
 
   rm -f "$archive" "$archive.sha256"
-  tar -C "$OUTPUT_DIR/.stage" -czf "$archive" "$release_name"
+  COPYFILE_DISABLE=1 tar --no-xattrs -C "$OUTPUT_DIR/.stage" -czf "$archive" "$release_name"
   (
     cd "$OUTPUT_DIR"
     checksum_file "$release_name.tar.gz" > "$release_name.tar.gz.sha256"
