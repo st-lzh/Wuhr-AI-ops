@@ -1,6 +1,6 @@
 # Wuhr AI Ops 安装与升级手册
 
-本文面向拿到正式发布包的系统管理员。发布包只包含前端运行镜像、Wuhr Agent 编译后二进制、安装脚本和校验文件，不包含前后端源码。
+本文面向平台与 Agent 系统管理员。公开 Release 只包含 Wuhr Agent 编译后二进制、安装脚本和校验文件，不包含后端源码，也不包含前端 Docker 镜像。
 
 ## 1. 部署结构
 
@@ -37,23 +37,32 @@ Agent 支持：
 - GitHub：`https://github.com/st-lzh/Wuhr-AI-ops/releases/tag/v1.0.0`
 - 国内镜像：`http://106.12.150.207/download/`
 
-完整平台请选择 `wuhr-ai-ops-1.0.0.tar.gz`；仅安装 Agent 请选择
-`wuhr-agent-1.0.0.tar.gz`。两个压缩包都必须同时下载对应的 `.sha256`
-文件进行校验。
+Agent 按操作系统和 CPU 架构分为四个包：
+
+- `wuhr-agent-1.0.0-linux-amd64.tar.gz`
+- `wuhr-agent-1.0.0-linux-arm64.tar.gz`
+- `wuhr-agent-1.0.0-darwin-amd64.tar.gz`
+- `wuhr-agent-1.0.0-darwin-arm64.tar.gz`
+
+推荐直接使用在线安装器。它先访问 GitHub，失败或校验不通过时自动切换国内镜像：
 
 ```bash
-sha256sum -c wuhr-ai-ops-1.0.0.tar.gz.sha256
-tar -xzf wuhr-ai-ops-1.0.0.tar.gz
-cd wuhr-ai-ops-1.0.0
+tmp=$(mktemp) && trap 'rm -f "$tmp"' 0 HUP INT TERM \
+  && (curl -fsSL 'https://github.com/st-lzh/Wuhr-AI-ops/releases/download/v1.0.0/install-agent.sh' -o "$tmp" \
+  || curl -fsSL 'http://106.12.150.207/download/install-agent.sh' -o "$tmp") \
+  && sudo sh "$tmp" --port=2081
 ```
 
-macOS 可使用：
+手动下载时必须同时下载对应的 `.sha256` 文件。例如：
 
 ```bash
-shasum -a 256 -c wuhr-ai-ops-1.0.0.tar.gz.sha256
+sha256sum -c wuhr-agent-1.0.0-linux-amd64.tar.gz.sha256
+tar -xzf wuhr-agent-1.0.0-linux-amd64.tar.gz
+cd wuhr-agent-1.0.0-linux-amd64
+sudo ./install-agent.sh --port=2081
 ```
 
-不要安装校验失败的文件。
+macOS 使用 `shasum -a 256 -c 文件名.sha256`。不要安装校验失败的文件。
 
 ## 4. 一键同机安装
 

@@ -21,6 +21,11 @@ import {
 import { assessAutomationRisk, nextCronDate } from '../../lib/operations/automationService'
 import { chunkRunbook, hashRunbookContent } from '../../lib/knowledge/runbookService'
 import { checkDockerRegistry } from '../../lib/artifacts/registryClient'
+import {
+  AGENT_INSTALLER_MIRROR_URL,
+  AGENT_INSTALLER_PRIMARY_URL,
+  buildAgentInstallCommand
+} from '../../lib/agentRelease'
 
 test('环境变量写入加密、读取遮罩并可在服务端还原', () => {
   const protectedValue = protectEnvironment({ API_TOKEN: 'secret-token', EMPTY: '' })
@@ -79,6 +84,17 @@ test('统一路由权限策略不会再让根路径通配所有模块', () => {
   assert.equal(grantsPermission('viewer', ['servers:read'], 'servers:write'), false)
   assert.equal(grantsPermission('manager', ['servers:all'], 'servers:write'), true)
   assert.equal(grantsPermission('admin', [], 'permissions:write'), true)
+})
+
+test('Agent 安装命令先用 GitHub、再回退国内镜像且拒绝非法端口', () => {
+  const command = buildAgentInstallCommand(2081)
+
+  assert.ok(command.indexOf(AGENT_INSTALLER_PRIMARY_URL) < command.indexOf(AGENT_INSTALLER_MIRROR_URL))
+  assert.match(command, /curl -fsSL/)
+  assert.match(command, /sh "\$tmp" --port=2081/)
+  assert.doesNotMatch(command, /\|\s*(ba)?sh/)
+  assert.throws(() => buildAgentInstallCommand(0), /1-65535/)
+  assert.throws(() => buildAgentInstallCommand(65536), /1-65535/)
 })
 
 test('作业风险识别强制覆盖破坏性命令，Cron 使用上海时区', () => {

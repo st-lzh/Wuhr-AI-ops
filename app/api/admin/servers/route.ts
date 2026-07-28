@@ -7,6 +7,7 @@ import { withLeakDetection } from '../../../../lib/database/leakDetector'
 import { ServerStatus } from '../../../../lib/generated/prisma'
 import { protectSecret, revealSecret } from '../../../../lib/crypto/encryption'
 import { canWriteTeamAssets } from '../../../../lib/auth/teamAccess'
+import { buildAgentInstallCommand } from '../../../../lib/agentRelease'
 
 // 响应辅助函数
 function successResponse(data: any) {
@@ -304,7 +305,7 @@ export async function POST(request: NextRequest) {
         await sshClient.connect()
 
         // 下载并执行安装脚本
-        const installCommand = `curl -fsSL https://www.wuhrai.com/download/v2.0.0/install-kubelet-wuhrai.sh | bash -s -- --port=2081`
+        const installCommand = buildAgentInstallCommand(2081)
 
         console.log('📥 执行安装命令:', installCommand)
         const installResult = await sshClient.executeCommand(installCommand)

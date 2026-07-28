@@ -34,37 +34,57 @@
   <main>
     <div class="eyebrow">China Download Mirror</div>
     <h1>Wuhr AI Ops v1.0.0</h1>
-    <p class="lead">国内下载镜像支持断点续传。完整平台包包含双架构离线 Docker 镜像和四平台 Agent；Agent 独立包只包含编译后二进制与系统服务安装器，不包含后端源码。</p>
+    <p class="lead">本镜像只提供编译后的 Wuhr Agent 后端包，不包含前端 Docker 镜像或后端源码。安装器会自动识别操作系统和 CPU 架构，并对下载内容执行 SHA-256 校验。</p>
 
     <div class="grid">
       <article class="card">
-        <h2>完整平台安装包</h2>
-        <div class="meta">约 967 MB · Linux amd64 / arm64</div>
-        <p>前端平台、PostgreSQL、Redis 离线镜像，Linux/macOS 四架构 Agent，以及一键安装、诊断和卸载脚本。</p>
+        <h2>Linux amd64</h2>
+        <div class="meta">Ubuntu / Debian / RHEL / CentOS / Rocky / Alpine</div>
+        <p>适用于 Intel、AMD 的 64 位 Linux，支持 systemd、OpenRC 和 SysV init。</p>
         <div class="actions">
-          <a class="button" href="./wuhr-ai-ops-1.0.0.tar.gz">下载平台包</a>
-          <a class="button secondary" href="./wuhr-ai-ops-1.0.0.tar.gz.sha256">SHA-256</a>
+          <a class="button" href="./wuhr-agent-1.0.0-linux-amd64.tar.gz">下载后端包</a>
+          <a class="button secondary" href="./wuhr-agent-1.0.0-linux-amd64.tar.gz.sha256">SHA-256</a>
         </div>
       </article>
 
       <article class="card">
-        <h2>Agent 独立安装包</h2>
-        <div class="meta">约 44 MB · Linux / macOS · amd64 / arm64</div>
-        <p>仅含编译后的 Agent、systemd/OpenRC/SysV/launchd 安装器、诊断和卸载脚本，适合受管主机单独安装。</p>
+        <h2>Linux arm64</h2>
+        <div class="meta">ARM 服务器 / 云主机</div>
+        <p>适用于 aarch64、arm64 的 64 位 Linux，支持 systemd、OpenRC 和 SysV init。</p>
         <div class="actions">
-          <a class="button" href="./wuhr-agent-1.0.0.tar.gz">下载 Agent 包</a>
-          <a class="button secondary" href="./wuhr-agent-1.0.0.tar.gz.sha256">SHA-256</a>
+          <a class="button" href="./wuhr-agent-1.0.0-linux-arm64.tar.gz">下载后端包</a>
+          <a class="button secondary" href="./wuhr-agent-1.0.0-linux-arm64.tar.gz.sha256">SHA-256</a>
+        </div>
+      </article>
+
+      <article class="card">
+        <h2>macOS amd64</h2>
+        <div class="meta">Intel Mac</div>
+        <p>适用于 Intel 处理器的 macOS，通过 launchd 注册并管理 Agent 系统服务。</p>
+        <div class="actions">
+          <a class="button" href="./wuhr-agent-1.0.0-darwin-amd64.tar.gz">下载后端包</a>
+          <a class="button secondary" href="./wuhr-agent-1.0.0-darwin-amd64.tar.gz.sha256">SHA-256</a>
+        </div>
+      </article>
+
+      <article class="card">
+        <h2>macOS arm64</h2>
+        <div class="meta">Apple Silicon</div>
+        <p>适用于 Apple M 系列芯片的 macOS，通过 launchd 注册并管理 Agent 系统服务。</p>
+        <div class="actions">
+          <a class="button" href="./wuhr-agent-1.0.0-darwin-arm64.tar.gz">下载后端包</a>
+          <a class="button secondary" href="./wuhr-agent-1.0.0-darwin-arm64.tar.gz.sha256">SHA-256</a>
         </div>
       </article>
     </div>
 
     <section class="note">
-      <h2>安装前先校验</h2>
-      <p>完整平台默认监听 <code>3000</code>，Agent 默认监听 <code>2081</code>。校验失败时不要解压或安装。</p>
-      <pre>sha256sum -c wuhr-ai-ops-1.0.0.tar.gz.sha256
-tar -xzf wuhr-ai-ops-1.0.0.tar.gz
-cd wuhr-ai-ops-1.0.0
-sudo ./install.sh all</pre>
+      <h2>自动识别并安装</h2>
+      <p>Agent 默认监听 <code>2081</code>。下列命令先获取 GitHub 安装器，GitHub 不可用时改用本镜像；安装器下载后端包时也会执行相同的回退和校验逻辑。</p>
+      <pre>tmp=$(mktemp) &amp;&amp; trap 'rm -f "$tmp"' 0 HUP INT TERM \
+  &amp;&amp; (curl -fsSL 'https://github.com/st-lzh/Wuhr-AI-ops/releases/download/v1.0.0/install-agent.sh' -o "$tmp" \
+  || curl -fsSL 'http://106.12.150.207/download/install-agent.sh' -o "$tmp") \
+  &amp;&amp; sudo sh "$tmp" --port=2081</pre>
     </section>
 
     <footer>

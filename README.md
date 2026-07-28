@@ -83,35 +83,29 @@ flowchart LR
 
 ## 快速安装
 
-正式发布通过 GitHub Releases 提供编译包，不要求客户下载源码。
+平台前端源码保存在本仓库，后端 Agent 只通过 GitHub Releases 和国内镜像提供编译包，不上传后端源码，也不上传前端 Docker 镜像。
 
 下载地址：
 
 - [GitHub Release](https://github.com/st-lzh/Wuhr-AI-ops/releases/tag/v1.0.0)
 - [国内下载镜像](http://106.12.150.207/download/)
 
+在受管服务器安装后端 Agent：
+
 ```bash
-sha256sum -c wuhr-ai-ops-1.0.0.tar.gz.sha256
-tar -xzf wuhr-ai-ops-1.0.0.tar.gz
-cd wuhr-ai-ops-1.0.0
-sudo ./install.sh all
+tmp=$(mktemp) && trap 'rm -f "$tmp"' 0 HUP INT TERM \
+  && (curl -fsSL 'https://github.com/st-lzh/Wuhr-AI-ops/releases/download/v1.0.0/install-agent.sh' -o "$tmp" \
+  || curl -fsSL 'http://106.12.150.207/download/install-agent.sh' -o "$tmp") \
+  && sudo sh "$tmp" --port=2081
 ```
 
-安装完成后访问 `http://服务器地址:3000`。初始随机密码保存在服务器 `/opt/wuhr-ai-ops/initial-credentials.txt`，首次登录后必须修改密码并删除该文件。
+下载器会识别 Linux/macOS 与 amd64/arm64，优先从 GitHub 下载对应后端包；GitHub 不可用、校验失败或超时时自动改用国内镜像。
 
 平台与 Agent 分机部署、TLS、防火墙、升级、诊断和卸载说明见[安装与升级手册](./docs/INSTALLATION.md)。
 
 ## 发布物与源码边界
 
-客户发布包只包含：
-
-- 前端平台 Docker 镜像归档
-- PostgreSQL 与 Redis 运行镜像
-- Linux/macOS、amd64/arm64 的 Wuhr Agent 二进制
-- 一键安装、诊断、升级回滚和卸载脚本
-- `SHA256SUMS`、发布清单与使用文档
-
-发布构建器会拒绝把 `.go`、`.ts`、`.tsx`、source map、`.env`、私钥或 `.git` 放入客户包。Docker 镜像只保留 Next.js 编译运行产物、数据库迁移、初始化数据与运行依赖。
+公开 Release 只包含 Linux/macOS、amd64/arm64 的 Wuhr Agent 分架构包、安装器与 SHA-256 校验文件。发布构建器会拒绝把 `.go`、`.ts`、`.tsx`、source map、`.env`、私钥或 `.git` 放入后端交付包。
 
 ## 浏览器与系统要求
 
