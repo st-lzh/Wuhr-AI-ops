@@ -4,9 +4,7 @@ import { getPrismaClient } from '../../../../../lib/config/database'
 import {
   createSSHConfigFromServer
 } from '../../../../../lib/utils/sshConnectionUtils'
-
-// kubelet-wuhrai 安装脚本URL
-const INSTALL_SCRIPT_URL = 'https://www.wuhrai.com/download/v2.0.0/install-kubelet-wuhrai.sh'
+import { buildAgentInstallCommand } from '../../../../../lib/agentRelease'
 
 export async function POST(
   request: NextRequest,
@@ -132,7 +130,7 @@ export async function POST(
         installLogs.push('📥 开始下载并执行安装脚本...')
 
         // 构建安装命令
-        const installCommand = `curl -fsSL ${INSTALL_SCRIPT_URL} | bash -s -- --port=${kubeletPort} 2>&1`
+        const installCommand = `${buildAgentInstallCommand(kubeletPort)} 2>&1`
 
         installLogs.push(`执行: ${installCommand}`)
 

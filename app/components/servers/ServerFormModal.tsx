@@ -18,6 +18,7 @@ import { ServerInfo, ServerFormData } from '../../types/access-management'
 import ServerFormFields from './ServerFormFields'
 import ServerTagManager from './ServerTagManager'
 import ServerConnectionTest from './ServerConnectionTest'
+import { buildAgentInstallCommand } from '../../../lib/agentRelease'
 
 interface ServerFormModalProps {
   visible: boolean
@@ -220,7 +221,7 @@ const ServerFormModal: React.FC<ServerFormModalProps> = ({
               {() => {
                 const values = form.getFieldsValue()
                 const kubeletPort = values.kubeletPort || 2081
-                const installCommand = `curl -fsSL https://www.wuhrai.com/download/v2.0.0/install-kubelet-wuhrai.sh | bash -s -- --port=${kubeletPort}`
+                const installCommand = buildAgentInstallCommand(kubeletPort)
 
                 return values.ip && values.username ? (
                   <Alert

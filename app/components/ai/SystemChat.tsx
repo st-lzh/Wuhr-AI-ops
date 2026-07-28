@@ -95,6 +95,7 @@ import HostMentionInput, { ChatTargetCluster, ChatTargetDevice, ChatTargetHost, 
 import DeliveryContextPanel, { catalogToMentionOptions } from './DeliveryContextPanel'
 import type { CICDCatalog, CICDContextSelection, CICDMentionOption } from '../../types/cicd-ai'
 import { useTheme } from '../../hooks/useGlobalState'
+import { buildAgentInstallCommand } from '../../../lib/agentRelease'
 
 
 const { Text, Title } = Typography
@@ -898,7 +899,7 @@ const SystemChat: React.FC = () => {
                       或手动在服务器上执行以下命令：
                     </div>
                     <div className="p-2 bg-transparent border border-gray-600/30 rounded text-sm text-gray-400 font-mono">
-                      curl -fsSL https://www.wuhrai.com/download/v2.0.0/install-kubelet-wuhrai.sh | bash -s -- --port=2081
+                      {buildAgentInstallCommand(2081)}
                     </div>
                   </div>
                 </div>

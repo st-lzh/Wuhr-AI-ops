@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { buildAgentInstallCommand } from '../../../../../lib/agentRelease'
 import { requireAuth } from '../../../../../lib/auth/apiHelpers-new'
 import { getPrismaClient } from '../../../../../lib/config/database'
 
@@ -104,7 +105,7 @@ export async function GET(
 
         recommendations.push({
           type: 'info',
-          message: `curl -fsSL https://www.wuhrai.com/download/v2.0.0/install-kubelet-wuhrai.sh | bash -s -- --port=${kubeletPort}`
+          message: buildAgentInstallCommand(kubeletPort)
         })
       }
 
