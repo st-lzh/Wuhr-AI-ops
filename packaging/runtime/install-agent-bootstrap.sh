@@ -4,6 +4,7 @@ set -eu
 VERSION=${WUHR_AGENT_VERSION:-1.0.0}
 GITHUB_BASE=${WUHR_AGENT_GITHUB_BASE:-"https://github.com/st-lzh/Wuhr-AI-ops/releases/download/v$VERSION"}
 MIRROR_BASE=${WUHR_AGENT_MIRROR_BASE:-"http://106.12.150.207/download"}
+DOWNLOAD_TIMEOUT=${WUHR_AGENT_DOWNLOAD_TIMEOUT:-30}
 TEMP_DIR=""
 
 log() {
@@ -30,6 +31,10 @@ trap cleanup 0 HUP INT TERM
 case "$VERSION" in
   ''|*[!A-Za-z0-9._-]*) die "版本号为空或含有非法字符：$VERSION" ;;
 esac
+case "$DOWNLOAD_TIMEOUT" in
+  ''|*[!0-9]*) die "下载超时必须是正整数秒数" ;;
+esac
+[ "$DOWNLOAD_TIMEOUT" -ge 1 ] || die "下载超时必须大于 0 秒"
 
 OS=$(uname -s)
 case "$OS" in
@@ -55,9 +60,12 @@ download_file() {
 
   if command -v curl >/dev/null 2>&1; then
     curl --fail --location --silent --show-error \
-      --connect-timeout 15 --retry 2 --output "$output" "$url"
+      --connect-timeout 10 --max-time "$DOWNLOAD_TIMEOUT" \
+      --retry 1 --retry-max-time "$DOWNLOAD_TIMEOUT" \
+      --output "$output" "$url"
   elif command -v wget >/dev/null 2>&1; then
-    wget --quiet --timeout=30 --tries=3 --output-document="$output" "$url"
+    wget --quiet --timeout=15 --read-timeout="$DOWNLOAD_TIMEOUT" \
+      --tries=2 --output-document="$output" "$url"
   else
     die "缺少下载工具，请先安装 curl 或 wget"
   fi
