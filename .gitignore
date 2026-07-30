@@ -20,6 +20,7 @@ node_modules
 .next/
 dist/
 build/
+.deploy/
 *.tsbuildinfo
 test-results/
 playwright-report/

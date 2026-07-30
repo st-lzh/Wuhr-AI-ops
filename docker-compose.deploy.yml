@@ -1,0 +1,145 @@
+services:
+  postgres:
+    image: postgres:15-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_NAME:?}
+      POSTGRES_USER: ${DB_USER:?}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?}
+    expose:
+      - "5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - wuhr_internal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:?} -d ${DB_NAME:?}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?}
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD:?}"]
+    expose:
+      - "6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - wuhr_internal
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:?}", "--no-auth-warning", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  app:
+    image: ${WUHR_FRONTEND_IMAGE:?}
+    pull_policy: never
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    init: true
+    env_file:
+      - ${WUHR_RUNTIME_ENV_FILE:?}
+    environment:
+      NODE_ENV: production
+      TZ: ${TZ:-Asia/Shanghai}
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      REDIS_URL: redis://:${REDIS_PASSWORD:?}@redis:6379
+      DATABASE_URL: postgresql://${DB_USER:?}:${DB_PASSWORD:?}@postgres:5432/${DB_NAME:?}?sslmode=disable&connection_limit=10&pool_timeout=20&connect_timeout=10
+      DIRECT_URL: postgresql://${DB_USER:?}:${DB_PASSWORD:?}@postgres:5432/${DB_NAME:?}?sslmode=disable&connection_limit=5&pool_timeout=20&connect_timeout=10
+      NEXT_TELEMETRY_DISABLED: "1"
+    ports:
+      - "${PLATFORM_BIND_ADDRESS:-0.0.0.0}:${PLATFORM_PORT:-3000}:3000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - platform_data:/app/data
+      - deployment_data:/app/deployments
+      - app_logs:/app/logs
+    networks:
+      - wuhr_internal
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3000/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+    stop_grace_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+        compress: "true"
+
+  deployment-scheduler:
+    image: ${WUHR_FRONTEND_IMAGE:?}
+    pull_policy: never
+    restart: unless-stopped
+    init: true
+    command: ["node", "scripts/deployment-scheduler-worker.cjs"]
+    env_file:
+      - ${WUHR_RUNTIME_ENV_FILE:?}
+    environment:
+      NODE_ENV: production
+      TZ: ${TZ:-Asia/Shanghai}
+      DATABASE_URL: postgresql://${DB_USER:?}:${DB_PASSWORD:?}@postgres:5432/${DB_NAME:?}?sslmode=disable&connection_limit=3&pool_timeout=20&connect_timeout=10
+      DIRECT_URL: postgresql://${DB_USER:?}:${DB_PASSWORD:?}@postgres:5432/${DB_NAME:?}?sslmode=disable&connection_limit=2&pool_timeout=20&connect_timeout=10
+      SCHEDULER_APP_URL: http://app:3000
+      DEPLOYMENT_SCHEDULER_INTERVAL_MS: ${DEPLOYMENT_SCHEDULER_INTERVAL_MS:-30000}
+    volumes:
+      - deployment_data:/app/deployments
+      - app_logs:/app/logs
+    networks:
+      - wuhr_internal
+    depends_on:
+      app:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    stop_grace_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+        compress: "true"
+
+volumes:
+  postgres_data:
+  redis_data:
+  platform_data:
+  deployment_data:
+  app_logs:
+
+networks:
+  wuhr_internal:
+    driver: bridge

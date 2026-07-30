@@ -26,6 +26,7 @@ import {
   AGENT_INSTALLER_PRIMARY_URL,
   buildAgentInstallCommand
 } from '../../lib/agentRelease'
+import { canAccessImproveProxy } from '../../lib/improve/backendProxy'
 
 test('环境变量写入加密、读取遮罩并可在服务端还原', () => {
   const protectedValue = protectEnvironment({ API_TOKEN: 'secret-token', EMPTY: '' })
@@ -95,6 +96,14 @@ test('Agent 安装命令先用 GitHub、再回退国内镜像且拒绝非法端�
   assert.doesNotMatch(command, /\|\s*(ba)?sh/)
   assert.throws(() => buildAgentInstallCommand(0), /1-65535/)
   assert.throws(() => buildAgentInstallCommand(65536), /1-65535/)
+})
+
+test('AI 资产代理允许管理员和显式权限，拒绝普通无权限用户', () => {
+  assert.equal(canAccessImproveProxy({ role: 'admin', permissions: ['read'] }, true), true)
+  assert.equal(canAccessImproveProxy({ role: 'viewer', permissions: ['*'] }, true), true)
+  assert.equal(canAccessImproveProxy({ role: 'viewer', permissions: ['improve:read'] }, false), true)
+  assert.equal(canAccessImproveProxy({ role: 'viewer', permissions: ['improve:read'] }, true), false)
+  assert.equal(canAccessImproveProxy({ role: 'viewer', permissions: [] }, false), false)
 })
 
 test('作业风险识别强制覆盖破坏性命令，Cron 使用上海时区', () => {

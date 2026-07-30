@@ -28,7 +28,90 @@ Agent 支持：
 
 建议配置为 4 核 CPU、8 GiB 内存和 20 GiB 可用磁盘。首次安装若 Docker 缺失，脚本会尝试通过系统软件源安装；完全离线环境应提前安装 Docker Engine 与 Compose v2。
 
-## 3. 校验发布包
+## 3. 从源码一键部署整个平台
+
+公开仓库提供前端源码，后端 Agent 使用编译包。推荐在 Linux 服务器执行：
+
+| 部署场景 | 命令 | 说明 |
+| --- | --- | --- |
+| Linux 单机完整安装 | `sudo ./deploy.sh all` | Agent 安装为宿主机系统服务；平台组件使用 Docker |
+| 平台连接远程 Agent | `./deploy.sh platform ...` | 只启动 Docker 平台，不在本机安装 Agent |
+| 验收现有部署 | `./deploy.sh verify` | 检查平台、数据库、Redis、调度器和 Agent |
+| 停止平台 | `./deploy.sh down` | 停止容器但保留全部具名数据卷 |
+
+### Linux 单机完整安装
+
+```bash
+git clone https://github.com/st-lzh/Wuhr-AI-ops.git
+cd Wuhr-AI-ops
+sudo ./deploy.sh all
+```
+
+`deploy.sh all` 会完成以下真实操作：
+
+1. 检查或安装 Docker Engine 与 Docker Compose v2。
+2. 从 GitHub Release 下载匹配架构的 Agent；GitHub 失败时切换国内镜像。
+3. 校验 Agent SHA-256，并注册为 systemd、OpenRC 或 SysV 系统服务。
+4. 为 Agent 与平台生成同一份 API Key。
+5. 从当前源码构建前端 Docker 镜像。
+6. 启动 PostgreSQL、Redis、前端平台和交付调度器。
+7. 执行 Prisma 数据库迁移、管理员初始化和模型厂商初始化。
+8. 从平台容器验证 Agent 地址和 API Key。
+
+安装完成后访问 `http://服务器地址:3000`。初始凭据位于：
+
+```text
+.deploy/wuhr-ai-ops/initial-credentials.txt
+```
+
+文件权限为 `600`。首次登录修改密码并安全保存 Agent Key 后，应删除初始凭据文件。
+
+### 平台连接已有远程 Agent
+
+适用于本地或单独服务器运行 Docker 平台、另一台 Linux 服务器运行 Agent：
+
+```bash
+./deploy.sh platform \
+  --agent-url http://10.0.0.20:2081 \
+  --agent-api-key-file ./agent-api-key.txt
+```
+
+也可以从已有 `.env.local` 安全读取 Agent 地址和 Key：
+
+```bash
+./deploy.sh platform --agent-env-file .env.local
+```
+
+如果当前机器已经有早期版本创建的 `wuhr-ai-ops_postgres_data` 等同名数据卷，首次改用新脚本时执行：
+
+```bash
+./deploy.sh platform \
+  --project-name wuhr-ai-ops \
+  --platform-env-file .env \
+  --agent-env-file .env.local
+```
+
+脚本会导入原数据库、Redis、JWT 和加密密钥并继续使用原数据卷，不会重置管理员密码。检测到旧 PostgreSQL 数据卷却没有提供 `--platform-env-file`，或旧文件缺少关键密钥时，脚本会在启动容器前停止，避免用随机密钥覆盖旧配置。接管成功后配置会安全保存在 `.deploy/wuhr-ai-ops/.env`，以后升级不必重复传入旧环境文件。
+
+测试环境可使用独立项目名和端口，不会和正式数据卷混用：
+
+```bash
+./deploy.sh platform \
+  --project-name wuhr-test \
+  --port 3100 \
+  --agent-env-file .env.local
+```
+
+部署完成后可重复验收或停止容器：
+
+```bash
+./deploy.sh verify --project-name wuhr-test
+./deploy.sh down --project-name wuhr-test
+```
+
+`down` 不带 `--volumes`，因此数据库、Redis、交付记录和平台数据都会保留。不要手工执行 `docker compose down -v`。
+
+## 4. 校验 Agent 发布包
 
 以 `1.0.0` 为例：
 
@@ -64,7 +147,9 @@ sudo ./install-agent.sh --port=2081
 
 macOS 使用 `shasum -a 256 -c 文件名.sha256`。不要安装校验失败的文件。
 
-## 4. 一键同机安装
+## 5. 私有离线包一键安装
+
+本节仅适用于发布负责人生成的私有完整离线包。公开 GitHub Release 按产品发布策略不包含前端 Docker 镜像，因此从公开仓库部署请使用上一节的根目录 `deploy.sh`。
 
 适合单机试用或平台与中央 Agent 部署在同一台 Linux 服务器：
 
@@ -90,7 +175,7 @@ sudo ./install.sh all
 
 该文件权限为 `600`。首次登录并安全保存凭据后，请立即修改管理员密码并删除此文件。
 
-## 5. 平台与 Agent 分开安装
+## 6. 私有离线包分开安装
 
 生产环境通常把平台和 Agent 分开部署。先在安全终端生成一份共享 API Key：
 
@@ -128,7 +213,7 @@ sudo ./install-platform.sh --admin-password-file ./admin-password.txt
 
 密码和 API Key 均通过文件传入，避免出现在进程参数与 shell 历史中。
 
-## 6. 防火墙与 TLS
+## 7. 防火墙与 TLS
 
 安装器默认不修改防火墙。仅在明确需要时可执行：
 
@@ -144,9 +229,20 @@ sudo ./install-agent.sh --open-firewall
 
 对外服务必须在 Nginx、Caddy、Traefik 或云负载均衡器上配置 HTTPS。Agent 也可通过受控内网、VPN 或 TLS 反向代理接入。
 
-## 7. 日常管理
+## 8. 日常管理
 
 ### 平台
+
+源码一键部署：
+
+```bash
+cd Wuhr-AI-ops
+./deploy.sh verify
+docker compose -p wuhr-ai-ops --env-file .deploy/wuhr-ai-ops/.env \
+  -f docker-compose.deploy.yml logs -f --tail=200 app deployment-scheduler
+```
+
+私有离线包部署：
 
 ```bash
 cd /opt/wuhr-ai-ops
@@ -174,7 +270,19 @@ sudo ./doctor.sh
 
 诊断会检查 Docker、Compose、平台健康接口、Agent 健康接口、有效 API Key 与无效 API Key 拒绝行为，不会执行运维命令。
 
-## 8. 升级
+## 9. 升级
+
+源码部署升级：
+
+```bash
+cd Wuhr-AI-ops
+git pull --ff-only
+sudo ./deploy.sh all
+```
+
+脚本复用已有密钥和 Docker 数据卷，构建新提交对应的镜像，运行数据库迁移后再完成健康检查。
+
+私有离线包升级：
 
 将新发布包解压到临时目录后，重新执行与首次安装相同的命令：
 
@@ -192,7 +300,7 @@ sudo ./install.sh all
 
 正式升级前仍应备份数据库和 `/opt/wuhr-ai-ops/.env`、`/etc/wuhr-agent`、`/var/lib/wuhr-agent`。
 
-## 9. 卸载
+## 10. 卸载
 
 默认卸载保留业务数据：
 
@@ -210,7 +318,7 @@ sudo ./uninstall-agent.sh --purge
 
 `--purge` 不可恢复，执行前必须完成备份。
 
-## 10. 常见问题
+## 11. 常见问题
 
 ### 平台健康检查失败
 

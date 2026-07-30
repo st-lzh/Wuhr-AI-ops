@@ -10,6 +10,7 @@ pnpm-debug.log*
 out/
 dist/
 build/
+.deploy/
 
 # Environment files
 .env

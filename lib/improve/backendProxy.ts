@@ -49,6 +49,18 @@ export interface BackendFetchOptions {
   timeoutMs?: number
 }
 
+/** 管理员、通配权限或明确的 improve 权限均可访问代理。 */
+export function canAccessImproveProxy(
+  user: { role?: string; permissions?: string[] },
+  requireWrite: boolean
+): boolean {
+  if (user.role === 'admin') return true
+  const permissions = Array.isArray(user.permissions) ? user.permissions : []
+  if (permissions.includes('*')) return true
+  if (requireWrite) return permissions.includes('improve:write')
+  return permissions.includes('improve:read') || permissions.includes('improve:write')
+}
+
 /**
  * 服务端内部读取 v1 后端 JSON 数据。
  *
@@ -110,22 +122,14 @@ export async function proxyToImproveBackend(
   // 2) 写权限校验
   const method = (options.method || request.method).toUpperCase()
   const requireWrite = options.requireWrite ?? (method !== 'GET' && method !== 'HEAD' && method !== 'OPTIONS')
-  if (requireWrite) {
-    const perms = (user as any).permissions as string[] | undefined
-    const isWildcard = Array.isArray(perms) && perms.includes('*')
-    const hasWrite = Array.isArray(perms) && perms.includes('improve:write')
-    if (!isWildcard && !hasWrite) {
+  if (!canAccessImproveProxy(user, requireWrite)) {
+    if (requireWrite) {
       return NextResponse.json({
         success: false,
         error: '无 improve:write 权限',
         code: 'frontend_permission_denied',
       }, { status: 403 })
-    }
-  } else {
-    const perms = (user as any).permissions as string[] | undefined
-    const isWildcard = Array.isArray(perms) && perms.includes('*')
-    const hasRead = Array.isArray(perms) && (perms.includes('improve:read') || perms.includes('improve:write'))
-    if (!isWildcard && !hasRead) {
+    } else {
       return NextResponse.json({
         success: false,
         error: '无 improve:read 权限',

@@ -85,6 +85,62 @@ flowchart LR
 
 平台前端源码保存在本仓库，后端 Agent 只通过 GitHub Releases 和国内镜像提供编译包，不上传后端源码，也不上传前端 Docker 镜像。
 
+### 整个平台一键部署
+
+在 Linux 服务器克隆仓库后执行：
+
+```bash
+git clone https://github.com/st-lzh/Wuhr-AI-ops.git
+cd Wuhr-AI-ops
+sudo ./deploy.sh all
+```
+
+该命令会把 Agent 安装为宿主机系统服务，并通过 Docker Compose 构建和启动前端、PostgreSQL、Redis、交付调度器。初始管理员密码保存在 `.deploy/wuhr-ai-ops/initial-credentials.txt`。
+
+如果 Agent 已经安装在另一台服务器，只部署 Docker 平台：
+
+```bash
+./deploy.sh platform \
+  --agent-url http://10.0.0.20:2081 \
+  --agent-api-key-file ./agent-api-key.txt
+```
+
+接管早期版本创建的同名数据卷时，必须显式导入原平台和 Agent 配置，脚本不会重置旧数据库或管理员密码：
+
+```bash
+./deploy.sh platform \
+  --platform-env-file .env \
+  --agent-env-file .env.local
+```
+
+部署状态、密钥和初始凭据保存在 Git 忽略的 `.deploy/项目名/`；PostgreSQL、Redis、平台数据和日志保存在 Docker 具名卷，重新创建容器不会删除数据。
+
+安装后的常用命令：
+
+```bash
+# 查看首次登录凭据
+cat .deploy/wuhr-ai-ops/initial-credentials.txt
+
+# 验收平台、数据库、Redis、调度器和 Agent
+./deploy.sh verify
+
+# 查看平台与调度器日志
+docker compose -p wuhr-ai-ops --env-file .deploy/wuhr-ai-ops/.env \
+  -f docker-compose.deploy.yml logs -f --tail=200 app deployment-scheduler
+
+# 停止容器但保留全部数据
+./deploy.sh down
+```
+
+升级时先拉取新代码，再重新执行原部署模式。脚本会复用已有密钥和数据卷：
+
+```bash
+git pull --ff-only
+sudo ./deploy.sh all
+```
+
+### 只安装后端 Agent
+
 下载地址：
 
 - [GitHub Release](https://github.com/st-lzh/Wuhr-AI-ops/releases/tag/v1.0.0)
