@@ -34,19 +34,19 @@ Agent 支持：
 
 | 部署场景 | 命令 | 说明 |
 | --- | --- | --- |
-| 交互式安装向导 | `sudo ./deploy.sh` | 识别系统后选择完整安装、分机安装、镜像来源与国内代理 |
-| Linux 单机完整安装 | `sudo ./deploy.sh all` | Agent 安装为宿主机系统服务；平台组件使用 Docker |
-| 平台连接远程 Agent | `./deploy.sh platform ...` | 只启动 Docker 平台，不在本机安装 Agent |
-| 只安装后端 Agent | `sudo ./deploy.sh agent` | 下载匹配系统/架构的编译包并注册系统服务 |
-| 验收现有部署 | `./deploy.sh verify` | 检查平台、数据库、Redis、调度器和 Agent |
-| 停止平台 | `./deploy.sh down` | 停止容器但保留全部具名数据卷 |
+| 交互式安装向导 | `sudo ./install.sh` | 识别系统后选择完整安装、分机安装、镜像来源与国内代理 |
+| Linux 单机完整安装 | `sudo ./install.sh all` | Agent 安装为宿主机系统服务；平台组件使用 Docker |
+| 平台连接远程 Agent | `./install.sh platform ...` | 只启动 Docker 平台，不在本机安装 Agent |
+| 只安装后端 Agent | `sudo ./install.sh agent` | 下载匹配系统/架构的编译包并注册系统服务 |
+| 验收现有部署 | `./install.sh verify` | 检查平台、数据库、Redis、调度器和 Agent |
+| 停止平台 | `./install.sh down` | 停止容器但保留全部具名数据卷 |
 
 ### Linux 单机完整安装
 
 ```bash
 git clone https://github.com/st-lzh/Wuhr-AI-ops.git
 cd Wuhr-AI-ops
-sudo ./deploy.sh
+sudo ./install.sh
 ```
 
 安装向导会先显示检测到的 Linux 发行版和 CPU 架构，然后逐项询问：
@@ -86,15 +86,15 @@ sudo ./deploy.sh
 
 ```bash
 # 直接从 Docker Hub 拉取官方镜像
-sudo ./deploy.sh all --non-interactive --image-mode pull
+sudo ./install.sh all --non-interactive --image-mode pull
 
 # 国内/企业代理优先，失败回退 Docker Hub
-sudo ./deploy.sh all --non-interactive --image-mode pull \
+sudo ./install.sh all --non-interactive --image-mode pull \
   --image-proxy registry.example.com/docker.io \
   --prefer-image-proxy
 
 # 二次开发服务器使用当前源码构建
-sudo ./deploy.sh all --non-interactive --image-mode build
+sudo ./install.sh all --non-interactive --image-mode build
 ```
 
 `--image-proxy` 是“可直接拼接镜像名称”的代理仓库前缀，不会改写 `/etc/docker/daemon.json`。如果云厂商提供的是 Docker daemon 专用 `registry-mirrors` 地址，应先按云厂商文档配置 Docker，再在向导中选择“使用 Docker 当前配置”。脚本不会覆盖客户已有的 daemon 配置。
@@ -104,7 +104,7 @@ sudo ./deploy.sh all --non-interactive --image-mode build
 适用于本地或单独服务器运行 Docker 平台、另一台 Linux 服务器运行 Agent：
 
 ```bash
-./deploy.sh platform \
+./install.sh platform \
   --agent-url http://10.0.0.20:2081 \
   --agent-api-key-file ./agent-api-key.txt
 ```
@@ -112,13 +112,13 @@ sudo ./deploy.sh all --non-interactive --image-mode build
 也可以从已有 `.env.local` 安全读取 Agent 地址和 Key：
 
 ```bash
-./deploy.sh platform --agent-env-file .env.local
+./install.sh platform --agent-env-file .env.local
 ```
 
 如果当前机器已经有早期版本创建的 `wuhr-ai-ops_postgres_data` 等同名数据卷，首次改用新脚本时执行：
 
 ```bash
-./deploy.sh platform \
+./install.sh platform \
   --project-name wuhr-ai-ops \
   --platform-env-file .env \
   --agent-env-file .env.local
@@ -129,7 +129,7 @@ sudo ./deploy.sh all --non-interactive --image-mode build
 测试环境可使用独立项目名和端口，不会和正式数据卷混用：
 
 ```bash
-./deploy.sh platform \
+./install.sh platform \
   --project-name wuhr-test \
   --port 3100 \
   --agent-env-file .env.local
@@ -138,8 +138,8 @@ sudo ./deploy.sh all --non-interactive --image-mode build
 部署完成后可重复验收或停止容器：
 
 ```bash
-./deploy.sh verify --project-name wuhr-test
-./deploy.sh down --project-name wuhr-test
+./install.sh verify --project-name wuhr-test
+./install.sh down --project-name wuhr-test
 ```
 
 `down` 不带 `--volumes`，因此数据库、Redis、交付记录和平台数据都会保留。不要手工执行 `docker compose down -v`。
@@ -182,7 +182,7 @@ macOS 使用 `shasum -a 256 -c 文件名.sha256`。不要安装校验失败的�
 
 ## 5. 私有离线包一键安装
 
-本节仅适用于发布负责人生成的私有完整离线包。普通联网服务器应使用上一节的根目录 `deploy.sh` 和 Docker Hub 多架构镜像；完全离线环境才需要包含镜像归档的私有包。
+本节仅适用于发布负责人生成的私有完整离线包。普通联网服务器应使用上一节的根目录 `install.sh` 和 Docker Hub 多架构镜像；完全离线环境才需要包含镜像归档的私有包。
 
 适合单机试用或平台与中央 Agent 部署在同一台 Linux 服务器：
 
@@ -270,7 +270,7 @@ sudo ./install-agent.sh --open-firewall
 
 ```bash
 cd Wuhr-AI-ops
-./deploy.sh verify
+./install.sh verify
 docker compose -p wuhr-ai-ops --env-file .deploy/wuhr-ai-ops/.env \
   -f docker-compose.deploy.yml logs -f --tail=200 app deployment-scheduler
 ```
@@ -310,7 +310,7 @@ sudo ./doctor.sh
 ```bash
 cd Wuhr-AI-ops
 git pull --ff-only
-sudo ./deploy.sh
+sudo ./install.sh
 ```
 
 脚本复用已有密钥和 Docker 数据卷，按向导选择拉取新发布镜像或重新构建源码，运行数据库迁移后再完成健康检查。

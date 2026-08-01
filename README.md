@@ -92,7 +92,7 @@ flowchart LR
 ```bash
 git clone https://github.com/st-lzh/Wuhr-AI-ops.git
 cd Wuhr-AI-ops
-sudo ./deploy.sh
+sudo ./install.sh
 ```
 
 交互向导会识别操作系统和 CPU 架构，引导选择同机/分机部署、后端 Agent 下载来源、平台镜像拉取/源码构建、国内镜像代理、端口和监听范围。推荐方案会把 Agent 安装为宿主机系统服务，按固定摘要拉取 `wuhrai/wuhrai:1.0.0`，并通过 Docker Compose 启动前端、PostgreSQL、Redis 和交付调度器。初始管理员密码保存在 `.deploy/wuhr-ai-ops/initial-credentials.txt`。
@@ -100,13 +100,13 @@ sudo ./deploy.sh
 自动化环境可关闭交互：
 
 ```bash
-sudo ./deploy.sh all --non-interactive --image-mode pull
+sudo ./install.sh all --non-interactive --image-mode pull
 ```
 
 如果 Agent 已经安装在另一台服务器，只部署 Docker 平台：
 
 ```bash
-./deploy.sh platform \
+./install.sh platform \
   --agent-url http://10.0.0.20:2081 \
   --agent-api-key-file ./agent-api-key.txt
 ```
@@ -114,7 +114,7 @@ sudo ./deploy.sh all --non-interactive --image-mode pull
 接管早期版本创建的同名数据卷时，必须显式导入原平台和 Agent 配置，脚本不会重置旧数据库或管理员密码：
 
 ```bash
-./deploy.sh platform \
+./install.sh platform \
   --platform-env-file .env \
   --agent-env-file .env.local
 ```
@@ -128,21 +128,21 @@ sudo ./deploy.sh all --non-interactive --image-mode pull
 cat .deploy/wuhr-ai-ops/initial-credentials.txt
 
 # 验收平台、数据库、Redis、调度器和 Agent
-./deploy.sh verify
+./install.sh verify
 
 # 查看平台与调度器日志
 docker compose -p wuhr-ai-ops --env-file .deploy/wuhr-ai-ops/.env \
   -f docker-compose.deploy.yml logs -f --tail=200 app deployment-scheduler
 
 # 停止容器但保留全部数据
-./deploy.sh down
+./install.sh down
 ```
 
 升级时先拉取新代码，再重新执行向导或原部署模式。脚本会复用已有密钥和数据卷：
 
 ```bash
 git pull --ff-only
-sudo ./deploy.sh
+sudo ./install.sh
 ```
 
 ### 只安装后端 Agent

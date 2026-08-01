@@ -1,4 +1,5 @@
 #!/bin/sh
+# Wuhr AI Ops 仓库根目录交互式安装入口。
 set -eu
 
 ROOT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
@@ -74,12 +75,12 @@ usage() {
 Wuhr AI Ops 交互式一键部署
 
 用法：
-  sudo ./deploy.sh                     启动交互式安装向导（推荐）
-  sudo ./deploy.sh all [选项]       Linux 同机部署：Agent 系统服务 + Docker 平台
-  ./deploy.sh platform [选项]       只部署 Docker 平台，连接已有 Agent
-  sudo ./deploy.sh agent [选项]      只安装或升级本机 Agent 系统服务
-  ./deploy.sh verify [选项]         验证已部署的平台、数据库、Redis、调度器和 Agent
-  ./deploy.sh down [选项]           停止容器但保留全部数据卷
+  sudo ./install.sh                     启动交互式安装向导（推荐）
+  sudo ./install.sh all [选项]       Linux 同机部署：Agent 系统服务 + Docker 平台
+  ./install.sh platform [选项]       只部署 Docker 平台，连接已有 Agent
+  sudo ./install.sh agent [选项]      只安装或升级本机 Agent 系统服务
+  ./install.sh verify [选项]         验证已部署的平台、数据库、Redis、调度器和 Agent
+  ./install.sh down [选项]           停止容器但保留全部数据卷
 
 常用选项：
   --project-name NAME                Docker Compose 项目名，默认 wuhr-ai-ops
@@ -113,15 +114,15 @@ Agent 选项：
   --admin-password-file FILE         首次管理员密码文件；未指定时自动生成
 
 示例：
-  sudo ./deploy.sh
-  sudo ./deploy.sh all --non-interactive --image-mode pull
-  sudo ./deploy.sh all
-  ./deploy.sh platform --agent-env-file .env.local
-  ./deploy.sh platform --image-mode pull --image-proxy registry.example.com/docker.io \
+  sudo ./install.sh
+  sudo ./install.sh all --non-interactive --image-mode pull
+  sudo ./install.sh all
+  ./install.sh platform --agent-env-file .env.local
+  ./install.sh platform --image-mode pull --image-proxy registry.example.com/docker.io \
     --prefer-image-proxy --agent-env-file .env.local
-  ./deploy.sh platform --image-mode build --agent-env-file .env.local
-  ./deploy.sh platform --platform-env-file .env --agent-env-file .env.local
-  ./deploy.sh platform --project-name wuhr-test --port 3100 \
+  ./install.sh platform --image-mode build --agent-env-file .env.local
+  ./install.sh platform --platform-env-file .env --agent-env-file .env.local
+  ./install.sh platform --project-name wuhr-test --port 3100 \
     --agent-url http://10.0.0.20:2081 --agent-api-key-file ./agent-api-key.txt
 EOF
 }
@@ -1099,7 +1100,7 @@ if [ "$MODE" = "all" ]; then
   [ "$(uname -s)" = "Linux" ] ||
     die "all 模式需要 Linux；macOS/Windows 请使用 platform 模式连接 Linux Agent"
   [ "$(id -u)" -eq 0 ] ||
-    die "安装 Agent 系统服务需要 root 权限，请使用 sudo ./deploy.sh all"
+    die "安装 Agent 系统服务需要 root 权限，请使用 sudo ./install.sh all"
   printf '%s\n' "$AGENT_API_KEY" > "$SHARED_AGENT_KEY_FILE"
   chmod 600 "$SHARED_AGENT_KEY_FILE"
   log "安装或升级本机 Agent 系统服务"
@@ -1256,5 +1257,5 @@ log "部署完成：http://127.0.0.1:$PLATFORM_PORT"
 if [ -f "$CREDENTIALS_FILE" ]; then
   log "初始凭据：${CREDENTIALS_FILE}（权限 600）"
 fi
-log "再次验证：./deploy.sh verify --project-name $PROJECT_NAME"
-log "停止容器：./deploy.sh down --project-name $PROJECT_NAME"
+log "再次验证：./install.sh verify --project-name $PROJECT_NAME"
+log "停止容器：./install.sh down --project-name $PROJECT_NAME"

@@ -64,7 +64,7 @@ wuhrai/wuhrai:latest
 wuhrai/wuhrai:git-SHORT_COMMIT
 ```
 
-发布完成后必须使用 `docker buildx imagetools inspect` 从 Docker Hub 反向确认两个架构，再分别拉取目标架构进行非 root 用户、敏感文件排除和健康启动验收。将最终多架构摘要同步到根目录 `deploy.sh` 的 `DEFAULT_FRONTEND_DIGEST`，一键安装器才能按不可变摘要校验代理返回的镜像。
+发布完成后必须使用 `docker buildx imagetools inspect` 从 Docker Hub 反向确认两个架构，再分别拉取目标架构进行非 root 用户、敏感文件排除和健康启动验收。将最终多架构摘要同步到根目录 `install.sh` 的 `DEFAULT_FRONTEND_DIGEST`，一键安装器才能按不可变摘要校验代理返回的镜像。
 
 ## 平台离线包
 
