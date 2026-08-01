@@ -12,6 +12,9 @@ RUN sed -i 's|http://deb.debian.org|http://mirrors.aliyun.com|g' /etc/apt/source
     && rm -rf /var/lib/apt/lists/*
 COPY package.json pnpm-lock.yaml* ./
 RUN npm config set registry https://registry.npmmirror.com/ && \
+    npm config set fetch-retries 5 && \
+    npm config set fetch-retry-mintimeout 10000 && \
+    npm config set fetch-retry-maxtimeout 60000 && \
     npm install -g pnpm@10.7.1 && \
     pnpm config set registry https://registry.npmmirror.com/ && \
     pnpm install --frozen-lockfile
@@ -24,6 +27,10 @@ RUN sed -i 's|http://deb.debian.org|http://mirrors.aliyun.com|g' /etc/apt/source
     make \
     g++ \
     && rm -rf /var/lib/apt/lists/* && \
+    npm config set registry https://registry.npmmirror.com/ && \
+    npm config set fetch-retries 5 && \
+    npm config set fetch-retry-mintimeout 10000 && \
+    npm config set fetch-retry-maxtimeout 60000 && \
     npm install -g pnpm@10.7.1
 COPY --from=deps /app/node_modules ./node_modules
 COPY --from=deps /app/package.json ./package.json
@@ -52,7 +59,6 @@ RUN sed -i 's|http://deb.debian.org|http://mirrors.aliyun.com|g' /etc/apt/source
     subversion \
     curl \
     && rm -rf /var/lib/apt/lists/* && \
-    npm install -g pnpm@10.7.1 && \
     groupadd -g 1001 wuhr && \
     useradd -u 1001 -g wuhr -s /bin/bash -m wuhr
 
