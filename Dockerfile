@@ -1,7 +1,7 @@
 # Ubuntu基础镜像 - 完整支持原生模块
-# 固定已经验收过的 Node 20 slim 镜像摘要，避免上游标签漂移，
-# 也让离线/弱网环境可以稳定复用本地 BuildKit 缓存。
-ARG NODE_BASE_IMAGE=node:20-slim@sha256:2cf067cfed83d5ea958367df9f966191a942351a2df77d6f0193e162b5febfc0
+# 默认通过 DaoCloud 公共镜像加速获取 Node 20 slim，并固定已验收摘要；
+# 构建参数仍允许安装器在 DaoCloud 不可用时切换到同摘要的 Docker Hub 源。
+ARG NODE_BASE_IMAGE=m.daocloud.io/docker.io/library/node:20-slim@sha256:2cf067cfed83d5ea958367df9f966191a942351a2df77d6f0193e162b5febfc0
 FROM ${NODE_BASE_IMAGE} AS deps
 WORKDIR /app
 # 安装必要的构建工具

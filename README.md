@@ -83,7 +83,7 @@ flowchart LR
 
 ## 快速安装
 
-平台前端源码保存在本仓库，并发布经过验收的 `linux/amd64`、`linux/arm64` 多架构镜像到 [Docker Hub `wuhrai/wuhrai`](https://hub.docker.com/r/wuhrai/wuhrai)。后端 Agent 只通过 GitHub Releases 和国内下载站提供编译包，不上传后端源码。
+平台前端源码保存在本仓库，并发布经过验收的 `linux/amd64`、`linux/arm64` 多架构镜像到 [Docker Hub `wuhrai/wuhrai`](https://hub.docker.com/r/wuhrai/wuhrai)。Node、PostgreSQL 和 Redis 等公共基础镜像默认通过 [DaoCloud 公共镜像加速](https://github.com/DaoCloud/public-image-mirror) 拉取，失败时自动回退 Docker Hub。后端 Agent 只通过 GitHub Releases 和国内下载站提供编译包，不上传后端源码。
 
 ### 整个平台一键部署
 
@@ -95,7 +95,7 @@ cd Wuhr-AI-ops
 sudo ./install.sh
 ```
 
-交互向导会识别操作系统和 CPU 架构，引导选择同机/分机部署、后端 Agent 下载来源、平台镜像拉取/源码构建、国内镜像代理、端口和监听范围。推荐方案会把 Agent 安装为宿主机系统服务，按固定摘要拉取 `wuhrai/wuhrai:1.0.0`，并通过 Docker Compose 启动前端、PostgreSQL、Redis 和交付调度器。初始管理员密码保存在 `.deploy/wuhr-ai-ops/initial-credentials.txt`。
+交互向导会识别操作系统和 CPU 架构，引导选择同机/分机部署、后端 Agent 下载来源、平台镜像拉取/源码构建、国内镜像代理、端口和监听范围。推荐方案会把 Agent 安装为宿主机系统服务，按固定摘要拉取 `wuhrai/wuhrai:1.0.0`，通过 DaoCloud 拉取公共基础镜像，并由 Docker Compose 启动前端、PostgreSQL、Redis 和交付调度器。初始管理员密码保存在 `.deploy/wuhr-ai-ops/initial-credentials.txt`。
 
 自动化环境可关闭交互：
 

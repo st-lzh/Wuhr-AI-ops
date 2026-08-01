@@ -270,16 +270,20 @@ for arch in $ARCHITECTURES; do
   fi
 
   if [ "$USE_LOCAL_DEPENDENCY_IMAGES" -eq 0 ]; then
-    docker pull --platform "linux/$arch" postgres:15-alpine
-    docker pull --platform "linux/$arch" redis:7-alpine
+    docker pull --platform "linux/$arch" m.daocloud.io/docker.io/library/postgres:15-alpine
+    docker pull --platform "linux/$arch" m.daocloud.io/docker.io/library/redis:7-alpine
   fi
-  for dependency in postgres:15-alpine redis:7-alpine; do
+  for dependency in \
+    m.daocloud.io/docker.io/library/postgres:15-alpine \
+    m.daocloud.io/docker.io/library/redis:7-alpine; do
     dependency_arch=$(docker image inspect --format '{{.Architecture}}' "$dependency" 2>/dev/null || true)
     [ "$dependency_arch" = "$arch" ] || die "$dependency 的本地架构为 $dependency_arch，期望 $arch"
   done
 
   log "导出 linux/$arch 离线镜像归档"
-  docker save "$image" postgres:15-alpine redis:7-alpine | gzip -9 > "$image_archive"
+  docker save "$image" \
+    m.daocloud.io/docker.io/library/postgres:15-alpine \
+    m.daocloud.io/docker.io/library/redis:7-alpine | gzip -9 > "$image_archive"
   case "$arch" in
     amd64) image_amd64=$image ;;
     arm64) image_arm64=$image ;;

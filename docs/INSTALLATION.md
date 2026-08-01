@@ -1,6 +1,6 @@
 # Wuhr AI Ops 安装与升级手册
 
-本文面向平台与 Agent 系统管理员。平台运行镜像发布在 [Docker Hub `wuhrai/wuhrai`](https://hub.docker.com/r/wuhrai/wuhrai)；公开 GitHub Release 只包含 Wuhr Agent 编译后二进制、安装脚本和校验文件，不包含后端源码。
+本文面向平台与 Agent 系统管理员。平台运行镜像发布在 [Docker Hub `wuhrai/wuhrai`](https://hub.docker.com/r/wuhrai/wuhrai)；Node、PostgreSQL 和 Redis 默认通过 [DaoCloud 公共镜像加速](https://github.com/DaoCloud/public-image-mirror) 获取；公开 GitHub Release 只包含 Wuhr Agent 编译后二进制、安装脚本和校验文件，不包含后端源码。
 
 ## 1. 部署结构
 
@@ -66,9 +66,10 @@ macOS 需要先启动 Docker Desktop，并使用 `./install.sh`（不要在整�
 3. 校验 Agent SHA-256，并注册为 systemd、OpenRC、SysV 或 macOS launchd 系统服务。
 4. 为 Agent 与平台生成同一份 API Key。
 5. 按固定发布摘要拉取 `wuhrai/wuhrai:1.0.0` 多架构镜像。
-6. 启动 PostgreSQL、Redis、前端平台和交付调度器。
-7. 执行 Prisma 数据库迁移、管理员初始化和模型厂商初始化。
-8. 从平台容器验证 Agent 地址和 API Key。
+6. 默认从 DaoCloud 国内入口拉取 Node、PostgreSQL 和 Redis，失败时自动回退 Docker Hub。
+7. 启动 PostgreSQL、Redis、前端平台和交付调度器。
+8. 执行 Prisma 数据库迁移、管理员初始化和模型厂商初始化。
+9. 从平台容器验证 Agent 地址和 API Key。
 
 安装完成后访问 `http://服务器地址:3000`。初始凭据位于：
 
@@ -78,11 +79,13 @@ macOS 需要先启动 Docker Desktop，并使用 `./install.sh`（不要在整�
 
 文件权限为 `600`。首次登录修改密码并安全保存 Agent Key 后，应删除初始凭据文件。
 
-### 前端镜像与国内代理
+### 镜像与国内加速
 
 官方镜像同时支持 `linux/amd64` 和 `linux/arm64`。脚本不会仅依赖可变的标签：默认将 `1.0.0` 与发布时记录的 OCI SHA-256 摘要一起校验。代理拉取失败会回退 Docker Hub；Docker Hub 失败也可按选择回退代理。所有远程来源都失败时，只有本机已有镜像摘要与官方发布摘要完全一致才允许继续。
 
-交互向导中可以填写企业代理或国内镜像代理前缀，例如 `registry.example.com/docker.io`。不要填写 `http://` 或 `https://`，脚本会处理平台、PostgreSQL、Redis 及源码构建所需的 Node 基础镜像，并在代理与 Docker Hub 之间自动回退。通过代理拉取的运行镜像会重新标记为标准镜像名供 Compose 使用。
+Dockerfile、开发 Compose、生产 Compose 和离线打包配置中的 Node、PostgreSQL、Redis 默认使用 DaoCloud 推荐的“添加前缀”形式，例如 `m.daocloud.io/docker.io/library/node:20-slim`。Node 仍固定与官方源一致的 SHA-256 摘要；DaoCloud 不可用时，安装器会自动切换同版本的 Docker Hub 镜像。
+
+交互向导中的 `--image-proxy` 主要用于平台成品镜像，也可以覆盖公共基础镜像的优先来源。代理前缀示例为 `registry.example.com/docker.io`，不要填写 `http://` 或 `https://`。当前 DaoCloud 对 `wuhrai/wuhrai:1.0.0` 返回 403，因此平台成品镜像不能硬编码为 DaoCloud 地址，仍通过 Docker Hub、用户配置的镜像代理或本地已校验缓存获取。
 
 非交互部署示例：
 

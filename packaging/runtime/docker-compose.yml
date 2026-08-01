@@ -1,6 +1,6 @@
 services:
   postgres:
-    image: postgres:15-alpine
+    image: m.daocloud.io/docker.io/library/postgres:15-alpine
     restart: unless-stopped
     environment:
       POSTGRES_DB: ${DB_NAME:?}
@@ -24,7 +24,7 @@ services:
         max-file: "3"
 
   redis:
-    image: redis:7-alpine
+    image: m.daocloud.io/docker.io/library/redis:7-alpine
     restart: unless-stopped
     command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD:?}"]
     expose:

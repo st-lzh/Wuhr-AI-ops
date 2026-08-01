@@ -8,7 +8,12 @@ AGENT_BOOTSTRAP="$ROOT_DIR/packaging/runtime/install-agent-bootstrap.sh"
 
 DEFAULT_FRONTEND_IMAGE="wuhrai/wuhrai:1.0.0"
 DEFAULT_FRONTEND_DIGEST="sha256:0569c83772ca02830ac2b53f630b08cd04e35c28fe7641f88c72afaab7009261"
-DEFAULT_NODE_BASE_IMAGE="node:20-slim@sha256:2cf067cfed83d5ea958367df9f966191a942351a2df77d6f0193e162b5febfc0"
+DEFAULT_NODE_BASE_IMAGE="m.daocloud.io/docker.io/library/node:20-slim@sha256:2cf067cfed83d5ea958367df9f966191a942351a2df77d6f0193e162b5febfc0"
+UPSTREAM_NODE_BASE_IMAGE="node:20-slim@sha256:2cf067cfed83d5ea958367df9f966191a942351a2df77d6f0193e162b5febfc0"
+DEFAULT_POSTGRES_IMAGE="m.daocloud.io/docker.io/library/postgres:15-alpine"
+UPSTREAM_POSTGRES_IMAGE="postgres:15-alpine"
+DEFAULT_REDIS_IMAGE="m.daocloud.io/docker.io/library/redis:7-alpine"
+UPSTREAM_REDIS_IMAGE="redis:7-alpine"
 
 MODE_EXPLICIT=0
 MODE=${1:-all}
@@ -91,7 +96,7 @@ Wuhr AI Ops 交互式一键部署
   --image-mode MODE                  pull（推荐）、build 或 existing
   --image IMAGE                      前端镜像，pull 默认 wuhrai/wuhrai:1.0.0
   --image-digest SHA256              拉取镜像的预期摘要；官方 1.0.0 自动校验
-  --image-proxy PREFIX               国内/企业镜像代理前缀，如 registry.example.com/docker.io
+  --image-proxy PREFIX               平台镜像的国内/企业代理；基础镜像默认使用 DaoCloud
   --prefer-image-proxy               优先代理，失败后回退 Docker Hub
   --pull-retries COUNT               每个镜像来源的重试次数，默认 3
   --skip-build                       兼容旧参数，等同 --image-mode existing
@@ -370,6 +375,7 @@ print_plan() {
     printf '  平台端口：%s:%s\n' "$PLATFORM_BIND_ADDRESS" "$PLATFORM_PORT"
     printf '  镜像方式：%s\n' "$IMAGE_MODE"
     printf '  平台镜像：%s\n' "$FRONTEND_IMAGE"
+    printf '  公共基础镜像：DaoCloud 国内镜像优先，Docker Hub 自动回退\n'
     if [ -n "$IMAGE_PROXY" ]; then
       printf '  镜像代理：%s（%s）\n' "$IMAGE_PROXY" \
         "$( [ "$PREFER_IMAGE_PROXY" -eq 1 ] && printf '%s' 优先 || printf '%s' 回退 )"
@@ -483,7 +489,7 @@ run_wizard() {
     if [ "$IMAGE_MODE" = "pull" ]; then
       prompt_text "镜像名称" "${FRONTEND_IMAGE:-$DEFAULT_FRONTEND_IMAGE}"
       FRONTEND_IMAGE=$PROMPT_VALUE
-      printf '%s\n' "国内拉取方式："
+      printf '%s\n' "平台成品镜像拉取方式："
       printf '%s\n' "  1) 使用 Docker 当前配置，直接拉取（推荐）"
       printf '%s\n' "  2) 优先使用企业/国内镜像代理，失败回退 Docker Hub"
       printf '%s\n' "  3) 先用 Docker Hub，失败后使用镜像代理"
@@ -881,18 +887,61 @@ pull_image_with_fallback() {
 }
 
 prepare_platform_dependencies() {
-  if docker image inspect "postgres:15-alpine" >/dev/null 2>&1; then
-    log "复用本机 PostgreSQL 镜像：postgres:15-alpine"
-  else
-    pull_image_with_fallback "postgres:15-alpine" "" "PostgreSQL 镜像" ||
-      die "无法拉取 PostgreSQL 镜像；请在交互向导中配置镜像代理"
+  ensure_dependency_image "$UPSTREAM_POSTGRES_IMAGE" "$DEFAULT_POSTGRES_IMAGE" "PostgreSQL 镜像"
+  ensure_dependency_image "$UPSTREAM_REDIS_IMAGE" "$DEFAULT_REDIS_IMAGE" "Redis 镜像"
+}
+
+ensure_dependency_image() {
+  dependency_upstream=$1
+  dependency_daocloud=$2
+  dependency_label=$3
+
+  if docker image inspect "$dependency_daocloud" >/dev/null 2>&1; then
+    log "复用本机 ${dependency_label}：$dependency_daocloud"
+    return 0
   fi
-  if docker image inspect "redis:7-alpine" >/dev/null 2>&1; then
-    log "复用本机 Redis 镜像：redis:7-alpine"
-  else
-    pull_image_with_fallback "redis:7-alpine" "" "Redis 镜像" ||
-      die "无法拉取 Redis 镜像；请在交互向导中配置镜像代理"
+
+  dependency_custom=""
+  if [ -n "$IMAGE_PROXY" ]; then
+    proxy_image_name "$dependency_upstream"
+    dependency_custom=$PROXY_IMAGE
   fi
+
+  if [ "$PREFER_IMAGE_PROXY" -eq 1 ] && [ -n "$dependency_custom" ] &&
+    [ "$dependency_custom" != "$dependency_daocloud" ]; then
+    if pull_ref_with_retry "$dependency_custom" "$dependency_daocloud" "" \
+      "${dependency_label}（自定义镜像代理）"; then
+      return 0
+    fi
+    warn "$dependency_label 通过自定义镜像代理拉取失败，切换 DaoCloud"
+  fi
+
+  if pull_ref_with_retry "$dependency_daocloud" "$dependency_daocloud" "" \
+    "${dependency_label}（DaoCloud 国内镜像）"; then
+    return 0
+  fi
+  warn "$dependency_label 通过 DaoCloud 拉取失败，切换 Docker Hub"
+
+  if pull_ref_with_retry "$dependency_upstream" "$dependency_daocloud" "" \
+    "${dependency_label}（Docker Hub 回退）"; then
+    return 0
+  fi
+
+  if [ "$PREFER_IMAGE_PROXY" -eq 0 ] && [ -n "$dependency_custom" ] &&
+    [ "$dependency_custom" != "$dependency_daocloud" ]; then
+    warn "$dependency_label 通过 Docker Hub 拉取失败，切换自定义镜像代理"
+    if pull_ref_with_retry "$dependency_custom" "$dependency_daocloud" "" \
+      "${dependency_label}（自定义镜像代理回退）"; then
+      return 0
+    fi
+  fi
+
+  if docker image inspect "$dependency_upstream" >/dev/null 2>&1; then
+    docker tag "$dependency_upstream" "$dependency_daocloud"
+    warn "$dependency_label 所有远程来源均不可用，复用本机官方镜像缓存"
+    return 0
+  fi
+  die "无法从 DaoCloud、Docker Hub 或自定义镜像代理获取 $dependency_label"
 }
 
 local_image_matches_digest() {
@@ -917,29 +966,38 @@ verify_frontend_image() {
 }
 
 build_frontend_from_source() {
-  official_base=$DEFAULT_NODE_BASE_IMAGE
-  proxy_base=""
+  daocloud_base=$DEFAULT_NODE_BASE_IMAGE
+  upstream_base=$UPSTREAM_NODE_BASE_IMAGE
+  custom_base=""
   if [ -n "$IMAGE_PROXY" ]; then
     proxy_image_name "node:20-slim"
-    proxy_base="$PROXY_IMAGE@${DEFAULT_NODE_BASE_IMAGE#*@}"
+    custom_base="$PROXY_IMAGE@${UPSTREAM_NODE_BASE_IMAGE#*@}"
   fi
 
-  if [ "$PREFER_IMAGE_PROXY" -eq 1 ] && [ -n "$proxy_base" ]; then
-    log "通过镜像代理获取 Node 基础镜像并构建：$FRONTEND_IMAGE"
-    if compose build --build-arg "NODE_BASE_IMAGE=$proxy_base" app; then
+  if [ "$PREFER_IMAGE_PROXY" -eq 1 ] && [ -n "$custom_base" ] &&
+    [ "$custom_base" != "$daocloud_base" ]; then
+    log "通过自定义镜像代理获取 Node 基础镜像并构建：$FRONTEND_IMAGE"
+    if compose build --build-arg "NODE_BASE_IMAGE=$custom_base" app; then
       return 0
     fi
-    warn "通过镜像代理构建失败，切换 Docker Hub 基础镜像"
+    warn "通过自定义镜像代理构建失败，切换 DaoCloud 基础镜像"
   fi
 
-  log "使用 Docker Hub Node 基础镜像构建：$FRONTEND_IMAGE"
-  if compose build --build-arg "NODE_BASE_IMAGE=$official_base" app; then
+  log "使用 DaoCloud 国内 Node 基础镜像构建：$FRONTEND_IMAGE"
+  if compose build --build-arg "NODE_BASE_IMAGE=$daocloud_base" app; then
+    return 0
+  fi
+  warn "DaoCloud Node 基础镜像构建失败，切换 Docker Hub"
+
+  log "使用 Docker Hub Node 基础镜像回退构建：$FRONTEND_IMAGE"
+  if compose build --build-arg "NODE_BASE_IMAGE=$upstream_base" app; then
     return 0
   fi
 
-  if [ "$PREFER_IMAGE_PROXY" -eq 0 ] && [ -n "$proxy_base" ]; then
-    warn "通过 Docker Hub 构建失败，切换镜像代理基础镜像"
-    if compose build --build-arg "NODE_BASE_IMAGE=$proxy_base" app; then
+  if [ "$PREFER_IMAGE_PROXY" -eq 0 ] && [ -n "$custom_base" ] &&
+    [ "$custom_base" != "$daocloud_base" ]; then
+    warn "Docker Hub 构建失败，切换自定义镜像代理基础镜像"
+    if compose build --build-arg "NODE_BASE_IMAGE=$custom_base" app; then
       return 0
     fi
   fi

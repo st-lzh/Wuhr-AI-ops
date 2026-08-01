@@ -70,6 +70,8 @@ wuhrai/wuhrai:git-SHORT_COMMIT
 
 `packaging/build-release.sh` 仍可供内部或私有交付构建完整平台离线包，但该产物不得上传到公开 GitHub Release 或国内 `/download/` 目录。
 
+离线包中的 Node、PostgreSQL 和 Redis 构建依赖默认通过 `m.daocloud.io/docker.io/library/*` 获取并保留 DaoCloud 镜像名称，确保发布包 Compose 与镜像归档一致；正式打包前必须分别验收 `linux/amd64` 和 `linux/arm64`。
+
 ## 内部预览构建
 
 只有内部验证可以允许未提交工作区：
