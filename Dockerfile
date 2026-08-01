@@ -1,7 +1,8 @@
 # Ubuntu基础镜像 - 完整支持原生模块
 # 固定已经验收过的 Node 20 slim 镜像摘要，避免上游标签漂移，
 # 也让离线/弱网环境可以稳定复用本地 BuildKit 缓存。
-FROM node:20-slim@sha256:2cf067cfed83d5ea958367df9f966191a942351a2df77d6f0193e162b5febfc0 AS deps
+ARG NODE_BASE_IMAGE=node:20-slim@sha256:2cf067cfed83d5ea958367df9f966191a942351a2df77d6f0193e162b5febfc0
+FROM ${NODE_BASE_IMAGE} AS deps
 WORKDIR /app
 # 安装必要的构建工具
 RUN sed -i 's|http://deb.debian.org|http://mirrors.aliyun.com|g' /etc/apt/sources.list.d/debian.sources && \
@@ -19,7 +20,7 @@ RUN npm config set registry https://registry.npmmirror.com/ && \
     pnpm config set registry https://registry.npmmirror.com/ && \
     pnpm install --frozen-lockfile
 
-FROM node:20-slim@sha256:2cf067cfed83d5ea958367df9f966191a942351a2df77d6f0193e162b5febfc0 AS builder
+FROM ${NODE_BASE_IMAGE} AS builder
 WORKDIR /app
 RUN sed -i 's|http://deb.debian.org|http://mirrors.aliyun.com|g' /etc/apt/sources.list.d/debian.sources && \
     apt-get -o Acquire::Retries=5 update && apt-get -o Acquire::Retries=5 install -y --no-install-recommends \
@@ -43,7 +44,7 @@ ENV NEXT_TELEMETRY_DISABLED=1 \
     REDIS_URL="redis://placeholder:6379"
 RUN pnpm prisma generate && pnpm build
 
-FROM node:20-slim@sha256:2cf067cfed83d5ea958367df9f966191a942351a2df77d6f0193e162b5febfc0 AS runner
+FROM ${NODE_BASE_IMAGE} AS runner
 WORKDIR /app
 # Docker 会自动注入 HOSTNAME=<容器 ID>；Next standalone 若直接使用该值，
 # 会只监听容器自身地址，导致宿主机 3000 端口转发返回 502。

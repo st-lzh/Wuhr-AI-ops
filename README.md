@@ -83,7 +83,7 @@ flowchart LR
 
 ## 快速安装
 
-平台前端源码保存在本仓库，后端 Agent 只通过 GitHub Releases 和国内镜像提供编译包，不上传后端源码，也不上传前端 Docker 镜像。
+平台前端源码保存在本仓库，并发布经过验收的 `linux/amd64`、`linux/arm64` 多架构镜像到 [Docker Hub `wuhrai/wuhrai`](https://hub.docker.com/r/wuhrai/wuhrai)。后端 Agent 只通过 GitHub Releases 和国内下载站提供编译包，不上传后端源码。
 
 ### 整个平台一键部署
 
@@ -92,10 +92,16 @@ flowchart LR
 ```bash
 git clone https://github.com/st-lzh/Wuhr-AI-ops.git
 cd Wuhr-AI-ops
-sudo ./deploy.sh all
+sudo ./deploy.sh
 ```
 
-该命令会把 Agent 安装为宿主机系统服务，并通过 Docker Compose 构建和启动前端、PostgreSQL、Redis、交付调度器。初始管理员密码保存在 `.deploy/wuhr-ai-ops/initial-credentials.txt`。
+交互向导会识别操作系统和 CPU 架构，引导选择同机/分机部署、后端 Agent 下载来源、平台镜像拉取/源码构建、国内镜像代理、端口和监听范围。推荐方案会把 Agent 安装为宿主机系统服务，按固定摘要拉取 `wuhrai/wuhrai:1.0.0`，并通过 Docker Compose 启动前端、PostgreSQL、Redis 和交付调度器。初始管理员密码保存在 `.deploy/wuhr-ai-ops/initial-credentials.txt`。
+
+自动化环境可关闭交互：
+
+```bash
+sudo ./deploy.sh all --non-interactive --image-mode pull
+```
 
 如果 Agent 已经安装在另一台服务器，只部署 Docker 平台：
 
@@ -132,11 +138,11 @@ docker compose -p wuhr-ai-ops --env-file .deploy/wuhr-ai-ops/.env \
 ./deploy.sh down
 ```
 
-升级时先拉取新代码，再重新执行原部署模式。脚本会复用已有密钥和数据卷：
+升级时先拉取新代码，再重新执行向导或原部署模式。脚本会复用已有密钥和数据卷：
 
 ```bash
 git pull --ff-only
-sudo ./deploy.sh all
+sudo ./deploy.sh
 ```
 
 ### 只安装后端 Agent
@@ -155,13 +161,13 @@ tmp=$(mktemp) && trap 'rm -f "$tmp"' 0 HUP INT TERM \
   && sudo sh "$tmp" --port=2081
 ```
 
-下载器会识别 Linux/macOS 与 amd64/arm64，优先从 GitHub 下载对应后端包；GitHub 不可用、校验失败或超时时自动改用国内镜像。
+下载器会识别 Linux/macOS 与 amd64/arm64。根目录交互向导默认优先国内下载、失败回退 GitHub；独立在线安装器默认 GitHub 优先、失败回退国内下载。两种方式都会校验 SHA-256。
 
 平台与 Agent 分机部署、TLS、防火墙、升级、诊断和卸载说明见[安装与升级手册](./docs/INSTALLATION.md)。
 
 ## 发布物与源码边界
 
-公开 Release 只包含 Linux/macOS、amd64/arm64 的 Wuhr Agent 分架构包、安装器与 SHA-256 校验文件。发布构建器会拒绝把 `.go`、`.ts`、`.tsx`、source map、`.env`、私钥或 `.git` 放入后端交付包。
+公开 GitHub Release 只包含 Linux/macOS、amd64/arm64 的 Wuhr Agent 分架构包、安装器与 SHA-256 校验文件；前端运行镜像单独发布到 Docker Hub。发布构建器会拒绝把 `.go`、`.ts`、`.tsx`、source map、`.env`、私钥或 `.git` 放入后端交付包。
 
 ## 浏览器与系统要求
 

@@ -6,6 +6,7 @@ GITHUB_BASE=${WUHR_AGENT_GITHUB_BASE:-"https://github.com/st-lzh/Wuhr-AI-ops/rel
 MIRROR_BASE=${WUHR_AGENT_MIRROR_BASE:-"http://106.12.150.207/download"}
 GITHUB_TIMEOUT=${WUHR_AGENT_GITHUB_TIMEOUT:-30}
 MIRROR_TIMEOUT=${WUHR_AGENT_MIRROR_TIMEOUT:-180}
+DOWNLOAD_PREFERENCE=${WUHR_AGENT_DOWNLOAD_PREFERENCE:-github-first}
 TEMP_DIR=""
 
 log() {
@@ -38,6 +39,10 @@ for timeout in "$GITHUB_TIMEOUT" "$MIRROR_TIMEOUT"; do
   esac
   [ "$timeout" -ge 1 ] || die "下载超时必须大于 0 秒"
 done
+case "$DOWNLOAD_PREFERENCE" in
+  mirror-first|github-first|mirror-only|github-only) ;;
+  *) die "WUHR_AGENT_DOWNLOAD_PREFERENCE 只支持 mirror-first、github-first、mirror-only 或 github-only" ;;
+esac
 
 OS=$(uname -s)
 case "$OS" in
@@ -101,11 +106,30 @@ download_from() {
   log "${source_name}下载及 SHA-256 校验通过"
 }
 
-if ! download_from "$GITHUB_BASE" "GitHub" "$GITHUB_TIMEOUT"; then
-  warn "GitHub 下载失败或校验未通过，自动切换国内镜像"
-  download_from "$MIRROR_BASE" "国内镜像" "$MIRROR_TIMEOUT" ||
-    die "GitHub 与国内镜像均无法提供有效的 $PACKAGE_NAME"
-fi
+case "$DOWNLOAD_PREFERENCE" in
+  mirror-first)
+    if ! download_from "$MIRROR_BASE" "国内镜像" "$MIRROR_TIMEOUT"; then
+      warn "国内镜像下载失败或校验未通过，自动切换 GitHub"
+      download_from "$GITHUB_BASE" "GitHub" "$GITHUB_TIMEOUT" ||
+        die "国内镜像与 GitHub 均无法提供有效的 $PACKAGE_NAME"
+    fi
+    ;;
+  github-first)
+    if ! download_from "$GITHUB_BASE" "GitHub" "$GITHUB_TIMEOUT"; then
+      warn "GitHub 下载失败或校验未通过，自动切换国内镜像"
+      download_from "$MIRROR_BASE" "国内镜像" "$MIRROR_TIMEOUT" ||
+        die "GitHub 与国内镜像均无法提供有效的 $PACKAGE_NAME"
+    fi
+    ;;
+  mirror-only)
+    download_from "$MIRROR_BASE" "国内镜像" "$MIRROR_TIMEOUT" ||
+      die "国内镜像无法提供有效的 $PACKAGE_NAME"
+    ;;
+  github-only)
+    download_from "$GITHUB_BASE" "GitHub" "$GITHUB_TIMEOUT" ||
+      die "GitHub 无法提供有效的 $PACKAGE_NAME"
+    ;;
+esac
 
 tar -C "$TEMP_DIR" -xzf "$TEMP_DIR/$PACKAGE_NAME"
 PACKAGE_DIR="$TEMP_DIR/wuhr-agent-$VERSION-$OS_ID-$ARCH_ID"

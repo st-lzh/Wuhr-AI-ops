@@ -1,6 +1,6 @@
 # Wuhr AI Ops 安装与升级手册
 
-本文面向平台与 Agent 系统管理员。公开 Release 只包含 Wuhr Agent 编译后二进制、安装脚本和校验文件，不包含后端源码，也不包含前端 Docker 镜像。
+本文面向平台与 Agent 系统管理员。平台运行镜像发布在 [Docker Hub `wuhrai/wuhrai`](https://hub.docker.com/r/wuhrai/wuhrai)；公开 GitHub Release 只包含 Wuhr Agent 编译后二进制、安装脚本和校验文件，不包含后端源码。
 
 ## 1. 部署结构
 
@@ -28,14 +28,16 @@ Agent 支持：
 
 建议配置为 4 核 CPU、8 GiB 内存和 20 GiB 可用磁盘。首次安装若 Docker 缺失，脚本会尝试通过系统软件源安装；完全离线环境应提前安装 Docker Engine 与 Compose v2。
 
-## 3. 从源码一键部署整个平台
+## 3. 交互式一键部署整个平台
 
 公开仓库提供前端源码，后端 Agent 使用编译包。推荐在 Linux 服务器执行：
 
 | 部署场景 | 命令 | 说明 |
 | --- | --- | --- |
+| 交互式安装向导 | `sudo ./deploy.sh` | 识别系统后选择完整安装、分机安装、镜像来源与国内代理 |
 | Linux 单机完整安装 | `sudo ./deploy.sh all` | Agent 安装为宿主机系统服务；平台组件使用 Docker |
 | 平台连接远程 Agent | `./deploy.sh platform ...` | 只启动 Docker 平台，不在本机安装 Agent |
+| 只安装后端 Agent | `sudo ./deploy.sh agent` | 下载匹配系统/架构的编译包并注册系统服务 |
 | 验收现有部署 | `./deploy.sh verify` | 检查平台、数据库、Redis、调度器和 Agent |
 | 停止平台 | `./deploy.sh down` | 停止容器但保留全部具名数据卷 |
 
@@ -44,16 +46,24 @@ Agent 支持：
 ```bash
 git clone https://github.com/st-lzh/Wuhr-AI-ops.git
 cd Wuhr-AI-ops
-sudo ./deploy.sh all
+sudo ./deploy.sh
 ```
 
-`deploy.sh all` 会完成以下真实操作：
+安装向导会先显示检测到的 Linux 发行版和 CPU 架构，然后逐项询问：
+
+1. 完整部署、仅平台、仅 Agent、验收或停止。
+2. 前端从 Docker Hub 拉取、本地源码构建或使用已有镜像。
+3. 是否通过企业/国内镜像代理前缀拉取。
+4. Agent 使用国内下载优先、GitHub 优先或单一下载源。
+5. 平台与 Agent 端口、监听范围及远程 Agent 凭据文件。
+
+推荐的完整部署会完成以下真实操作：
 
 1. 检查或安装 Docker Engine 与 Docker Compose v2。
-2. 从 GitHub Release 下载匹配架构的 Agent；GitHub 失败时切换国内镜像。
+2. 优先从国内下载站获取匹配架构的 Agent；失败时切换 GitHub。
 3. 校验 Agent SHA-256，并注册为 systemd、OpenRC 或 SysV 系统服务。
 4. 为 Agent 与平台生成同一份 API Key。
-5. 从当前源码构建前端 Docker 镜像。
+5. 按固定发布摘要拉取 `wuhrai/wuhrai:1.0.0` 多架构镜像。
 6. 启动 PostgreSQL、Redis、前端平台和交付调度器。
 7. 执行 Prisma 数据库迁移、管理员初始化和模型厂商初始化。
 8. 从平台容器验证 Agent 地址和 API Key。
@@ -65,6 +75,29 @@ sudo ./deploy.sh all
 ```
 
 文件权限为 `600`。首次登录修改密码并安全保存 Agent Key 后，应删除初始凭据文件。
+
+### 前端镜像与国内代理
+
+官方镜像同时支持 `linux/amd64` 和 `linux/arm64`。脚本不会仅依赖可变的标签：默认将 `1.0.0` 与发布时记录的 OCI SHA-256 摘要一起校验。代理拉取失败会回退 Docker Hub；Docker Hub 失败也可按选择回退代理。所有远程来源都失败时，只有本机已有镜像摘要与官方发布摘要完全一致才允许继续。
+
+交互向导中可以填写企业代理或国内镜像代理前缀，例如 `registry.example.com/docker.io`。不要填写 `http://` 或 `https://`，脚本会处理平台、PostgreSQL、Redis 及源码构建所需的 Node 基础镜像，并在代理与 Docker Hub 之间自动回退。通过代理拉取的运行镜像会重新标记为标准镜像名供 Compose 使用。
+
+非交互部署示例：
+
+```bash
+# 直接从 Docker Hub 拉取官方镜像
+sudo ./deploy.sh all --non-interactive --image-mode pull
+
+# 国内/企业代理优先，失败回退 Docker Hub
+sudo ./deploy.sh all --non-interactive --image-mode pull \
+  --image-proxy registry.example.com/docker.io \
+  --prefer-image-proxy
+
+# 二次开发服务器使用当前源码构建
+sudo ./deploy.sh all --non-interactive --image-mode build
+```
+
+`--image-proxy` 是“可直接拼接镜像名称”的代理仓库前缀，不会改写 `/etc/docker/daemon.json`。如果云厂商提供的是 Docker daemon 专用 `registry-mirrors` 地址，应先按云厂商文档配置 Docker，再在向导中选择“使用 Docker 当前配置”。脚本不会覆盖客户已有的 daemon 配置。
 
 ### 平台连接已有远程 Agent
 
@@ -149,7 +182,7 @@ macOS 使用 `shasum -a 256 -c 文件名.sha256`。不要安装校验失败的�
 
 ## 5. 私有离线包一键安装
 
-本节仅适用于发布负责人生成的私有完整离线包。公开 GitHub Release 按产品发布策略不包含前端 Docker 镜像，因此从公开仓库部署请使用上一节的根目录 `deploy.sh`。
+本节仅适用于发布负责人生成的私有完整离线包。普通联网服务器应使用上一节的根目录 `deploy.sh` 和 Docker Hub 多架构镜像；完全离线环境才需要包含镜像归档的私有包。
 
 适合单机试用或平台与中央 Agent 部署在同一台 Linux 服务器：
 
@@ -277,10 +310,10 @@ sudo ./doctor.sh
 ```bash
 cd Wuhr-AI-ops
 git pull --ff-only
-sudo ./deploy.sh all
+sudo ./deploy.sh
 ```
 
-脚本复用已有密钥和 Docker 数据卷，构建新提交对应的镜像，运行数据库迁移后再完成健康检查。
+脚本复用已有密钥和 Docker 数据卷，按向导选择拉取新发布镜像或重新构建源码，运行数据库迁移后再完成健康检查。
 
 私有离线包升级：
 

@@ -22,7 +22,7 @@
 
 ## 正式构建
 
-公开 GitHub Release 只构建后端 Agent，不构建或上传前端镜像。在前端仓库根目录运行：
+公开 GitHub Release 只上传后端 Agent 文件；前端镜像独立发布到 Docker Hub。在前端仓库根目录构建 Agent 发布包：
 
 ```bash
 ./packaging/build-agent-release.sh --version 1.0.0
@@ -53,6 +53,18 @@ dist/agent/wuhr-agent-1.0.0-darwin-arm64.tar.gz.sha256
 ```
 
 安装器根据 `uname` 选择其中一个包，优先使用 GitHub Release，失败或 SHA-256 不匹配时改用 `http://106.12.150.207/download/`。
+
+## Docker Hub 平台镜像
+
+平台镜像发布为同一标签下的 OCI 多架构清单，至少包含 `linux/amd64` 和 `linux/arm64`。正式发布应同时写入源码仓库、完整 Git 提交号和版本 OCI 标签，并发布三个标签：
+
+```text
+wuhrai/wuhrai:VERSION
+wuhrai/wuhrai:latest
+wuhrai/wuhrai:git-SHORT_COMMIT
+```
+
+发布完成后必须使用 `docker buildx imagetools inspect` 从 Docker Hub 反向确认两个架构，再分别拉取目标架构进行非 root 用户、敏感文件排除和健康启动验收。将最终多架构摘要同步到根目录 `deploy.sh` 的 `DEFAULT_FRONTEND_DIGEST`，一键安装器才能按不可变摘要校验代理返回的镜像。
 
 ## 平台离线包
 
@@ -109,4 +121,4 @@ wuhr-agent-VERSION-darwin-arm64.tar.gz
 wuhr-agent-VERSION-darwin-arm64.tar.gz.sha256
 ```
 
-不要上传前端镜像、完整平台离线包、后端源码、源码自动归档、`.env`、客户日志或单独的未校验二进制。发布说明应列出版本、后端来源摘要、支持架构、已知限制和升级步骤。
+不要把前端镜像归档上传到 GitHub Release，也不要上传完整平台离线包、后端源码、源码自动归档、`.env`、客户日志或单独的未校验二进制。前端只发布到 Docker Hub。发布说明应列出版本、平台镜像摘要、后端来源摘要、支持架构、已知限制和升级步骤。
