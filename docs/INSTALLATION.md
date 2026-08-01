@@ -35,19 +35,21 @@ Agent 支持：
 | 部署场景 | 命令 | 说明 |
 | --- | --- | --- |
 | 交互式安装向导 | `sudo ./install.sh` | 识别系统后选择完整安装、分机安装、镜像来源与国内代理 |
-| Linux 单机完整安装 | `sudo ./install.sh all` | Agent 安装为宿主机系统服务；平台组件使用 Docker |
+| Linux/macOS 单机完整安装 | Linux：`sudo ./install.sh all`；macOS：`./install.sh all` | Agent 安装为宿主机系统服务；平台组件使用 Docker |
 | 平台连接远程 Agent | `./install.sh platform ...` | 只启动 Docker 平台，不在本机安装 Agent |
 | 只安装后端 Agent | `sudo ./install.sh agent` | 下载匹配系统/架构的编译包并注册系统服务 |
 | 验收现有部署 | `./install.sh verify` | 检查平台、数据库、Redis、调度器和 Agent |
 | 停止平台 | `./install.sh down` | 停止容器但保留全部具名数据卷 |
 
-### Linux 单机完整安装
+### Linux/macOS 单机完整安装
 
 ```bash
 git clone https://github.com/st-lzh/Wuhr-AI-ops.git
 cd Wuhr-AI-ops
 sudo ./install.sh
 ```
+
+macOS 需要先启动 Docker Desktop，并使用 `./install.sh`（不要在整个脚本前加 `sudo`）；安装 Agent 的 launchd 服务时，脚本会单独请求管理员权限。
 
 安装向导会先显示检测到的 Linux 发行版和 CPU 架构，然后逐项询问：
 
@@ -61,7 +63,7 @@ sudo ./install.sh
 
 1. 检查或安装 Docker Engine 与 Docker Compose v2。
 2. 优先从国内下载站获取匹配架构的 Agent；失败时切换 GitHub。
-3. 校验 Agent SHA-256，并注册为 systemd、OpenRC 或 SysV 系统服务。
+3. 校验 Agent SHA-256，并注册为 systemd、OpenRC、SysV 或 macOS launchd 系统服务。
 4. 为 Agent 与平台生成同一份 API Key。
 5. 按固定发布摘要拉取 `wuhrai/wuhrai:1.0.0` 多架构镜像。
 6. 启动 PostgreSQL、Redis、前端平台和交付调度器。
@@ -115,7 +117,9 @@ sudo ./install.sh all --non-interactive --image-mode build
 ./install.sh platform --agent-env-file .env.local
 ```
 
-如果当前机器已经有早期版本创建的 `wuhr-ai-ops_postgres_data` 等同名数据卷，首次改用新脚本时执行：
+默认的一键全新安装不要求用户处理旧数据库密钥：如果 `.deploy/项目名/.env` 不存在，但机器上残留同项目名的旧容器或数据卷，脚本会自动删除这些遗留资源，再创建全新数据卷并导入最新数据库结构和初始化数据。
+
+如果必须保留并接管早期版本创建的 `wuhr-ai-ops_postgres_data` 等数据卷，则显式执行：
 
 ```bash
 ./install.sh platform \
@@ -124,7 +128,7 @@ sudo ./install.sh all --non-interactive --image-mode build
   --agent-env-file .env.local
 ```
 
-脚本会导入原数据库、Redis、JWT 和加密密钥并继续使用原数据卷，不会重置管理员密码。检测到旧 PostgreSQL 数据卷却没有提供 `--platform-env-file`，或旧文件缺少关键密钥时，脚本会在启动容器前停止，避免用随机密钥覆盖旧配置。接管成功后配置会安全保存在 `.deploy/wuhr-ai-ops/.env`，以后升级不必重复传入旧环境文件。
+提供 `--platform-env-file` 后，脚本会导入原数据库、Redis、JWT 和加密密钥并继续使用原数据卷，不会重置管理员密码；旧文件缺少关键密钥时仍会停止，以保护需要保留的数据。接管成功后配置会安全保存在 `.deploy/wuhr-ai-ops/.env`，以后升级不必重复传入旧环境文件。
 
 测试环境可使用独立项目名和端口，不会和正式数据卷混用：
 

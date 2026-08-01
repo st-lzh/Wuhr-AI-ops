@@ -87,7 +87,7 @@ flowchart LR
 
 ### 整个平台一键部署
 
-在 Linux 服务器克隆仓库后执行：
+在 Linux 服务器克隆仓库后执行；macOS 需先启动 Docker Desktop，并将命令中的 `sudo` 去掉，脚本会只在安装 Agent 的 launchd 服务时请求管理员权限：
 
 ```bash
 git clone https://github.com/st-lzh/Wuhr-AI-ops.git
@@ -111,7 +111,9 @@ sudo ./install.sh all --non-interactive --image-mode pull
   --agent-api-key-file ./agent-api-key.txt
 ```
 
-接管早期版本创建的同名数据卷时，必须显式导入原平台和 Agent 配置，脚本不会重置旧数据库或管理员密码：
+首次安装没有部署状态文件但检测到同名旧容器或数据卷时，脚本会自动清理这些遗留资源，创建全新的 PostgreSQL、Redis 和业务数据卷，并执行最新 Prisma 迁移、管理员初始化及模型厂商初始化，无需人工处理数据库密钥。
+
+如果确实需要保留并接管早期版本的数据，则显式导入原平台和 Agent 配置；此时脚本不会重置旧数据库或管理员密码：
 
 ```bash
 ./install.sh platform \

@@ -76,7 +76,7 @@ Wuhr AI Ops 交互式一键部署
 
 用法：
   sudo ./install.sh                     启动交互式安装向导（推荐）
-  sudo ./install.sh all [选项]       Linux 同机部署：Agent 系统服务 + Docker 平台
+  sudo ./install.sh all [选项]       Linux/macOS 同机部署：Agent 系统服务 + Docker 平台
   ./install.sh platform [选项]       只部署 Docker 平台，连接已有 Agent
   sudo ./install.sh agent [选项]      只安装或升级本机 Agent 系统服务
   ./install.sh verify [选项]         验证已部署的平台、数据库、Redis、调度器和 Agent
@@ -87,7 +87,7 @@ Wuhr AI Ops 交互式一键部署
   --port PORT                        平台端口，默认 3000
   --bind-address ADDRESS             平台监听地址，默认 0.0.0.0
   --state-dir PATH                   密钥与部署状态目录，默认 .deploy/项目名
-  --platform-env-file FILE           接管旧部署时导入数据库/JWT/加密配置
+  --platform-env-file FILE           显式保留旧数据时导入数据库/JWT/加密配置
   --image-mode MODE                  pull（推荐）、build 或 existing
   --image IMAGE                      前端镜像，pull 默认 wuhrai/wuhrai:1.0.0
   --image-digest SHA256              拉取镜像的预期摘要；官方 1.0.0 自动校验
@@ -997,8 +997,6 @@ verify_stack() {
 install_local_agent() {
   [ "$DETECTED_OS" = "Linux" ] || [ "$DETECTED_OS" = "Darwin" ] ||
     die "本机 Agent 仅支持 Linux 或 macOS"
-  [ "$(id -u)" -eq 0 ] ||
-    die "安装 Agent 系统服务需要 root 权限，请使用 sudo 重新运行"
   [ -f "$AGENT_BOOTSTRAP" ] || die "缺少 Agent 在线安装器"
 
   agent_frontend_url=$FRONTEND_URL
@@ -1006,9 +1004,67 @@ install_local_agent() {
     set -- --api-key-file "$SHARED_AGENT_KEY_FILE" --port "$AGENT_PORT"
     [ -z "$agent_frontend_url" ] || set -- "$@" --frontend-url "$agent_frontend_url"
     [ "$OPEN_AGENT_FIREWALL" -eq 0 ] || set -- "$@" --open-firewall
-    WUHR_AGENT_DOWNLOAD_PREFERENCE="$AGENT_DOWNLOAD_SOURCE" \
-      sh "$AGENT_BOOTSTRAP" "$@"
+    if [ "$(id -u)" -eq 0 ]; then
+      WUHR_AGENT_DOWNLOAD_PREFERENCE="$AGENT_DOWNLOAD_SOURCE" \
+        sh "$AGENT_BOOTSTRAP" "$@"
+    elif [ "$DETECTED_OS" = "Darwin" ] && command -v sudo >/dev/null 2>&1; then
+      log "macOS 安装 Agent 系统服务需要管理员权限"
+      sudo env WUHR_AGENT_DOWNLOAD_PREFERENCE="$AGENT_DOWNLOAD_SOURCE" \
+        sh "$AGENT_BOOTSTRAP" "$@"
+    else
+      die "安装 Agent 系统服务需要 root 权限，请使用 sudo 重新运行"
+    fi
   )
+}
+
+project_has_stale_resources() {
+  if [ -n "$(docker ps -aq --filter "label=com.docker.compose.project=$PROJECT_NAME")" ]; then
+    return 0
+  fi
+  for stale_volume in \
+    postgres_data redis_data platform_data deployment_data app_logs; do
+    if docker volume inspect "${PROJECT_NAME}_${stale_volume}" >/dev/null 2>&1; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+reset_stale_project() {
+  log "首次安装检测到同名旧部署，自动清理遗留容器和数据卷"
+  stale_containers=$(docker ps -aq --filter "label=com.docker.compose.project=$PROJECT_NAME")
+  if [ -n "$stale_containers" ]; then
+    # 这里的值只来自 Docker 容器 ID 列表，需要保留按空白分词。
+    # shellcheck disable=SC2086
+    docker rm -f $stale_containers >/dev/null
+  fi
+  for stale_volume in \
+    postgres_data redis_data platform_data deployment_data app_logs; do
+    stale_volume_name="${PROJECT_NAME}_${stale_volume}"
+    if docker volume inspect "$stale_volume_name" >/dev/null 2>&1; then
+      docker volume rm -f "$stale_volume_name" >/dev/null
+    fi
+  done
+  docker network rm "${PROJECT_NAME}_wuhr_internal" >/dev/null 2>&1 || true
+  rm -f "$CREDENTIALS_FILE" "$SHARED_AGENT_KEY_FILE"
+  log "旧部署已清理，将创建全新数据库并导入最新迁移和初始化数据"
+}
+
+verify_database_initialization() {
+  schema_ready=$(compose exec -T postgres psql -v ON_ERROR_STOP=1 \
+    -U "$DB_USER" -d "$DB_NAME" -Atqc \
+    "SELECT (to_regclass('public.users') IS NOT NULL AND to_regclass('public.model_provider_catalogs') IS NOT NULL);")
+  [ "$schema_ready" = "t" ] || die "数据库结构未完整初始化"
+
+  admin_count=$(compose exec -T postgres psql -v ON_ERROR_STOP=1 \
+    -U "$DB_USER" -d "$DB_NAME" -Atqc \
+    "SELECT COUNT(*) FROM users WHERE username = 'admin';")
+  provider_count=$(compose exec -T postgres psql -v ON_ERROR_STOP=1 \
+    -U "$DB_USER" -d "$DB_NAME" -Atqc \
+    'SELECT COUNT(*) FROM model_provider_catalogs WHERE "isActive" = true;')
+  [ "$admin_count" -ge 1 ] || die "管理员初始化数据未写入"
+  [ "$provider_count" -ge 1 ] || die "模型厂商初始化数据未写入"
+  log "数据库初始化验证通过：管理员 $admin_count 个，模型厂商 $provider_count 个"
 }
 
 [ -f "$COMPOSE_FILE" ] || die "缺少 docker-compose.deploy.yml"
@@ -1062,12 +1118,14 @@ ensure_docker
 FIRST_INSTALL=0
 [ -f "$ENV_FILE" ] || FIRST_INSTALL=1
 ADOPT_EXISTING=0
-if [ "$FIRST_INSTALL" -eq 1 ] &&
-  docker volume inspect "${PROJECT_NAME}_postgres_data" >/dev/null 2>&1; then
-  ADOPT_EXISTING=1
-  [ -n "$PLATFORM_ENV_FILE" ] ||
-    die "检测到项目 $PROJECT_NAME 的旧 PostgreSQL 数据卷；请使用 --platform-env-file 导入旧数据库密钥后再接管"
-  log "检测到旧 PostgreSQL 数据卷，将保留原账号、密钥和业务数据"
+if [ "$FIRST_INSTALL" -eq 1 ]; then
+  if [ -n "$PLATFORM_ENV_FILE" ] &&
+    docker volume inspect "${PROJECT_NAME}_postgres_data" >/dev/null 2>&1; then
+    ADOPT_EXISTING=1
+    log "已显式提供旧平台配置，将保留原账号、密钥和业务数据"
+  elif project_has_stale_resources; then
+    reset_stale_project
+  fi
 fi
 umask 077
 mkdir -p "$STATE_DIR"
@@ -1097,10 +1155,11 @@ fi
 validate_secret "Agent API Key" "$AGENT_API_KEY"
 
 if [ "$MODE" = "all" ]; then
-  [ "$(uname -s)" = "Linux" ] ||
-    die "all 模式需要 Linux；macOS/Windows 请使用 platform 模式连接 Linux Agent"
-  [ "$(id -u)" -eq 0 ] ||
-    die "安装 Agent 系统服务需要 root 权限，请使用 sudo ./install.sh all"
+  [ "$DETECTED_OS" = "Linux" ] || [ "$DETECTED_OS" = "Darwin" ] ||
+    die "all 模式仅支持 Linux 或 macOS"
+  if [ "$DETECTED_OS" = "Linux" ] && [ "$(id -u)" -ne 0 ]; then
+    die "Linux 安装 Agent 系统服务需要 root 权限，请使用 sudo ./install.sh all"
+  fi
   printf '%s\n' "$AGENT_API_KEY" > "$SHARED_AGENT_KEY_FILE"
   chmod 600 "$SHARED_AGENT_KEY_FILE"
   log "安装或升级本机 Agent 系统服务"
@@ -1220,13 +1279,18 @@ case "$IMAGE_MODE" in
     ;;
 esac
 
-log "启动 PostgreSQL、Redis、平台和交付调度器"
+if [ "$FIRST_INSTALL" -eq 1 ] && [ "$ADOPT_EXISTING" -eq 0 ]; then
+  log "启动全新 PostgreSQL、Redis、平台和交付调度器，并执行最新数据库迁移与初始化数据"
+else
+  log "启动 PostgreSQL、Redis、平台和交付调度器，并执行数据库迁移与幂等初始化"
+fi
 compose up -d --remove-orphans
 health_check || {
   compose ps >&2 || true
   compose logs --tail=160 app postgres redis >&2 || true
   die "平台启动后健康检查失败"
 }
+verify_database_initialization
 
 if [ -n "$ADMIN_PASSWORD" ]; then
   if [ ! -f "$CREDENTIALS_FILE" ]; then
