@@ -95,7 +95,7 @@ cd Wuhr-AI-ops
 sudo ./install.sh
 ```
 
-交互向导会识别操作系统和 CPU 架构，引导选择同机/分机部署、后端 Agent 下载来源、平台镜像拉取/源码构建、国内镜像代理、端口和监听范围。推荐方案会把 Agent 安装为宿主机系统服务，按固定摘要拉取 `wuhrai/wuhrai:1.0.0`，通过 DaoCloud 拉取公共基础镜像，并由 Docker Compose 启动前端、PostgreSQL、Redis 和交付调度器。初始管理员密码保存在 `.deploy/wuhr-ai-ops/initial-credentials.txt`。
+交互向导会识别操作系统和 CPU 架构，引导选择同机/分机部署、后端 Agent 下载来源、平台镜像拉取/源码构建、国内镜像代理、端口和监听范围。推荐方案会把 Agent 安装为宿主机系统服务，按固定摘要拉取 `wuhrai/wuhrai:1.0.0`，通过 DaoCloud 拉取公共基础镜像，并由 Docker Compose 启动前端、PostgreSQL、Redis 和交付调度器。安装器会用生成的管理员密码真实调用登录接口验收，成功后在终端显示登录邮箱、用户名和密码，同时保存到 `.deploy/wuhr-ai-ops/initial-credentials.txt`。
 
 自动化环境可关闭交互：
 

@@ -10,7 +10,7 @@ import { LoginLoading, FullScreenLoading } from '../components/LoadingAnimation'
 const { Title, Text, Link } = Typography
 
 interface LoginFormData {
-  email: string
+  identifier: string
   password: string
 }
 
@@ -45,8 +45,7 @@ function LoginForm() {
   const handleLogin = async (values: LoginFormData) => {
     setLoading(true)
     try {
-      // 使用email作为username传递给login函数
-      await login({ username: values.email, password: values.password })
+      await login({ username: values.identifier.trim(), password: values.password })
 
       // 显示登录成功消息
       message.success('登录成功！正在跳转...')
@@ -135,16 +134,16 @@ function LoginForm() {
           size="large"
         >
           <Form.Item
-            name="email"
+            name="identifier"
             rules={[
-              { required: true, message: '请输入邮箱地址' },
-              { type: 'email', message: '请输入有效的邮箱地址' }
+              { required: true, message: '请输入用户名或邮箱地址' },
+              { max: 255, message: '用户名或邮箱地址不能超过255个字符' }
             ]}
           >
             <Input
               prefix={<UserOutlined />}
-              placeholder="邮箱地址"
-              autoComplete="email"
+              placeholder="用户名或邮箱地址"
+              autoComplete="username"
             />
           </Form.Item>
 

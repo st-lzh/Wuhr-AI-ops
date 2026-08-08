@@ -1116,13 +1116,81 @@ verify_database_initialization() {
 
   admin_count=$(compose exec -T postgres psql -v ON_ERROR_STOP=1 \
     -U "$DB_USER" -d "$DB_NAME" -Atqc \
-    "SELECT COUNT(*) FROM users WHERE username = 'admin';")
+    "SELECT COUNT(*) FROM users
+       WHERE username = 'admin'
+         AND email = 'admin@wuhr.ai'
+         AND role = 'admin'
+         AND \"isActive\" = true
+         AND \"approvalStatus\" = 'approved'
+         AND permissions @> ARRAY['*']
+         AND length(password) >= 59;")
   provider_count=$(compose exec -T postgres psql -v ON_ERROR_STOP=1 \
     -U "$DB_USER" -d "$DB_NAME" -Atqc \
     'SELECT COUNT(*) FROM model_provider_catalogs WHERE "isActive" = true;')
   [ "$admin_count" -ge 1 ] || die "管理员初始化数据未写入"
   [ "$provider_count" -ge 1 ] || die "模型厂商初始化数据未写入"
   log "数据库初始化验证通过：管理员 $admin_count 个，模型厂商 $provider_count 个"
+}
+
+synchronize_admin_credentials() {
+  bootstrap_password=$1
+  log "同步管理员首次登录密码、启用状态、审批状态和全量权限"
+  if ! printf '%s\n' "$bootstrap_password" | compose exec -T app node -e '
+    const fs = require("fs")
+    const bcrypt = require("bcryptjs")
+    const { PrismaClient } = require("./lib/generated/prisma")
+    const prisma = new PrismaClient()
+    const password = fs.readFileSync(0, "utf8").replace(/\r?\n$/, "")
+    ;(async () => {
+      const admin = await prisma.user.findFirst({
+        where: { OR: [{ username: "admin" }, { email: "admin@wuhr.ai" }] }
+      })
+      if (!admin) throw new Error("管理员记录不存在")
+      const permissions = Array.from(new Set([...(admin.permissions || []), "*"]))
+      await prisma.user.update({
+        where: { id: admin.id },
+        data: {
+          password: await bcrypt.hash(password, 12),
+          role: "admin",
+          isActive: true,
+          approvalStatus: "approved",
+          approvedAt: admin.approvedAt || new Date(),
+          permissions
+        }
+      })
+    })().catch(error => {
+      console.error(error instanceof Error ? error.message : error)
+      process.exitCode = 1
+    }).finally(() => prisma.$disconnect())
+  ' >/dev/null; then
+    die "管理员首次登录凭据同步失败"
+  fi
+}
+
+verify_admin_login() {
+  login_password=$1
+  command -v curl >/dev/null 2>&1 || die "验证管理员登录需要 curl"
+  login_status=$(
+    printf '{"username":"admin@wuhr.ai","password":"%s"}' "$login_password" |
+      curl --noproxy '*' -sS -o /dev/null -w '%{http_code}' \
+        -H 'Content-Type: application/json' --data-binary @- \
+        "http://127.0.0.1:$PLATFORM_PORT/api/auth/login"
+  ) || login_status=000
+  [ "$login_status" = "200" ] ||
+    die "管理员凭据真实登录验收失败（HTTP $login_status）"
+  log "管理员账号、密码和登录接口真实验收通过"
+}
+
+show_initial_credentials() {
+  display_password=$1
+  printf '\n%s\n' "========== Wuhr AI Ops 初始登录凭据 =========="
+  printf '  平台地址：http://127.0.0.1:%s\n' "$PLATFORM_PORT"
+  printf '  登录邮箱：admin@wuhr.ai\n'
+  printf '  登录用户名：admin\n'
+  printf '  登录密码：%s\n' "$display_password"
+  printf '  凭据文件：%s\n' "$CREDENTIALS_FILE"
+  printf '%s\n\n' "================================================"
+  warn "请让客户首次登录后立即修改密码，并安全删除初始凭据文件"
 }
 
 [ -f "$COMPOSE_FILE" ] || die "缺少 docker-compose.deploy.yml"
@@ -1348,29 +1416,35 @@ health_check || {
   compose logs --tail=160 app postgres redis >&2 || true
   die "平台启动后健康检查失败"
 }
+
+if [ -n "$ADMIN_PASSWORD" ]; then
+  synchronize_admin_credentials "$ADMIN_PASSWORD"
+fi
 verify_database_initialization
 
 if [ -n "$ADMIN_PASSWORD" ]; then
-  if [ ! -f "$CREDENTIALS_FILE" ]; then
-  cat > "$CREDENTIALS_FILE" <<EOF
-Wuhr AI Ops 初始凭据
-生成时间：$(date '+%Y-%m-%d %H:%M:%S %z')
-平台地址：http://127.0.0.1:$PLATFORM_PORT
-管理员账号：admin
-管理员密码：$ADMIN_PASSWORD
-Agent 地址：$AGENT_URL
-Agent API Key：$AGENT_API_KEY
-
-首次登录后请立即修改管理员密码，并在安全保存后删除本文件。
-EOF
-    chmod 600 "$CREDENTIALS_FILE"
-  fi
+  verify_admin_login "$ADMIN_PASSWORD"
 
   sed '/^DEFAULT_ADMIN_PASSWORD=/d' "$ENV_FILE" > "$ENV_FILE.without-admin"
   chmod 600 "$ENV_FILE.without-admin"
   mv "$ENV_FILE.without-admin" "$ENV_FILE"
   compose up -d --force-recreate app deployment-scheduler
   health_check || die "移除初始管理员明文密码后平台健康检查失败"
+  verify_admin_login "$ADMIN_PASSWORD"
+
+  cat > "$CREDENTIALS_FILE" <<EOF
+Wuhr AI Ops 初始凭据
+生成时间：$(date '+%Y-%m-%d %H:%M:%S %z')
+平台地址：http://127.0.0.1:$PLATFORM_PORT
+登录邮箱：admin@wuhr.ai
+登录用户名：admin
+管理员密码：$ADMIN_PASSWORD
+Agent 地址：$AGENT_URL
+Agent API Key：$AGENT_API_KEY
+
+首次登录后请立即修改管理员密码，并在安全保存后删除本文件。
+EOF
+  chmod 600 "$CREDENTIALS_FILE"
 fi
 
 verify_stack
@@ -1379,5 +1453,6 @@ log "部署完成：http://127.0.0.1:$PLATFORM_PORT"
 if [ -f "$CREDENTIALS_FILE" ]; then
   log "初始凭据：${CREDENTIALS_FILE}（权限 600）"
 fi
+[ -z "$ADMIN_PASSWORD" ] || show_initial_credentials "$ADMIN_PASSWORD"
 log "再次验证：./install.sh verify --project-name $PROJECT_NAME"
 log "停止容器：./install.sh down --project-name $PROJECT_NAME"

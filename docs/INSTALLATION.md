@@ -69,15 +69,16 @@ macOS 需要先启动 Docker Desktop，并使用 `./install.sh`（不要在整�
 6. 默认从 DaoCloud 国内入口拉取 Node、PostgreSQL 和 Redis，失败时自动回退 Docker Hub。
 7. 启动 PostgreSQL、Redis、前端平台和交付调度器。
 8. 执行 Prisma 数据库迁移、管理员初始化和模型厂商初始化。
-9. 从平台容器验证 Agent 地址和 API Key。
+9. 校验管理员邮箱、用户名、角色、启用状态、审批状态、权限和密码哈希，并用生成的密码真实调用登录接口。
+10. 从平台容器验证 Agent 地址和 API Key。
 
-安装完成后访问 `http://服务器地址:3000`。初始凭据位于：
+安装完成后，终端会直接显示客户首次登录所需的邮箱、用户名和密码；登录框同时支持用户名或邮箱。凭据也会写入：
 
 ```text
 .deploy/wuhr-ai-ops/initial-credentials.txt
 ```
 
-文件权限为 `600`。首次登录修改密码并安全保存 Agent Key 后，应删除初始凭据文件。
+默认登录邮箱为 `admin@wuhr.ai`，用户名为 `admin`。文件权限为 `600`。首次登录修改密码并安全保存 Agent Key 后，应删除初始凭据文件。
 
 ### 镜像与国内加速
 
