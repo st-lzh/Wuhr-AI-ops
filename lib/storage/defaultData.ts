@@ -9,7 +9,7 @@ export async function createDefaultAdmin(): Promise<User> {
   if (!configuredPassword && process.env.NODE_ENV === 'production') {
     throw new Error('生产环境初始化管理员前必须配置 DEFAULT_ADMIN_PASSWORD')
   }
-  const adminPassword = configuredPassword || 'Admin123!'
+  const adminPassword = configuredPassword || 'WuhrAI@2026!'
   const hashedPassword = await hashPassword(adminPassword)
   
   return {

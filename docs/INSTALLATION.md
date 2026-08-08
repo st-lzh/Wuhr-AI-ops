@@ -69,7 +69,7 @@ macOS 需要先启动 Docker Desktop，并使用 `./install.sh`（不要在整�
 6. 默认从 DaoCloud 国内入口拉取 Node、PostgreSQL 和 Redis，失败时自动回退 Docker Hub。
 7. 启动 PostgreSQL、Redis、前端平台和交付调度器。
 8. 执行 Prisma 数据库迁移、管理员初始化和模型厂商初始化。
-9. 校验管理员邮箱、用户名、角色、启用状态、审批状态、权限和密码哈希，并用生成的密码真实调用登录接口。
+9. 校验管理员邮箱、用户名、角色、启用状态、审批状态、权限和密码哈希，并用固定初始密码真实调用登录接口。
 10. 从平台容器验证 Agent 地址和 API Key。
 
 安装完成后，终端会直接显示客户首次登录所需的邮箱、用户名和密码；登录框同时支持用户名或邮箱。凭据也会写入：
@@ -78,7 +78,7 @@ macOS 需要先启动 Docker Desktop，并使用 `./install.sh`（不要在整�
 .deploy/wuhr-ai-ops/initial-credentials.txt
 ```
 
-默认登录邮箱为 `admin@wuhr.ai`，用户名为 `admin`。文件权限为 `600`。首次登录修改密码并安全保存 Agent Key 后，应删除初始凭据文件。
+默认登录邮箱为 `admin@wuhr.ai`，用户名为 `admin`，固定初始密码为 `WuhrAI@2026!`。文件权限为 `600`。首次登录修改密码并安全保存 Agent Key 后，应删除初始凭据文件。需要为正式环境指定不同密码时，可使用 `--admin-password-file`。
 
 如果存量环境忘记密码或旧凭据已失效，可在不删除 PostgreSQL、Redis 和业务数据的情况下重置管理员密码：
 
@@ -86,7 +86,7 @@ macOS 需要先启动 Docker Desktop，并使用 `./install.sh`（不要在整�
 ./install.sh platform --reset-admin-password --non-interactive
 ```
 
-脚本会复用现有部署状态，生成新密码、同步管理员启用/审批/权限字段，分别在容器重建前后真实登录验证，最后覆盖初始凭据文件并在终端显示新密码。也可以配合 `--admin-password-file` 指定客户预先准备的密码文件。
+脚本会复用现有部署状态，把密码恢复为 `WuhrAI@2026!`、同步管理员启用/审批/权限字段，分别在容器重建前后真实登录验证，最后覆盖初始凭据文件并在终端显示完整登录信息。也可以配合 `--admin-password-file` 指定客户预先准备的密码文件。
 
 ### 镜像与国内加速
 
@@ -216,13 +216,13 @@ sudo ./install.sh all
 6. 启动平台及交付调度器。
 7. 验证平台健康状态和 Agent 鉴权。
 
-完成后，初始管理员账号、随机密码和 Agent API Key 写入：
+完成后，初始管理员账号、固定初始密码和 Agent API Key 会直接显示在终端，并写入：
 
 ```text
 /opt/wuhr-ai-ops/initial-credentials.txt
 ```
 
-该文件权限为 `600`。首次登录并安全保存凭据后，请立即修改管理员密码并删除此文件。
+默认用户名为 `admin`，邮箱为 `admin@wuhr.ai`，固定初始密码为 `WuhrAI@2026!`。该文件权限为 `600`。首次登录并安全保存凭据后，请立即修改管理员密码并删除此文件。
 
 ## 6. 私有离线包分开安装
 
@@ -342,7 +342,7 @@ sudo ./install.sh all
 安装器会：
 
 - 保留现有数据库、Redis 和业务数据卷。
-- 保留现有随机密钥与管理员密码。
+- 保留现有随机密钥与客户已经修改过的管理员密码。
 - 备份旧 `.env`、Compose 配置和 Agent 二进制。
 - 启动新版本并执行健康检查。
 - 新版本启动失败时恢复旧配置或 Agent 二进制。

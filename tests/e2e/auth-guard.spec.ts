@@ -2,8 +2,8 @@ import { expect, test } from '@playwright/test'
 
 async function loginAsAdmin(page: import('@playwright/test').Page) {
   await page.goto('/login')
-  await page.getByPlaceholder('邮箱地址').fill(process.env.E2E_EMAIL || 'admin@wuhr.ai')
-  await page.getByPlaceholder('密码').fill(process.env.E2E_PASSWORD || 'Admin123!')
+  await page.getByPlaceholder('用户名或邮箱地址').fill(process.env.E2E_EMAIL || 'admin@wuhr.ai')
+  await page.getByPlaceholder('密码').fill(process.env.E2E_PASSWORD || 'WuhrAI@2026!')
   await page.getByRole('button', { name: /登\s*录/ }).click()
   await expect(page).toHaveURL(/\/$/, { timeout: 10_000 })
 }

@@ -14,6 +14,7 @@ DEFAULT_POSTGRES_IMAGE="m.daocloud.io/docker.io/library/postgres:15-alpine"
 UPSTREAM_POSTGRES_IMAGE="postgres:15-alpine"
 DEFAULT_REDIS_IMAGE="m.daocloud.io/docker.io/library/redis:7-alpine"
 UPSTREAM_REDIS_IMAGE="redis:7-alpine"
+DEFAULT_INITIAL_ADMIN_PASSWORD="WuhrAI@2026!"
 
 MODE_EXPLICIT=0
 MODE=${1:-all}
@@ -117,8 +118,8 @@ Agent 选项：
   --open-agent-firewall              安装本机 Agent 时开放 2081/自定义端口
 
 账号选项：
-  --admin-password-file FILE         首次管理员密码文件；未指定时自动生成
-  --reset-admin-password             保留业务数据并重置管理员密码，完成后显示新凭据
+  --admin-password-file FILE         管理员密码文件；未指定时使用固定初始密码 WuhrAI@2026!
+  --reset-admin-password             保留业务数据并重置管理员密码，完成后显示凭据
 
 示例：
   sudo ./install.sh
@@ -733,7 +734,7 @@ validate_secret() {
   label=$1
   value=$2
   case "$value" in
-    *[!A-Za-z0-9._:@+-]*) die "$label 含有不支持的字符" ;;
+    *[!A-Za-z0-9._:@+!-]*) die "$label 含有不支持的字符" ;;
   esac
   [ "${#value}" -ge 12 ] || die "$label 至少需要 12 个字符"
 }
@@ -1365,7 +1366,7 @@ if [ "$RESET_ADMIN_PASSWORD" -eq 1 ]; then
   if [ -n "$ADMIN_PASSWORD_FILE" ]; then
     ADMIN_PASSWORD=$(read_secret_file "$ADMIN_PASSWORD_FILE")
   else
-    ADMIN_PASSWORD="WuhrA1-$(random_hex 10)"
+    ADMIN_PASSWORD=$DEFAULT_INITIAL_ADMIN_PASSWORD
   fi
   validate_secret "管理员密码" "$ADMIN_PASSWORD"
 elif { [ "$FIRST_INSTALL" -eq 1 ] && [ "$ADOPT_EXISTING" -eq 0 ]; } ||
@@ -1373,7 +1374,7 @@ elif { [ "$FIRST_INSTALL" -eq 1 ] && [ "$ADOPT_EXISTING" -eq 0 ]; } ||
   if [ -n "$ADMIN_PASSWORD_FILE" ]; then
     ADMIN_PASSWORD=$(read_secret_file "$ADMIN_PASSWORD_FILE")
   elif [ -z "$ADMIN_PASSWORD" ]; then
-    ADMIN_PASSWORD="WuhrA1-$(random_hex 10)"
+    ADMIN_PASSWORD=$DEFAULT_INITIAL_ADMIN_PASSWORD
   fi
   validate_secret "管理员密码" "$ADMIN_PASSWORD"
 fi

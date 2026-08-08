@@ -42,7 +42,7 @@ const { getPrismaClient } = require('/app/lib/config/database');
 const bcrypt = require('bcryptjs');
 (async () => {
   const prisma = await getPrismaClient();
-  const hash = await bcrypt.hash('Admin123!', 12);
+  const hash = await bcrypt.hash('WuhrAI@2026!', 12);
   await prisma.user.upsert({
     where: { email: 'admin@wuhr.ai' },
     update: { password: hash, role: 'admin', permissions: ['*'] },
@@ -92,7 +92,8 @@ REDIS_PASSWORD="your_redis_password"
 - **Web界面**: http://localhost:3000
 - **默认管理员账户**:
   - 邮箱: `admin@wuhr.ai`
-  - 密码: `Admin123!`
+  - 用户名: `admin`
+  - 密码: `WuhrAI@2026!`
 
 ⚠️ **首次登录后请立即修改密码！**
 

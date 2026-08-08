@@ -7,6 +7,7 @@ DEFAULT_INSTALL_DIR="/opt/wuhr-ai-ops"
 DEFAULT_PORT="3000"
 DEFAULT_BIND_ADDRESS="0.0.0.0"
 MIN_FREE_KB="6291456"
+DEFAULT_INITIAL_ADMIN_PASSWORD="WuhrAI@2026!"
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 INSTALL_DIR="$DEFAULT_INSTALL_DIR"
@@ -43,7 +44,7 @@ usage() {
   --bind-address ADDRESS      监听地址，默认 0.0.0.0
   --agent-url URL             中央 Agent 地址，默认 http://host.docker.internal:2081
   --agent-api-key-file FILE   Agent API Key 文件（推荐）
-  --admin-password-file FILE  首次管理员密码文件（推荐）
+  --admin-password-file FILE  管理员密码文件；未指定时使用固定初始密码 WuhrAI@2026!
   --skip-docker-install       Docker 缺失时不自动安装
   --non-interactive           非交互安装
   --dry-run                   仅执行环境检查，不写入系统
@@ -270,7 +271,7 @@ validate_env_secret() {
   label=$1
   value=$2
   case "$value" in
-    *[!A-Za-z0-9._:@+-]*) die "$label 含有不支持的字符；请只使用字母、数字及 ._:@+-" ;;
+    *[!A-Za-z0-9._:@+!-]*) die "$label 含有不支持的字符；请只使用字母、数字及 ._:@+!-" ;;
   esac
   [ "${#value}" -ge 12 ] || die "$label 至少需要 12 个字符"
 }
@@ -302,6 +303,43 @@ health_check() {
     sleep 2
   done
   return 1
+}
+
+verify_admin_login() {
+  login_password=$1
+  if ! printf '{"username":"admin@wuhr.ai","password":"%s"}' "$login_password" |
+    compose exec -T app node -e '
+      let body = ""
+      process.stdin.setEncoding("utf8")
+      process.stdin.on("data", chunk => { body += chunk })
+      process.stdin.on("end", async () => {
+        try {
+          const response = await fetch("http://127.0.0.1:3000/api/auth/login", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body
+          })
+          process.exit(response.status === 200 ? 0 : 1)
+        } catch {
+          process.exit(1)
+        }
+      })
+    ' >/dev/null 2>&1; then
+    die "管理员固定初始密码真实登录验收失败"
+  fi
+  log "管理员账号、固定初始密码和登录接口真实验收通过"
+}
+
+show_initial_credentials() {
+  display_password=$1
+  printf '\n%s\n' "========== Wuhr AI Ops 初始登录凭据 =========="
+  printf '  平台地址：http://%s:%s\n' "$(hostname -f 2>/dev/null || hostname)" "$PLATFORM_PORT"
+  printf '  登录邮箱：admin@wuhr.ai\n'
+  printf '  登录用户名：admin\n'
+  printf '  登录密码：%s\n' "$display_password"
+  printf '  凭据文件：%s\n' "$CREDENTIALS_FILE"
+  printf '%s\n\n' "================================================"
+  warn "请让客户首次登录后立即修改密码，并安全删除初始凭据文件"
 }
 
 detect_distro
@@ -372,7 +410,7 @@ ENCRYPTION_KEY=${ENCRYPTION_KEY:-$(random_hex 32)}
 if [ -n "$ADMIN_PASSWORD_FILE" ]; then
   DEFAULT_ADMIN_PASSWORD=$(read_secret_file "$ADMIN_PASSWORD_FILE")
 elif [ -z "$DEFAULT_ADMIN_PASSWORD" ] && [ "$FIRST_INSTALL" -eq 1 ]; then
-  DEFAULT_ADMIN_PASSWORD="WuhrA1-$(random_hex 10)"
+  DEFAULT_ADMIN_PASSWORD=$DEFAULT_INITIAL_ADMIN_PASSWORD
 fi
 
 if [ -n "$AGENT_API_KEY_FILE" ]; then
@@ -453,7 +491,9 @@ if ! health_check; then
   die "平台健康检查失败，已尝试恢复旧配置"
 fi
 
-if [ "$FIRST_INSTALL" -eq 1 ]; then
+[ -z "$DEFAULT_ADMIN_PASSWORD" ] || verify_admin_login "$DEFAULT_ADMIN_PASSWORD"
+
+if [ -n "$DEFAULT_ADMIN_PASSWORD" ]; then
   cat > "$CREDENTIALS_FILE" <<EOF
 $PRODUCT_NAME 初始凭据
 生成时间：$(date '+%Y-%m-%d %H:%M:%S %z')
@@ -473,12 +513,19 @@ sed '/^DEFAULT_ADMIN_PASSWORD=/d' "$ENV_FILE" > "$ENV_FILE.without-admin-passwor
 chmod 600 "$ENV_FILE.without-admin-password"
 mv "$ENV_FILE.without-admin-password" "$ENV_FILE"
 
+if [ -n "$DEFAULT_ADMIN_PASSWORD" ]; then
+  compose up -d --force-recreate app deployment-scheduler
+  health_check || die "移除管理员明文密码后平台健康检查失败"
+  verify_admin_login "$DEFAULT_ADMIN_PASSWORD"
+fi
+
 rm -rf "$ROLLBACK_DIR"
 log "安装完成"
 log "平台地址：http://$(hostname -f 2>/dev/null || hostname):$PLATFORM_PORT"
-if [ "$FIRST_INSTALL" -eq 1 ]; then
+if [ -n "$DEFAULT_ADMIN_PASSWORD" ]; then
   log "初始凭据：$CREDENTIALS_FILE（权限 600，请妥善保存后删除）"
 else
   log "升级已保留现有账号、密钥和持久化数据"
 fi
+[ -z "$DEFAULT_ADMIN_PASSWORD" ] || show_initial_credentials "$DEFAULT_ADMIN_PASSWORD"
 log "查看状态：cd $INSTALL_DIR && docker compose -p $PROJECT_NAME ps"

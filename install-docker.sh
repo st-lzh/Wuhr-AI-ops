@@ -214,10 +214,10 @@ VALUES (
   'admin-' || md5(random()::text),
   'admin',
   'admin@wuhr.ai',
-  '$2a$12$0YWbGjHuIKSo0JBQ6gBB5eoTPFpyMsHzyls1WQ9DNRQYeR3kgruDS',
+  '$2a$12$2Ip8szOs60R808pRyl5UAeKfRINofYl/VQO9luzKKMuk.b6e6b33C',
   '超级管理员',
   'admin',
-  ARRAY['users:read', 'users:write', 'permissions:read', 'permissions:write', 'servers:read', 'servers:write', 'cicd:read', 'cicd:write', 'approvals:read', 'approvals:write', 'notifications:read', 'notifications:write', 'config:read', 'config:write', 'ai:read', 'ai:write', 'monitoring:read', 'monitoring:write', 'grafana:read', 'grafana:write'],
+  ARRAY['*'],
   true,
   'approved',
   NOW(),
@@ -234,7 +234,7 @@ EOF
 then
     log "✅ 管理员账户初始化成功" "✅ Admin account initialized successfully"
     log "📧 邮箱 / Email: admin@wuhr.ai" "📧 Email: admin@wuhr.ai"
-    log "🔑 密码 / Password: Admin123!" "🔑 Password: Admin123!"
+    log "🔑 密码 / Password: WuhrAI@2026!" "🔑 Password: WuhrAI@2026!"
 else
     ERROR_MSG=$(cat /tmp/admin-init.log)
     if echo "$ERROR_MSG" | grep -q "duplicate key"; then
@@ -284,6 +284,18 @@ fi
 
 log "✅ 应用健康检查通过" "✅ Application health check passed"
 
+LOGIN_STATUS=$(curl -sS -o /dev/null -w '%{http_code}' \
+    -H 'Content-Type: application/json' \
+    --data '{"username":"admin@wuhr.ai","password":"WuhrAI@2026!"}' \
+    http://localhost:3000/api/auth/login || true)
+if [ "$LOGIN_STATUS" != "200" ]; then
+    log "❌ 管理员固定初始密码登录验收失败（HTTP $LOGIN_STATUS）" \
+        "❌ Fixed administrator password login verification failed (HTTP $LOGIN_STATUS)"
+    exit 1
+fi
+log "✅ 管理员账号和固定初始密码真实登录验收通过" \
+    "✅ Administrator account and fixed password login verified"
+
 echo ""
 log "🎉 Wuhr AI Ops Platform 启动成功！" "🎉 Wuhr AI Ops Platform started successfully!"
 echo ""
@@ -292,7 +304,8 @@ echo "   - 主应用: http://localhost:3000"
 echo ""
 log "👤 默认管理员账户：" "👤 Default admin account:"
 echo "   - 邮箱: admin@wuhr.ai"
-echo "   - 密码: Admin123!"
+echo "   - 用户名: admin"
+echo "   - 密码: WuhrAI@2026!"
 echo ""
 log "📊 服务状态：" "📊 Service Status:"
 $DOCKER_COMPOSE ps
