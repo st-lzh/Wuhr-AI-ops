@@ -129,6 +129,9 @@ sudo ./install.sh all --non-interactive --image-mode pull
 # 查看首次登录凭据
 cat .deploy/wuhr-ai-ops/initial-credentials.txt
 
+# 已安装环境忘记或无法使用管理员密码：保留业务数据并生成新密码
+./install.sh platform --reset-admin-password --non-interactive
+
 # 验收平台、数据库、Redis、调度器和 Agent
 ./install.sh verify
 

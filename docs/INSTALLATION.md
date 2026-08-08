@@ -80,6 +80,14 @@ macOS 需要先启动 Docker Desktop，并使用 `./install.sh`（不要在整�
 
 默认登录邮箱为 `admin@wuhr.ai`，用户名为 `admin`。文件权限为 `600`。首次登录修改密码并安全保存 Agent Key 后，应删除初始凭据文件。
 
+如果存量环境忘记密码或旧凭据已失效，可在不删除 PostgreSQL、Redis 和业务数据的情况下重置管理员密码：
+
+```bash
+./install.sh platform --reset-admin-password --non-interactive
+```
+
+脚本会复用现有部署状态，生成新密码、同步管理员启用/审批/权限字段，分别在容器重建前后真实登录验证，最后覆盖初始凭据文件并在终端显示新密码。也可以配合 `--admin-password-file` 指定客户预先准备的密码文件。
+
 ### 镜像与国内加速
 
 官方镜像同时支持 `linux/amd64` 和 `linux/arm64`。脚本不会仅依赖可变的标签：默认将 `1.0.0` 与发布时记录的 OCI SHA-256 摘要一起校验。代理拉取失败会回退 Docker Hub；Docker Hub 失败也可按选择回退代理。所有远程来源都失败时，只有本机已有镜像摘要与官方发布摘要完全一致才允许继续。

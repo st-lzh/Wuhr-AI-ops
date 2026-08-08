@@ -40,6 +40,7 @@ AGENT_API_KEY_FILE=""
 AGENT_ENV_FILE=""
 PLATFORM_ENV_FILE=""
 ADMIN_PASSWORD_FILE=""
+RESET_ADMIN_PASSWORD=0
 STATE_DIR=""
 FRONTEND_IMAGE=""
 FRONTEND_IMAGE_DIGEST=""
@@ -117,6 +118,7 @@ Agent 选项：
 
 账号选项：
   --admin-password-file FILE         首次管理员密码文件；未指定时自动生成
+  --reset-admin-password             保留业务数据并重置管理员密码，完成后显示新凭据
 
 示例：
   sudo ./install.sh
@@ -127,6 +129,7 @@ Agent 选项：
     --prefer-image-proxy --agent-env-file .env.local
   ./install.sh platform --image-mode build --agent-env-file .env.local
   ./install.sh platform --platform-env-file .env --agent-env-file .env.local
+  ./install.sh platform --reset-admin-password --non-interactive
   ./install.sh platform --project-name wuhr-test --port 3100 \
     --agent-url http://10.0.0.20:2081 --agent-api-key-file ./agent-api-key.txt
 EOF
@@ -185,6 +188,10 @@ while [ "$#" -gt 0 ]; do
       need_value "$@"
       ADMIN_PASSWORD_FILE=$2
       shift 2
+      ;;
+    --reset-admin-password)
+      RESET_ADMIN_PASSWORD=1
+      shift
       ;;
     --state-dir)
       need_value "$@"
@@ -381,6 +388,9 @@ print_plan() {
         "$( [ "$PREFER_IMAGE_PROXY" -eq 1 ] && printf '%s' 优先 || printf '%s' 回退 )"
     else
       printf '  镜像代理：未配置，使用 Docker 当前配置\n'
+    fi
+    if [ "$RESET_ADMIN_PASSWORD" -eq 1 ]; then
+      printf '  管理员密码：保留业务数据并重置，完成后显示新凭据\n'
     fi
   fi
   if [ "$MODE" = "all" ] || [ "$MODE" = "agent" ]; then
@@ -606,6 +616,10 @@ if [ "$MODE" = "all" ] || [ "$MODE" = "platform" ]; then
     [ -z "$FRONTEND_IMAGE_DIGEST" ]; then
     FRONTEND_IMAGE_DIGEST=$DEFAULT_FRONTEND_DIGEST
   fi
+fi
+if [ "$RESET_ADMIN_PASSWORD" -eq 1 ] &&
+  [ "$MODE" != "all" ] && [ "$MODE" != "platform" ]; then
+  die "--reset-admin-password 仅支持 all 或 platform 模式"
 fi
 
 case "$PROJECT_NAME" in
@@ -1343,10 +1357,18 @@ JWT_SECRET=${JWT_SECRET:-$(random_hex 48)}
 ENCRYPTION_KEY=${ENCRYPTION_KEY:-$(random_hex 32)}
 
 ADMIN_PASSWORD=$(read_env_value DEFAULT_ADMIN_PASSWORD "$ENV_FILE")
-if [ "$ADOPT_EXISTING" -eq 1 ] && [ -n "$ADMIN_PASSWORD_FILE" ]; then
+if [ "$ADOPT_EXISTING" -eq 1 ] && [ -n "$ADMIN_PASSWORD_FILE" ] &&
+  [ "$RESET_ADMIN_PASSWORD" -eq 0 ]; then
   die "接管旧数据卷不会重置管理员密码；请移除 --admin-password-file 并使用原密码登录"
 fi
-if { [ "$FIRST_INSTALL" -eq 1 ] && [ "$ADOPT_EXISTING" -eq 0 ]; } ||
+if [ "$RESET_ADMIN_PASSWORD" -eq 1 ]; then
+  if [ -n "$ADMIN_PASSWORD_FILE" ]; then
+    ADMIN_PASSWORD=$(read_secret_file "$ADMIN_PASSWORD_FILE")
+  else
+    ADMIN_PASSWORD="WuhrA1-$(random_hex 10)"
+  fi
+  validate_secret "管理员密码" "$ADMIN_PASSWORD"
+elif { [ "$FIRST_INSTALL" -eq 1 ] && [ "$ADOPT_EXISTING" -eq 0 ]; } ||
   [ -n "$ADMIN_PASSWORD" ]; then
   if [ -n "$ADMIN_PASSWORD_FILE" ]; then
     ADMIN_PASSWORD=$(read_secret_file "$ADMIN_PASSWORD_FILE")
