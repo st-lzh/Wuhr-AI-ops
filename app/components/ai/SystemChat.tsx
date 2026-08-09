@@ -109,7 +109,8 @@ const CICD_INTENT_PROMPTS: Record<string, string> = {
 }
 
 const PANEL_SUMMARY_TAG_CLASS = 'm-0 min-w-0 max-w-[104px] overflow-hidden text-ellipsis whitespace-nowrap text-xs'
-const HEADER_ACTION_BUTTON_CLASS = '!flex !h-9 !w-full !min-w-0 !items-center !justify-center !rounded-lg !px-2 !text-xs !font-medium'
+const HEADER_ACTION_BUTTON_CLASS = '!flex !h-8 !min-w-0 !items-center !justify-center !rounded-md !px-2 !text-xs !font-medium'
+const HEADER_ACTION_LABEL_CLASS = 'hidden xl:inline'
 
 const SystemChat: React.FC = () => {
   const { isDark } = useTheme()
@@ -2057,46 +2058,42 @@ const SystemChat: React.FC = () => {
           <Col xs={24} lg={18} className="flex min-h-[640px] flex-col lg:h-full lg:min-h-0">
           <Card
             title={
-              <div className="flex min-w-0 flex-col gap-3 2xl:flex-row 2xl:items-center 2xl:justify-between">
-                <div className="flex min-w-0 items-center gap-3">
-                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500 to-emerald-500 shadow-sm shadow-blue-500/20">
-                    <RobotOutlined className="text-white" />
+              <div className="flex min-w-0 items-center justify-between gap-2">
+                <div className="flex min-w-0 flex-1 items-center gap-2">
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-blue-500 to-emerald-500 shadow-sm shadow-blue-500/20">
+                    <RobotOutlined className="text-sm text-white" />
                   </div>
-                  <div className="min-w-0">
-                    <Title level={4} className={`!mb-0 ${isDark ? '!text-white' : '!text-slate-900'}`}>
+                  <div className="flex min-w-0 items-center gap-1.5">
+                    <Text strong className={`shrink-0 !text-sm ${isDark ? '!text-white' : '!text-slate-900'}`}>
                       Wuhr AI
-                    </Title>
-                    <div className="flex min-w-0 items-center gap-2">
-                      <Text className={`truncate text-sm ${isDark ? 'text-gray-400' : 'text-slate-500'}`}>
-                        {currentModelConfig?.displayName || '未选择模型'} · K8s + Linux
-                      </Text>
-                      <div className={`
-                        shrink-0 rounded-full border px-2 py-0.5 text-xs font-semibold
-                        ${isK8sMode 
-                          ? 'bg-blue-500/20 text-blue-400 border border-blue-500/40' 
-                          : 'bg-green-500/20 text-green-400 border border-green-500/40'
-                        }
-                        shadow-sm
-                      `}>
-                        {isK8sMode ? 'K8s模式' : 'Linux系统'}
-                      </div>
-                    </div>
+                    </Text>
+                    <Text
+                      className={`hidden max-w-[76px] truncate !text-xs lg:inline ${isDark ? 'text-gray-400' : 'text-slate-500'}`}
+                      title={currentModelConfig?.displayName || '选择模型'}
+                    >
+                      {currentModelConfig?.displayName || '选择模型'}
+                    </Text>
+                    <span className={`
+                      hidden shrink-0 rounded-full border px-1.5 py-0.5 text-[11px] font-medium sm:inline-flex
+                      ${isK8sMode
+                        ? 'border-blue-500/40 bg-blue-500/15 text-blue-400'
+                        : 'border-green-500/40 bg-green-500/15 text-green-400'
+                      }
+                    `}>
+                      {isK8sMode ? 'K8s' : 'Linux'}
+                    </span>
                   </div>
-                  <div className={`flex h-8 shrink-0 items-center rounded-lg border px-3 ${
+                  <div className={`flex h-7 shrink-0 items-center gap-1 rounded-md border px-1.5 ${
                     isDark ? 'border-white/10 bg-white/[0.04]' : 'border-slate-200 bg-slate-50'
                   }`}>
-                    <Badge
-                      status={isLoading ? 'processing' : isConfigValid() ? 'success' : 'error'}
-                      text={
-                        <Text className={isDark ? 'text-gray-300' : 'text-slate-600'}>
-                          {isLoading ? '处理中...' : isConfigValid() ? '就绪' : '未配置'}
-                        </Text>
-                      }
-                    />
+                    <Badge status={isLoading ? 'processing' : isConfigValid() ? 'success' : 'error'} />
+                    <Text className={`hidden !text-[11px] md:inline ${isDark ? 'text-gray-300' : 'text-slate-600'}`}>
+                      {isLoading ? '处理中' : isConfigValid() ? '就绪' : '未配置'}
+                    </Text>
                   </div>
                 </div>
 
-                <div className={`grid w-full grid-cols-3 gap-1.5 rounded-xl border p-1.5 sm:grid-cols-5 2xl:w-auto ${
+                <div className={`flex shrink-0 items-center gap-1 rounded-lg border p-1 ${
                   isDark ? 'border-white/10 bg-black/20' : 'border-slate-200 bg-slate-50/90'
                 }`}>
 
@@ -2108,7 +2105,7 @@ const SystemChat: React.FC = () => {
                       onClick={() => setDecisionLogOpen(true)}
                       className={HEADER_ACTION_BUTTON_CLASS}
                     >
-                      决策记录
+                      <span className={HEADER_ACTION_LABEL_CLASS}>决策记录</span>
                     </Button>
                   </Tooltip>
 
@@ -2147,7 +2144,7 @@ const SystemChat: React.FC = () => {
                       disabled={isLoading}
                       className={HEADER_ACTION_BUTTON_CLASS}
                     >
-                      新建会话
+                      <span className={HEADER_ACTION_LABEL_CLASS}>新建会话</span>
                     </Button>
                   </Tooltip>
 
@@ -2170,7 +2167,7 @@ const SystemChat: React.FC = () => {
                       }}
                       className={HEADER_ACTION_BUTTON_CLASS}
                     >
-                      会话历史
+                      <span className={HEADER_ACTION_LABEL_CLASS}>会话历史</span>
                     </Button>
                   </Tooltip>
 
@@ -2185,7 +2182,7 @@ const SystemChat: React.FC = () => {
                         disabled={!currentSession || messages.length === 0}
                         className={HEADER_ACTION_BUTTON_CLASS}
                       >
-                        导出会话
+                        <span className={HEADER_ACTION_LABEL_CLASS}>导出会话</span>
                       </Button>
                     </Dropdown>
                   </Tooltip>
@@ -2208,7 +2205,7 @@ const SystemChat: React.FC = () => {
                       disabled={messages.length === 0}
                       className={HEADER_ACTION_BUTTON_CLASS}
                     >
-                      清空消息
+                      <span className={HEADER_ACTION_LABEL_CLASS}>清空消息</span>
                     </Button>
                   </Tooltip>
                 </div>
