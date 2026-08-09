@@ -135,7 +135,6 @@ const SystemChat: React.FC = () => {
     getSessions,
     deleteSession,
     startNewSession,
-    messagesEndRef,
     setMessages, // 🔥 用于命令批准按钮更新消息状态
     // 代理模式功能
     isAgentMode,
@@ -170,6 +169,7 @@ const SystemChat: React.FC = () => {
 
   // 🔧 安全控制配置状态
   const [securityEnabled, setSecurityEnabled] = useState<boolean>(true)
+  const messageListRef = useRef<HTMLDivElement>(null)
 
 
   // 认证状态（现在通过httpOnly cookie自动处理）
@@ -1544,17 +1544,21 @@ const SystemChat: React.FC = () => {
     textAreaRef.current?.focus()
   }
 
-  // 自动滚动到底部
-  const scrollToBottom = () => {
-    if (messagesEndRef?.current) {
-      (messagesEndRef.current as HTMLElement).scrollIntoView({ behavior: 'smooth' })
-    }
-  }
+  // 只滚动消息容器，避免 scrollIntoView 连带滚动外层页面并遮住顶部工具栏。
+  const scrollToBottom = useCallback(() => {
+    const messageList = messageListRef.current
+    if (!messageList) return
+    messageList.scrollTo({
+      top: messageList.scrollHeight,
+      behavior: isStreaming ? 'auto' : 'smooth'
+    })
+  }, [isStreaming])
 
   // 监听消息变化，自动滚动
   useEffect(() => {
-    scrollToBottom()
-  }, [messages, streamingMessage])
+    const frameId = requestAnimationFrame(scrollToBottom)
+    return () => cancelAnimationFrame(frameId)
+  }, [messages, streamingMessage, scrollToBottom])
 
   // 使用ref跟踪完成状态，避免无限循环
   const completionMarkAddedRef = useRef(false)
@@ -2047,13 +2051,13 @@ const SystemChat: React.FC = () => {
 
   return (
     <>
-      <div className="h-full flex flex-col overflow-hidden">
-        <Row gutter={24} className="flex-1 min-h-0 h-full">
+      <div className="flex h-full min-h-0 flex-col overflow-x-hidden overflow-y-auto lg:overflow-hidden">
+        <Row gutter={24} className="min-h-0 lg:h-full lg:flex-1">
           {/* 左侧对话区域 */}
-          <Col xs={24} lg={18} className="h-full flex flex-col">
+          <Col xs={24} lg={18} className="flex min-h-[640px] flex-col lg:h-full lg:min-h-0">
           <Card
             title={
-              <div className="flex min-w-0 flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+              <div className="flex min-w-0 flex-col gap-3 2xl:flex-row 2xl:items-center 2xl:justify-between">
                 <div className="flex min-w-0 items-center gap-3">
                   <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500 to-emerald-500 shadow-sm shadow-blue-500/20">
                     <RobotOutlined className="text-white" />
@@ -2092,7 +2096,7 @@ const SystemChat: React.FC = () => {
                   </div>
                 </div>
 
-                <div className={`grid w-full grid-cols-3 gap-1.5 rounded-xl border p-1.5 sm:grid-cols-5 xl:w-auto ${
+                <div className={`grid w-full grid-cols-3 gap-1.5 rounded-xl border p-1.5 sm:grid-cols-5 2xl:w-auto ${
                   isDark ? 'border-white/10 bg-black/20' : 'border-slate-200 bg-slate-50/90'
                 }`}>
 
@@ -2210,7 +2214,7 @@ const SystemChat: React.FC = () => {
                 </div>
               </div>
             }
-            className="glass-card flex-1 flex flex-col"
+            className="glass-card flex min-h-0 flex-1 flex-col"
             styles={{
               header: { padding: '12px 16px' },
               title: { width: '100%', overflow: 'visible', whiteSpace: 'normal' },
@@ -2218,7 +2222,7 @@ const SystemChat: React.FC = () => {
             }}
           >
             {/* 消息列表 */}
-            <div className={`flex-1 overflow-y-auto p-4 space-y-4 min-h-0 ${styles.messageContainer}`}>
+            <div ref={messageListRef} className={`flex-1 overflow-y-auto p-4 space-y-4 min-h-0 ${styles.messageContainer}`}>
               {messages.length === 0 ? (
                 <div className="text-center py-20">
                   <div className="w-16 h-16 bg-gradient-to-br from-blue-500 to-green-500 rounded-2xl flex items-center justify-center mx-auto mb-4">
@@ -2268,8 +2272,6 @@ const SystemChat: React.FC = () => {
               )}
 
               {/* 移除重复的加载指示器，因为useRedisChat已经创建了"正在思考中..."的消息 */}
-
-              <div ref={messagesEndRef} />
             </div>
 
             {/* 输入区域 */}
@@ -2502,7 +2504,7 @@ const SystemChat: React.FC = () => {
         </Col>
 
         {/* 右侧配置面板 */}
-        <Col xs={24} lg={6} className="h-full">
+        <Col xs={24} lg={6} className="mt-6 min-h-[480px] lg:mt-0 lg:h-full lg:min-h-0">
           <Card
             title={
               <div className="flex items-center space-x-2">
@@ -2510,13 +2512,14 @@ const SystemChat: React.FC = () => {
                 <span className="text-white">会话设置</span>
               </div>
             }
-            className="glass-card h-full"
+            className="glass-card flex h-full min-h-0 flex-col"
             styles={{
               body: {
                 padding: '16px 0',
-                height: 'calc(100vh - 200px)', // 设置固定高度，减去标题和边距
-                overflowY: 'auto', // 添加垂直滚动
-                overflowX: 'hidden' // 隐藏水平滚动
+                minHeight: 0,
+                flex: 1,
+                overflowY: 'auto',
+                overflowX: 'hidden'
               }
             }}
           >

@@ -6,9 +6,9 @@ import SystemChat from '../../components/ai/SystemChat'
 
 export default function SystemPage() {
   return (
-    <div className="h-screen overflow-hidden">
+    <div className="h-dvh min-h-0 overflow-hidden">
       <MainLayout>
-        <div className="h-full overflow-hidden">
+        <div className="h-[calc(100dvh-112px)] min-h-0 overflow-hidden">
           <SystemChat />
         </div>
       </MainLayout>
