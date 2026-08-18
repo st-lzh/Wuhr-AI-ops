@@ -92,6 +92,8 @@ test('Agent 安装命令先用 GitHub、再回退国内镜像且拒绝非法端�
 
   assert.ok(command.indexOf(AGENT_INSTALLER_PRIMARY_URL) < command.indexOf(AGENT_INSTALLER_MIRROR_URL))
   assert.match(command, /curl -fsSL/)
+  assert.match(command, /curl[^\n]+\|\| curl/)
+  assert.doesNotMatch(command, /&&\s*\|\|/)
   assert.match(command, /sh "\$tmp" --port=2081/)
   assert.doesNotMatch(command, /\|\s*(ba)?sh/)
   assert.throws(() => buildAgentInstallCommand(0), /1-65535/)
