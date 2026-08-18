@@ -267,7 +267,9 @@ const ModelConnectionsConfig: React.FC = () => {
     try {
       await validateConnectionStep()
       setSaving(true)
-      const values = form.getFieldsValue()
+      // 连接配置位于上一步，进入模型选择后对应 Form.Item 已卸载。
+      // 传入 true 才能读取 Ant Design 表单存储中保留的全部步骤数据。
+      const values = form.getFieldsValue(true)
       const response = await fetch('/api/config/model-connections', {
         method: editing ? 'PUT' : 'POST',
         credentials: 'include',
