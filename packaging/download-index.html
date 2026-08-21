@@ -84,7 +84,7 @@
       <pre>tmp=$(mktemp) &amp;&amp; trap 'rm -f "$tmp"' 0 HUP INT TERM \
   &amp;&amp; (curl -fsSL 'https://github.com/st-lzh/Wuhr-AI-ops/releases/download/v1.0.0/install-agent.sh' -o "$tmp" \
   || curl -fsSL 'http://106.12.150.207/download/install-agent.sh' -o "$tmp") \
-  &amp;&amp; sudo sh "$tmp" --port=2081</pre>
+  &amp;&amp; sudo sh "$tmp" --port 2081</pre>
     </section>
 
     <footer>

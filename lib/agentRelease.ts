@@ -19,6 +19,6 @@ export function buildAgentInstallCommand(port: number = 2081): string {
     'tmp=$(mktemp)',
     `trap 'rm -f "$tmp"' 0 HUP INT TERM`,
     `(curl -fsSL '${AGENT_INSTALLER_PRIMARY_URL}' -o "$tmp" || curl -fsSL '${AGENT_INSTALLER_MIRROR_URL}' -o "$tmp")`,
-    `sh "$tmp" --port=${port}`
+    `sh "$tmp" --port ${port}`
   ].join(' && ')
 }
