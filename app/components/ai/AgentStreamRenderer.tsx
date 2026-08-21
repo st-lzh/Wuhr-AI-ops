@@ -30,7 +30,7 @@ interface AgentStreamRendererProps {
   isStreaming: boolean
   className?: string
   autoCollapse?: boolean // 执行完成后是否自动折叠
-  hostInfo?: { ip: string; port?: number } // 🔥 用于命令批准API调用
+  hostInfo?: { id: string; ip: string; port?: number } // 命令必须回到创建审批状态的 Agent
   customToolName?: string // 🔧 自定义工具名称，显示在标题右侧
 }
 

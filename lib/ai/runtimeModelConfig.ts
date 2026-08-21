@@ -63,8 +63,12 @@ export async function resolveRuntimeModelConfig(options: ResolveRuntimeModelOpti
 
   if (!modelConfig) throw new Error('没有可用的模型配置，请先在模型管理中完成连接配置')
 
-  const apiKey = revealSecret(modelConfig.apiKey)
-    || (modelConfig.providerConnection ? readProviderApiKey(modelConfig.providerConnection) : '')
+  // 模型接入连接是托管模型的凭据唯一来源。历史版本会把密钥复制到
+  // ModelConfig，连接更新后副本可能过期，因此只能把模型副本作为兼容兜底。
+  const connectionApiKey = modelConfig.providerConnection
+    ? readProviderApiKey(modelConfig.providerConnection)
+    : ''
+  const apiKey = connectionApiKey || revealSecret(modelConfig.apiKey)
   const providerKey = modelConfig.providerConnection?.providerKey
   const keylessProvider = providerKey === 'ollama'
     || providerKey === 'vllm'

@@ -65,7 +65,6 @@ interface ModelConfig {
   modelName: string
   displayName: string
   provider: string
-  apiKey: string
   baseUrl?: string
   description?: string
   isActive: boolean
@@ -222,7 +221,6 @@ const SystemChat: React.FC = () => {
             modelName: defaultModel.modelName,
             displayName: defaultModel.displayName,
             provider: defaultModel.provider,
-            apiKey: defaultModel.apiKey,
             baseUrl: defaultModel.baseUrl,
             isActive: true,
             isDefault: defaultModel.isDefault || false
@@ -1358,14 +1356,12 @@ const SystemChat: React.FC = () => {
       hasConfig: !!currentModelConfig,
       modelName: currentModelConfig?.modelName,
       provider: currentModelConfig?.provider,
-      hasApiKey: !!currentModelConfig?.apiKey,
-      apiKeyLength: currentModelConfig?.apiKey?.length,
+      credentialSource: 'server-managed',
       baseUrl: currentModelConfig?.baseUrl
     })
 
     const requestConfig = {
       model: currentModelConfig.modelName,
-      apiKey: currentModelConfig.apiKey,
       baseUrl: currentModelConfig.baseUrl,
       provider: currentModelConfig.provider,
       hostId: approvalCoordinator?.id,
@@ -1402,8 +1398,7 @@ const SystemChat: React.FC = () => {
     console.log('🚀 [SystemChat] 发送请求配置:', {
       model: requestConfig.model,
       provider: requestConfig.provider,
-      hasApiKey: !!requestConfig.apiKey,
-      apiKeyPreview: requestConfig.apiKey ? '[REDACTED]' : '(无)',
+      credentialSource: 'server-managed',
       baseUrl: requestConfig.baseUrl,
       hostId: requestConfig.hostId,
       targetCount: requestConfig.targetHostIds.length,
@@ -2010,7 +2005,7 @@ const SystemChat: React.FC = () => {
                         autoCollapse={!(isStreaming && index === messages.length - 1)} // 🔥 流式中不折叠，完成后默认折叠
                         customToolName={msgHasCustomTool ? msgCustomToolName || undefined : undefined}
                         hostInfo={approvalCoordinator
-                          ? { ip: approvalCoordinator.ip, port: 2081 }
+                          ? { id: approvalCoordinator.id, ip: approvalCoordinator.ip, port: 2081 }
                           : undefined}
                       />
                     </div>

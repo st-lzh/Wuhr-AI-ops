@@ -613,7 +613,7 @@ export async function executeHTTPStream(
  * 🔥 批准命令执行 - 通过Next.js API路由代理
  */
 export async function approveCommand(
-  hostInfo: { ip: string; port?: number },
+  hostInfo: { id: string; ip: string; port?: number },
   approvalId: string
 ): Promise<{ success: boolean; message?: string }> {
   // 🔥 使用Next.js API路由避免CORS问题
@@ -639,7 +639,7 @@ export async function approveCommand(
  * 🔥 拒绝命令执行 - 通过Next.js API路由代理
  */
 export async function rejectCommand(
-  hostInfo: { ip: string; port?: number },
+  hostInfo: { id: string; ip: string; port?: number },
   approvalId: string,
   reason?: string
 ): Promise<{ success: boolean; message?: string }> {

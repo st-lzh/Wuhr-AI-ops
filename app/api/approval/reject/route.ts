@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '../../../../lib/auth/apiHelpers-new'
-import { getBackendApiKey, getBackendBaseUrl } from '../../../../lib/improve/backendProxy'
+import { getBackendApiKey } from '../../../../lib/improve/backendProxy'
+import { getPrismaClient } from '../../../../lib/config/database'
+import { ApprovalTargetError, resolveApprovalAgentBaseUrl } from '../../../../lib/ai/approvalTarget'
 
 /**
  * 拒绝命令执行 API路由
@@ -12,7 +14,7 @@ export async function POST(request: NextRequest) {
     if (!authResult.success) return authResult.response
 
     const body = await request.json()
-    const { approvalId, reason } = body
+    const { approvalId, hostInfo, reason } = body
 
     if (!approvalId) {
       return NextResponse.json(
@@ -25,7 +27,8 @@ export async function POST(request: NextRequest) {
     if (!apiKey) {
       return NextResponse.json({ success: false, message: '后端 API key 未配置' }, { status: 500 })
     }
-    const baseUrl = getBackendBaseUrl().replace(/\/$/, '')
+    const prisma = await getPrismaClient()
+    const baseUrl = await resolveApprovalAgentBaseUrl(prisma, hostInfo?.id)
 
     console.log('🔐 [拒绝命令] 发送请求到后端:', `${baseUrl}/api/approval/${approvalId}/reject`)
 
@@ -65,6 +68,12 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(data)
   } catch (error: any) {
     console.error('拒绝命令失败:', error)
+    if (error instanceof ApprovalTargetError) {
+      return NextResponse.json(
+        { success: false, message: error.message },
+        { status: error.status }
+      )
+    }
     return NextResponse.json(
       { success: false, message: error.message || '拒绝命令失败' },
       { status: 500 }

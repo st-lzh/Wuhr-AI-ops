@@ -27,6 +27,12 @@ import {
   buildAgentInstallCommand
 } from '../../lib/agentRelease'
 import { canAccessImproveProxy } from '../../lib/improve/backendProxy'
+import { encryptProviderApiKey } from '../../lib/ai/modelProviders'
+import { resolveRuntimeModelConfig } from '../../lib/ai/runtimeModelConfig'
+import {
+  ApprovalTargetError,
+  resolveApprovalAgentBaseUrl
+} from '../../lib/ai/approvalTarget'
 
 test('环境变量写入加密、读取遮罩并可在服务端还原', () => {
   const protectedValue = protectEnvironment({ API_TOKEN: 'secret-token', EMPTY: '' })
@@ -215,4 +221,57 @@ test('单个目标走单机链路，两个目标才进入一次推理后的批�
   assert.equal(batch.coordinator.id, 'host-a')
   assert.deepEqual(batch.batchHosts.map(item => item.id), ['host-b', 'host-a'])
   assert.equal(batch.batchHosts[0].password, 'host-b-password')
+})
+
+test('托管模型始终优先使用模型接入连接的最新密钥', async () => {
+  const prisma = {
+    modelConfig: {
+      findFirst: async () => ({
+        id: 'model-1',
+        modelName: 'deepseek-chat',
+        displayName: 'DeepSeek Chat',
+        provider: 'deepseek',
+        apiKey: protectSecret('stale-model-key'),
+        baseUrl: null,
+        providerConnection: {
+          providerKey: 'deepseek',
+          baseUrl: 'https://api.deepseek.com',
+          apiKey: encryptProviderApiKey('fresh-connection-key'),
+          config: { credentialsEncrypted: true }
+        }
+      })
+    }
+  } as any
+
+  const runtime = await resolveRuntimeModelConfig({
+    prisma,
+    userId: 'operator',
+    model: 'deepseek-chat'
+  })
+
+  assert.equal(runtime.apiKey, 'fresh-connection-key')
+  assert.equal(runtime.baseUrl, 'https://api.deepseek.com')
+})
+
+test('审批请求按数据库 hostId 返回原 Agent，拒绝缺失或停用主机', async () => {
+  const activePrisma = {
+    server: {
+      findFirst: async ({ where }: any) => where.id === 'host-a' && where.isActive
+        ? { ip: '10.0.0.8' }
+        : null
+    }
+  } as any
+
+  assert.equal(
+    await resolveApprovalAgentBaseUrl(activePrisma, 'host-a'),
+    'http://10.0.0.8:2081'
+  )
+  await assert.rejects(
+    () => resolveApprovalAgentBaseUrl(activePrisma, ''),
+    (error: unknown) => error instanceof ApprovalTargetError && error.status === 400
+  )
+  await assert.rejects(
+    () => resolveApprovalAgentBaseUrl(activePrisma, 'missing'),
+    (error: unknown) => error instanceof ApprovalTargetError && error.status === 404
+  )
 })

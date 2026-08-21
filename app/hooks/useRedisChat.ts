@@ -6,7 +6,8 @@ import type { CICDContextSelection } from '../types/cicd-ai'
 
 interface SendMessageModelConfig {
   model: string
-  apiKey: string
+  // 浏览器不持有托管模型密钥；聊天 API 在服务端按模型解析凭据。
+  apiKey?: string
   baseUrl?: string
   provider?: string
   hostId?: string

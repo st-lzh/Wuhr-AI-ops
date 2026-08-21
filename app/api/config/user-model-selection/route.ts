@@ -2,6 +2,18 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '../../../../lib/auth/apiHelpers-new'
 import { getPrismaClient } from '../../../../lib/config/database'
 
+// 浏览器只需要模型元数据。API Key 始终留在服务端，由聊天路由按模型 ID 解析。
+const publicModelSelect = {
+  id: true,
+  modelName: true,
+  displayName: true,
+  provider: true,
+  baseUrl: true,
+  description: true,
+  isActive: true,
+  isDefault: true
+} as const
+
 // 获取用户当前选择的模型
 export async function GET(request: NextRequest) {
   try {
@@ -20,7 +32,7 @@ export async function GET(request: NextRequest) {
         userId: user.id
       },
       include: {
-        selectedModel: true
+        selectedModel: { select: publicModelSelect }
       }
     })
 
@@ -30,7 +42,8 @@ export async function GET(request: NextRequest) {
         where: {
           isActive: true
         },
-        orderBy: [{ isDefault: 'desc' }, { createdAt: 'asc' }]
+        orderBy: [{ isDefault: 'desc' }, { createdAt: 'asc' }],
+        select: publicModelSelect
       })
 
       if (defaultModel) {
@@ -41,7 +54,7 @@ export async function GET(request: NextRequest) {
             selectedModelId: defaultModel.id
           },
           include: {
-            selectedModel: true
+            selectedModel: { select: publicModelSelect }
           }
         })
 
@@ -115,7 +128,8 @@ export async function POST(request: NextRequest) {
       where: {
         id: selectedModelId,
         isActive: true
-      }
+      },
+      select: publicModelSelect
     })
 
     if (!modelConfig) {
@@ -143,7 +157,7 @@ export async function POST(request: NextRequest) {
         selectedModelId: selectedModelId
       },
       include: {
-        selectedModel: true
+        selectedModel: { select: publicModelSelect }
       }
     })
 
@@ -188,7 +202,8 @@ export async function PUT(request: NextRequest) {
       },
       orderBy: [
         { displayName: 'asc' }
-      ]
+      ],
+      select: publicModelSelect
     })
 
     console.log('✅ 获取到', availableModels.length, '个可用模型')
