@@ -6,19 +6,38 @@ export const AGENT_INSTALLER_PRIMARY_URL =
 export const AGENT_INSTALLER_MIRROR_URL =
   'http://106.12.150.207/download/install-agent.sh'
 
+export interface AgentInstallCommandOptions {
+  apiKeyFile?: string
+}
+
+function validateRemoteFilePath(filePath: string): void {
+  if (!/^\/[A-Za-z0-9/._-]+$/.test(filePath)) {
+    throw new Error('Agent 远程密钥文件路径不合法')
+  }
+}
+
 /**
  * 生成不会直接把远程内容管道给 shell 的 Agent 安装命令。
  * GitHub 不可用时会自动切换到国内镜像，两个来源使用完全相同的安装脚本。
  */
-export function buildAgentInstallCommand(port: number = 2081): string {
+export function buildAgentInstallCommand(
+  port: number = 2081,
+  options: AgentInstallCommandOptions = {}
+): string {
   if (!Number.isInteger(port) || port < 1 || port > 65535) {
     throw new Error('Agent 端口必须是 1-65535 的整数')
+  }
+
+  const installerArgs = [`--port ${port}`]
+  if (options.apiKeyFile) {
+    validateRemoteFilePath(options.apiKeyFile)
+    installerArgs.push(`--api-key-file '${options.apiKeyFile}'`)
   }
 
   return [
     'tmp=$(mktemp)',
     `trap 'rm -f "$tmp"' 0 HUP INT TERM`,
     `(curl -fsSL '${AGENT_INSTALLER_PRIMARY_URL}' -o "$tmp" || curl -fsSL '${AGENT_INSTALLER_MIRROR_URL}' -o "$tmp")`,
-    `sh "$tmp" --port ${port}`
+    `sh "$tmp" ${installerArgs.join(' ')}`
   ].join(' && ')
 }

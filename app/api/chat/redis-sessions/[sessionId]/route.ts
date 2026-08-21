@@ -97,6 +97,19 @@ export async function POST(
 
     const { sessionId } = params
     const { message } = await request.json()
+
+    const legacyRole = message?.role === 'assistant' ? 'ai' : message?.role
+    const messageType = message?.type || legacyRole
+    if (
+      !message ||
+      typeof message.id !== 'string' ||
+      typeof message.content !== 'string' ||
+      !message.timestamp ||
+      !['user', 'ai', 'command_rejected', 'command_approved'].includes(messageType)
+    ) {
+      return NextResponse.json({ error: '消息格式不合法' }, { status: 400 })
+    }
+    const normalizedMessage = { ...message, type: messageType }
     
     const redisManager = RedisChatHistoryManager.getInstance()
     
@@ -113,9 +126,9 @@ export async function POST(
     }
 
     // 添加消息到会话
-    await redisManager.addMessage(user.id, sessionId, message)
+    await redisManager.addMessage(user.id, sessionId, normalizedMessage)
     
-    console.log(`💬 添加Redis消息: { userId: '${user.id}', sessionId: '${sessionId}', role: '${message.role}' }`)
+    console.log(`💬 添加Redis消息: { userId: '${user.id}', sessionId: '${sessionId}', type: '${messageType}' }`)
     
     return NextResponse.json({ message: '消息已添加' })
   } catch (error) {

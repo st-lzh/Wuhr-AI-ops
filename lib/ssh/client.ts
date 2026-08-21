@@ -75,10 +75,11 @@ export class SSHClient {
   }
 
   // 执行命令
-  async executeCommand(command: string, options?: { cwd?: string }): Promise<SSHResult> {
+  async executeCommand(command: string, options?: { cwd?: string; stdin?: string }): Promise<SSHResult> {
     try {
       const result = await this.ssh.execCommand(command, {
-        cwd: options?.cwd
+        cwd: options?.cwd,
+        stdin: options?.stdin
       })
 
       return {

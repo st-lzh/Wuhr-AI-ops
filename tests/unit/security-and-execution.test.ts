@@ -89,6 +89,9 @@ test('统一路由权限策略不会再让根路径通配所有模块', () => {
 
 test('Agent 安装命令先用 GitHub、再回退国内镜像且拒绝非法端口', () => {
   const command = buildAgentInstallCommand(2081)
+  const commandWithKey = buildAgentInstallCommand(2081, {
+    apiKeyFile: '/tmp/.wuhr-agent-api-key-test'
+  })
 
   assert.ok(command.indexOf(AGENT_INSTALLER_PRIMARY_URL) < command.indexOf(AGENT_INSTALLER_MIRROR_URL))
   assert.match(command, /curl -fsSL/)
@@ -97,8 +100,14 @@ test('Agent 安装命令先用 GitHub、再回退国内镜像且拒绝非法端�
   assert.match(command, /sh "\$tmp" --port 2081/)
   assert.doesNotMatch(command, /--port=/)
   assert.doesNotMatch(command, /\|\s*(ba)?sh/)
+  assert.match(commandWithKey, /--api-key-file '\/tmp\/\.wuhr-agent-api-key-test'/)
+  assert.doesNotMatch(commandWithKey, /wuhr_[a-z0-9]+/)
   assert.throws(() => buildAgentInstallCommand(0), /1-65535/)
   assert.throws(() => buildAgentInstallCommand(65536), /1-65535/)
+  assert.throws(
+    () => buildAgentInstallCommand(2081, { apiKeyFile: '/tmp/key;touch-pwned' }),
+    /路径不合法/
+  )
 })
 
 test('AI 资产代理允许管理员和显式权限，拒绝普通无权限用户', () => {
