@@ -1,7 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { buildAgentInstallCommand } from '../../../../../lib/agentRelease'
+import { classifyAgentProbe } from '../../../../../lib/agentHealth'
 import { requireAuth } from '../../../../../lib/auth/apiHelpers-new'
 import { getPrismaClient } from '../../../../../lib/config/database'
+
+async function fetchAgent(url: string, headers: Record<string, string>): Promise<Response> {
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), 5000)
+  try {
+    return await fetch(url, {
+      method: 'GET',
+      cache: 'no-store',
+      signal: controller.signal,
+      headers
+    })
+  } finally {
+    clearTimeout(timeout)
+  }
+}
 
 export async function GET(
   request: NextRequest,
@@ -43,90 +58,78 @@ export async function GET(
     let kubeletStatus = 'not_installed'
     let kubeletVersion = ''
     const kubeletPort = (server as any).kubeletPort || 2081
+    const platformApiKey = process.env.IMPROVE_API_KEY?.trim() || ''
 
     try {
-      // 使用 HTTP API 方式检测 kubelet-wuhrai 状态
-      console.log(`🔍 通过 HTTP API 检测 kubelet-wuhrai (${server.ip}:${kubeletPort})...`)
-
+      // 健康端点通常免鉴权，只能证明服务存活；再访问只读配置端点验证平台通信密钥。
+      console.log(`🔍 通过 HTTP API 检测 Agent 服务与通信鉴权 (${server.ip}:${kubeletPort})...`)
       const healthCheckUrl = `http://${server.ip}:${kubeletPort}/api/health`
-      const controller = new AbortController()
-      const timeout = setTimeout(() => controller.abort(), 5000) // 5秒超时
+      const requestHeaders: Record<string, string> = {
+        Accept: 'application/json',
+        'Content-Type': 'application/json'
+      }
+      if (platformApiKey) requestHeaders['X-API-Key'] = platformApiKey
+
+      let healthStatus: number | undefined
+      let authStatus: number | undefined
 
       try {
-        const response = await fetch(healthCheckUrl, {
-          method: 'GET',
-          signal: controller.signal,
-          headers: {
-            'Content-Type': 'application/json'
-          }
-        })
-
-        clearTimeout(timeout)
-
-        if (response.ok) {
-          const data = await response.json()
-          kubeletStatus = 'installed'
-          kubeletVersion = data.version || 'unknown'
-
-          console.log('✅ kubelet-wuhrai HTTP API 响应正常:', data)
-
-          recommendations.push({
-            type: 'success',
-            message: `服务运行正常 (端口 ${kubeletPort})`
-          })
-
-          if (kubeletVersion && kubeletVersion !== 'unknown') {
-            recommendations.push({
-              type: 'info',
-              message: `版本: ${kubeletVersion}`
-            })
-          }
-
-        } else {
-          throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+        const healthResponse = await fetchAgent(healthCheckUrl, requestHeaders)
+        healthStatus = healthResponse.status
+        if (healthResponse.ok) {
+          const data = await healthResponse.json().catch(() => ({}))
+          kubeletVersion = typeof data.version === 'string' ? data.version : 'unknown'
         }
-
       } catch (fetchError) {
-        clearTimeout(timeout)
+        console.log('❌ Agent 健康端点无响应:', fetchError instanceof Error ? fetchError.message : '未知错误')
+      }
 
-        // HTTP API 检测失败，说明服务未启动或未安装
-        console.log('❌ kubelet-wuhrai HTTP API 无响应:', fetchError)
-        kubeletStatus = 'not_installed'
+      if (healthStatus && healthStatus >= 200 && healthStatus < 300 && platformApiKey) {
+        try {
+          const authResponse = await fetchAgent(
+            `http://${server.ip}:${kubeletPort}/api/config/security`,
+            requestHeaders
+          )
+          authStatus = authResponse.status
+        } catch (authError) {
+          console.log('⚠️ Agent 鉴权探针不可用:', authError instanceof Error ? authError.message : '未知错误')
+        }
+      }
 
-        recommendations.push({
-          type: 'error',
-          message: `无法连接 kubelet-wuhrai 服务 (端口 ${kubeletPort})`
-        })
+      kubeletStatus = classifyAgentProbe({
+        healthStatus,
+        authStatus,
+        platformKeyConfigured: Boolean(platformApiKey)
+      })
 
-        recommendations.push({
-          type: 'info',
-          message: '安装命令：'
-        })
+      if (kubeletStatus !== 'not_installed') {
+        recommendations.push({ type: 'success', message: `Agent 服务运行正常（端口 ${kubeletPort}）` })
+        if (kubeletVersion && kubeletVersion !== 'unknown') {
+          recommendations.push({ type: 'info', message: `版本：${kubeletVersion}` })
+        }
+      }
 
-        recommendations.push({
-          type: 'info',
-          message: buildAgentInstallCommand(kubeletPort)
-        })
+      if (kubeletStatus === 'installed') {
+        recommendations.push({ type: 'success', message: '平台与 Agent 通信鉴权已验证，可以使用 AI 运维功能' })
+      } else if (kubeletStatus === 'authentication_mismatch') {
+        recommendations.push({ type: 'error', message: 'Agent 通信密钥与当前平台不一致，AI 请求会被 401 拒绝' })
+        recommendations.push({ type: 'info', message: '点击下方“同步密钥并更新 Agent”，平台会通过 SSH 安全同步当前密钥' })
+      } else if (kubeletStatus === 'platform_misconfigured') {
+        recommendations.push({ type: 'error', message: '平台未配置 IMPROVE_API_KEY，无法与 Agent 建立受保护的通信' })
+        recommendations.push({ type: 'info', message: '请先补全平台环境变量并重新启动平台容器' })
+      } else if (kubeletStatus === 'legacy_unverified') {
+        recommendations.push({ type: 'warning', message: 'Agent 服务在线，但当前版本不支持通信鉴权验证' })
+        recommendations.push({ type: 'info', message: '建议更新 Agent，以同步平台密钥并启用完整检查' })
+      } else {
+        recommendations.push({ type: 'error', message: `无法连接 Agent 服务（端口 ${kubeletPort}）` })
+        recommendations.push({ type: 'warning', message: '请确认主机 SSH 凭据可用，然后通过下方操作安装并同步 Agent 通信密钥' })
       }
 
     } catch (error) {
-      console.error('检测 kubelet-wuhrai 失败:', error)
+      console.error('检测 Agent 失败:', error)
       recommendations.push({
         type: 'error',
         message: `检测失败: ${error instanceof Error ? error.message : '未知错误'}`
-      })
-    }
-
-    // 添加通用建议
-    if (kubeletStatus === 'installed') {
-      recommendations.push({
-        type: 'success',
-        message: '可以使用 AI 功能'
-      })
-    } else {
-      recommendations.push({
-        type: 'warning',
-        message: '需要安装 kubelet-wuhrai 才能使用 AI 功能'
       })
     }
 

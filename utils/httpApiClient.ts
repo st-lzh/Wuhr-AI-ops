@@ -4,6 +4,8 @@
  * 用于替换SSH调用，直接与kubelet-wuhrai HTTP服务器通信
  */
 
+import { formatAgentHttpError } from '../lib/agentHealth'
+
 // HTTP API请求接口
 export interface HTTPQueryRequest {
   query: string
@@ -199,7 +201,7 @@ export class HTTPApiClient {
 
     if (!response.ok) {
       const errorText = await response.text()
-      throw new Error(`查询失败: ${response.status} ${response.statusText} - ${errorText}`)
+      throw new Error(`查询失败: ${formatAgentHttpError(response.status, response.statusText, errorText)}`)
     }
 
     const result = await response.json()
@@ -235,7 +237,7 @@ export class HTTPApiClient {
 
     if (!response.ok) {
       const errorText = await response.text()
-      throw new Error(`流式查询失败: ${response.status} ${response.statusText} - ${errorText}`)
+      throw new Error(`流式查询失败: ${formatAgentHttpError(response.status, response.statusText, errorText)}`)
     }
 
     // 处理SSE流式响应

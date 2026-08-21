@@ -66,7 +66,19 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
         subMenuItemBg: 'transparent',
       },
       Button: {
-        primaryShadow: '0 4px 14px 0 rgba(59, 130, 246, 0.4)',
+        defaultBg: 'transparent',
+        defaultColor: '#cbd5e1',
+        defaultBorderColor: 'rgba(148, 163, 184, 0.35)',
+        defaultHoverBg: 'rgba(59, 130, 246, 0.10)',
+        defaultActiveBg: 'rgba(59, 130, 246, 0.16)',
+        defaultHoverColor: '#93c5fd',
+        defaultHoverBorderColor: 'rgba(96, 165, 250, 0.65)',
+        defaultActiveColor: '#bfdbfe',
+        defaultActiveBorderColor: '#60a5fa',
+        textHoverBg: 'rgba(59, 130, 246, 0.10)',
+        defaultShadow: 'none',
+        primaryShadow: 'none',
+        dangerShadow: 'none',
       },
       Card: {
         colorBgContainer: 'rgba(15, 23, 42, 0.6)',
@@ -87,6 +99,7 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
         contentBg: 'rgba(15, 23, 42, 0.9)',
         headerBg: 'rgba(15, 23, 42, 0.9)',
         footerBg: 'rgba(15, 23, 42, 0.9)',
+        titleColor: '#f8fafc',
       },
     },
   }
@@ -126,7 +139,19 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
         subMenuItemBg: 'transparent',
       },
       Button: {
-        primaryShadow: '0 4px 14px 0 rgba(59, 130, 246, 0.3)',
+        defaultBg: 'transparent',
+        defaultColor: '#334155',
+        defaultBorderColor: '#cbd5e1',
+        defaultHoverBg: 'rgba(59, 130, 246, 0.07)',
+        defaultActiveBg: 'rgba(59, 130, 246, 0.12)',
+        defaultHoverColor: '#2563eb',
+        defaultHoverBorderColor: '#60a5fa',
+        defaultActiveColor: '#1d4ed8',
+        defaultActiveBorderColor: '#3b82f6',
+        textHoverBg: 'rgba(59, 130, 246, 0.07)',
+        defaultShadow: 'none',
+        primaryShadow: 'none',
+        dangerShadow: 'none',
       },
       Card: {
         colorBgContainer: 'rgba(255, 255, 255, 0.8)',
@@ -139,6 +164,12 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
       Select: {
         colorBgContainer: '#ffffff',
         colorBorder: '#e2e8f0',
+      },
+      Modal: {
+        contentBg: '#ffffff',
+        headerBg: '#ffffff',
+        footerBg: '#ffffff',
+        titleColor: '#0f172a',
       },
     },
   }

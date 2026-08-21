@@ -94,7 +94,6 @@ import HostMentionInput, { ChatTargetCluster, ChatTargetDevice, ChatTargetHost, 
 import DeliveryContextPanel, { catalogToMentionOptions } from './DeliveryContextPanel'
 import type { CICDCatalog, CICDContextSelection, CICDMentionOption } from '../../types/cicd-ai'
 import { useTheme } from '../../hooks/useGlobalState'
-import { buildAgentInstallCommand } from '../../../lib/agentRelease'
 
 
 const { Text, Title } = Typography
@@ -842,63 +841,63 @@ const SystemChat: React.FC = () => {
 
       const result = await response.json()
 
-              if (result.success) {
+      if (result.success) {
         const { kubeletStatus, kubeletVersion, recommendations } = result.data
 
         let statusText = ''
-        let statusType: 'success' | 'warning' | 'error' = 'error'
 
         if (kubeletStatus === 'installed') {
-          statusText = `✅ kubelet-wuhrai已安装 ${kubeletVersion ? `(v${kubeletVersion})` : ''}`
-          statusType = 'success'
+          statusText = `✅ Agent 已安装且通信正常 ${kubeletVersion ? `(v${kubeletVersion})` : ''}`
         } else if (kubeletStatus === 'auto_installed') {
-          statusText = `🚀 kubelet-wuhrai已自动部署 ${kubeletVersion ? `(v${kubeletVersion})` : ''}`
-          statusType = 'success'
+          statusText = `🚀 Agent 已自动部署 ${kubeletVersion ? `(v${kubeletVersion})` : ''}`
+        } else if (kubeletStatus === 'authentication_mismatch') {
+          statusText = '⚠️ Agent 已运行，但通信密钥与平台不一致'
+        } else if (kubeletStatus === 'platform_misconfigured') {
+          statusText = '⚠️ 平台未配置 Agent 通信密钥'
+        } else if (kubeletStatus === 'legacy_unverified') {
+          statusText = `⚠️ Agent 已运行，但版本过旧，无法验证通信密钥 ${kubeletVersion ? `(v${kubeletVersion})` : ''}`
         } else {
-          statusText = '❌ kubelet-wuhrai未安装'
-          statusType = 'error'
+          statusText = '❌ Agent 服务不可达或尚未安装'
         }
+
+        const canRepairAgent = ['not_installed', 'authentication_mismatch', 'legacy_unverified'].includes(kubeletStatus)
+        const repairActionLabel = kubeletStatus === 'not_installed'
+          ? '自动安装并同步 Agent'
+          : '同步密钥并更新 Agent'
 
         // 显示详细信息
         Modal.info({
-          title: '远程主机kubelet-wuhrai状态',
+          title: '远程主机 Agent 状态',
           content: (
-            <div className="space-y-3">
+            <div className="theme-text-primary space-y-3">
               <div>
-                <strong>状态：</strong> {statusText}
+                <strong className="theme-text-strong">状态：</strong> {statusText}
               </div>
 
               {recommendations.map((rec: any, index: number) => (
-                <div key={index} className={`p-2 rounded border ${
-                  rec.type === 'success' ? 'bg-transparent text-blue-400 border-blue-500/30' :
-                  rec.type === 'warning' ? 'bg-transparent text-yellow-400 border-yellow-500/30' :
-                  rec.type === 'error' ? 'bg-transparent text-red-400 border-red-500/30' :
-                  'bg-transparent text-blue-400 border-blue-500/30'
-                }`}>
+                <div key={index} className={`agent-status-message agent-status-${rec.type}`}>
                   {rec.message}
                 </div>
               ))}
 
-              {kubeletStatus === 'not_installed' && (
-                <div className="mt-4 p-3 bg-transparent border border-gray-500/30 rounded">
-                  <strong className="text-gray-300">安装选项：</strong>
-                  <div className="mt-2 space-y-3">
+              {canRepairAgent && (
+                <div className="agent-repair-panel mt-4 rounded-lg border p-3">
+                  <strong className="theme-text-strong">
+                    {kubeletStatus === 'not_installed' ? '安装选项：' : '修复选项：'}
+                  </strong>
+                  <div className="mt-2 space-y-2">
                     <Button
-                      type="primary"
                       icon={<CloudUploadOutlined />}
                       onClick={() => {
                         Modal.destroyAll()
                         installKubeletWuhrai(serverId)
                       }}
-                      block
+                      className="agent-outline-action"
                     >
-                      自动安装 kubelet-wuhrai
+                      {repairActionLabel}
                     </Button>
-                    <div className="text-xs text-gray-500 text-center">
-                      或手动在服务器上执行以下命令：
-                    </div>
-                    <div className="p-2 bg-transparent border border-gray-600/30 rounded text-sm text-gray-400 font-mono">
-                      {buildAgentInstallCommand(2081)}
+                    <div className="theme-text-secondary text-xs leading-5">
+                      平台通过已保存的 SSH 凭据执行安装或升级，并在服务端安全同步当前通信密钥；密钥不会发送到浏览器。
                     </div>
                   </div>
                 </div>
@@ -920,19 +919,19 @@ const SystemChat: React.FC = () => {
 
       // 显示错误详情对话框
       Modal.error({
-        title: 'kubelet-wuhrai状态检查失败',
+        title: 'Agent 状态检查失败',
         content: (
-          <div>
-            <p>无法检查远程主机上的kubelet-wuhrai状态。可能的原因：</p>
-            <ul>
-              <li>SSH连接失败</li>
-              <li>远程主机无法访问</li>
-              <li>认证问题</li>
-              <li>网络连接问题</li>
+          <div className="theme-text-primary">
+            <p>无法检查远程主机上的 Agent 状态。可能的原因：</p>
+            <ul className="list-disc space-y-1 pl-5">
+              <li>Agent 服务未启动</li>
+              <li>远程主机或 2081 端口不可访问</li>
+              <li>平台登录状态已失效</li>
+              <li>网络连接中断</li>
             </ul>
-            <div className="mt-4 p-3 bg-transparent border border-red-500/30 rounded text-red-400">
-              <p><strong>错误详情：</strong></p>
-              <code className="text-red-300">{error instanceof Error ? error.message : String(error)}</code>
+            <div className="agent-status-message agent-status-error mt-4">
+              <p><strong className="theme-text-strong">错误详情：</strong></p>
+              <code>{error instanceof Error ? error.message : String(error)}</code>
             </div>
           </div>
         ),
@@ -2089,7 +2088,7 @@ const SystemChat: React.FC = () => {
                 </div>
 
                 <div className={`flex shrink-0 items-center gap-1 rounded-lg border p-1 ${
-                  isDark ? 'border-white/10 bg-black/20' : 'border-slate-200 bg-slate-50/90'
+                  isDark ? 'border-white/10' : 'border-slate-200'
                 }`}>
 
                   {/* AI 决策记录抽屉：展示本次会话相关的 lesson + 最近 skill outcomes */}
@@ -2106,7 +2105,6 @@ const SystemChat: React.FC = () => {
 
                   <Tooltip title="创建一个全新的 AI 会话">
                     <Button
-                      type="primary"
                       size="small"
                       icon={<PlusOutlined />}
                       onClick={async () => {
@@ -2631,9 +2629,8 @@ const SystemChat: React.FC = () => {
                     />
                   </div>
 
-                  <div className="flex items-center justify-between rounded border border-blue-500/20 bg-blue-500/5 px-3 py-2">
-                    <Text className="text-xs text-gray-400">使用 @ 可随时更换目标</Text>
-                    <Space size={4}>
+                  <div className="flex items-center justify-end rounded border border-blue-500/20 px-2.5 py-2">
+                    <Space size={2} className="shrink-0">
                       {approvalCoordinator && (
                         <Button
                           type="text"
@@ -2651,7 +2648,7 @@ const SystemChat: React.FC = () => {
                       className="h-auto p-0 text-xs"
                       onClick={() => textAreaRef.current?.focus()}
                     >
-                        选择目标
+                        @ 选择目标
                     </Button>
                     </Space>
                   </div>

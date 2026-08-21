@@ -239,17 +239,9 @@ body.light {
   color: #3b82f6 !important;
 }
 
-/* 浅色主题下的通用文本颜色修复 */
+/* 浅色主题文字由 Ant Design 令牌和语义类控制，避免全局覆盖 span 破坏状态色与按钮色。 */
 .light h1, .light h2, .light h3, .light h4, .light h5, .light h6 {
   color: #1e293b !important;
-}
-
-.light p, .light span:not(.ant-badge-count) {
-  color: #374151 !important;
-}
-
-.light .ant-typography {
-  color: #374151 !important;
 }
 
 .light .ant-card-head-title {
@@ -262,10 +254,6 @@ body.light {
 
 .light .ant-statistic-content {
   color: #1e293b !important;
-}
-
-.light .ant-btn:not(.ant-btn-primary) {
-  color: #374151 !important;
 }
 
 .light .ant-input {
@@ -410,6 +398,139 @@ body.dark {
 
 .dark .ant-modal-title {
   color: #f8fafc !important;
+}
+
+/* Modal.info / Modal.error 使用 confirm 结构，不会命中普通 ant-modal-title。 */
+.dark .ant-modal-confirm-title,
+.dark .ant-modal-confirm-content {
+  color: #e2e8f0 !important;
+}
+
+.dark .ant-modal-confirm-title {
+  color: #f8fafc !important;
+}
+
+.dark .ant-modal-confirm-content strong,
+.dark .ant-modal-confirm-content code,
+.dark .ant-modal-confirm-content li,
+.dark .ant-modal-confirm-content p {
+  color: inherit;
+}
+
+.dark .ant-modal-close {
+  color: #cbd5e1 !important;
+}
+
+.light .ant-modal-confirm-title {
+  color: #0f172a !important;
+}
+
+.light .ant-modal-confirm-content {
+  color: #334155 !important;
+}
+
+.light .ant-modal-confirm-content strong,
+.light .ant-modal-confirm-content code,
+.light .ant-modal-confirm-content li,
+.light .ant-modal-confirm-content p {
+  color: inherit;
+}
+
+/* 跨主题语义文字：用于门户弹窗等挂载到 body 的内容。 */
+.light .theme-text-primary {
+  color: #334155 !important;
+}
+
+.dark .theme-text-primary {
+  color: #e2e8f0 !important;
+}
+
+.light .theme-text-strong {
+  color: #0f172a !important;
+}
+
+.dark .theme-text-strong {
+  color: #f8fafc !important;
+}
+
+.light .theme-text-secondary {
+  color: #64748b !important;
+}
+
+.dark .theme-text-secondary {
+  color: #94a3b8 !important;
+}
+
+.agent-status-message {
+  border: 1px solid;
+  border-radius: 0.5rem;
+  background: transparent !important;
+  padding: 0.5rem 0.625rem;
+  line-height: 1.45;
+}
+
+.light .agent-status-success {
+  border-color: rgba(5, 150, 105, 0.3);
+  color: #047857 !important;
+}
+
+.dark .agent-status-success {
+  border-color: rgba(52, 211, 153, 0.35);
+  color: #6ee7b7 !important;
+}
+
+.light .agent-status-warning {
+  border-color: rgba(217, 119, 6, 0.32);
+  color: #b45309 !important;
+}
+
+.dark .agent-status-warning {
+  border-color: rgba(251, 191, 36, 0.35);
+  color: #fcd34d !important;
+}
+
+.light .agent-status-error {
+  border-color: rgba(220, 38, 38, 0.28);
+  color: #b91c1c !important;
+}
+
+.dark .agent-status-error {
+  border-color: rgba(248, 113, 113, 0.35);
+  color: #fca5a5 !important;
+}
+
+.light .agent-status-info {
+  border-color: rgba(37, 99, 235, 0.28);
+  color: #1d4ed8 !important;
+}
+
+.dark .agent-status-info {
+  border-color: rgba(96, 165, 250, 0.35);
+  color: #93c5fd !important;
+}
+
+.agent-repair-panel {
+  background: transparent !important;
+}
+
+.light .agent-repair-panel {
+  border-color: #cbd5e1;
+}
+
+.dark .agent-repair-panel {
+  border-color: rgba(148, 163, 184, 0.35);
+}
+
+.agent-outline-action.ant-btn {
+  background: transparent !important;
+}
+
+/* 工具型默认按钮即使禁用也只保留边框，避免工具栏出现一排实心色块。 */
+.light .ant-btn-default:disabled,
+.light .ant-btn-default.ant-btn-disabled,
+.dark .ant-btn-default:disabled,
+.dark .ant-btn-default.ant-btn-disabled {
+  background: transparent !important;
 }
 
 /* 深色模式下的表单标签 */
