@@ -94,6 +94,7 @@ import HostMentionInput, { ChatTargetCluster, ChatTargetDevice, ChatTargetHost, 
 import DeliveryContextPanel, { catalogToMentionOptions } from './DeliveryContextPanel'
 import type { CICDCatalog, CICDContextSelection, CICDMentionOption } from '../../types/cicd-ai'
 import { useTheme } from '../../hooks/useGlobalState'
+import { EXECUTION_RESULT_MARKER } from '../../utils/agentExecutionFlow'
 
 
 const { Text, Title } = Typography
@@ -1661,8 +1662,8 @@ const SystemChat: React.FC = () => {
               }
             }
             // 不创建新的数据项，跳过这一行
-          } else if (line.includes('💬 AI回复:')) {
-            // 🔥 检测到AI回复标记，后续内容是命令输出，标记为output类型
+          } else if (line.includes(EXECUTION_RESULT_MARKER) || line.includes('📤 输出:')) {
+            // 检测到执行结果边界，后续内容归入 output，不与模型总结混淆。
             newStreamData.push({
               type: 'output',
               content: '', // 标记行本身不显示内容
@@ -1770,83 +1771,6 @@ const SystemChat: React.FC = () => {
       setShowAgentStream(false)
     }
   }, [messages, isStreaming])
-
-  // 🔧 从消息内容解析AgentStreamData的辅助函数
-  const parseContentToAgentStreamData = (content: string): typeof agentStreamData => {
-    const lines = content.split('\n')
-    const streamData: typeof agentStreamData = []
-    let isInAIReply = false
-    let aiReplyContent = ''
-
-    // 辅助函数:保存AI回复
-    const saveAIReply = () => {
-      if (isInAIReply && aiReplyContent.trim()) {
-        streamData.push({
-          type: 'text',
-          content: aiReplyContent.trim(),
-          timestamp: new Date().toISOString()
-        })
-        isInAIReply = false
-        aiReplyContent = ''
-      }
-    }
-
-    for (const line of lines) {
-      if (line.includes('🤔')) {
-        // 遇到新的思考标记,先保存之前的AI回复
-        saveAIReply()
-        streamData.push({
-          type: 'thinking',
-          content: line.replace('🤔 ', '').trim(),
-          timestamp: new Date().toISOString()
-        })
-      } else if (line.includes('💻 执行:')) {
-        // 遇到新的命令标记,先保存之前的AI回复
-        saveAIReply()
-        // 🔧 提取toolName（格式: "💻 执行: [toolName] command" 或 "💻 执行: command"）
-        const commandMatch = line.match(/💻 执行: (?:\[([^\]]+)\] )?(.+)/)
-        const toolName = commandMatch?.[1]
-        const command = commandMatch?.[2] || line.replace('💻 执行: ', '').trim()
-
-        streamData.push({
-          type: 'command',
-          content: command,
-          timestamp: new Date().toISOString(),
-          metadata: toolName ? { toolName } : undefined
-        })
-      } else if (line.includes('💬 AI回复:')) {
-        // 开始收集AI回复内容
-        saveAIReply() // 先保存之前的AI回复(如果有)
-        isInAIReply = true
-        aiReplyContent = ''
-      } else if (line.includes('📤 输出:')) {
-        // 遇到输出标记,先保存之前的AI回复
-        saveAIReply()
-        // 然后添加输出
-        streamData.push({
-          type: 'output',
-          content: line.replace('📤 输出:', '').trim(),
-          timestamp: new Date().toISOString()
-        })
-      } else if (line.includes('✅') || line.includes('❌')) {
-        // 遇到状态标记,先保存之前的AI回复
-        saveAIReply()
-        streamData.push({
-          type: 'output',
-          content: line.replace(/^(✅|❌)\s*/, '').trim(),
-          timestamp: new Date().toISOString()
-        })
-      } else if (isInAIReply) {
-        // 收集AI回复的内容行
-        aiReplyContent += (aiReplyContent ? '\n' : '') + line
-      }
-    }
-
-    // 如果最后还有未保存的AI回复
-    saveAIReply()
-
-    return streamData
-  }
 
   // 🔧 加载自定义工具配置和其他配置
   useEffect(() => {

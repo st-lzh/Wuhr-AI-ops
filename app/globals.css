@@ -400,6 +400,14 @@ body.dark {
   color: #f8fafc !important;
 }
 
+/* Antd 的静态 Modal.* 挂载到 body，部分容器不会消费 ConfigProvider token。 */
+.dark .ant-modal-body,
+.dark .ant-modal-confirm-body-wrapper,
+.dark .ant-modal-confirm-body,
+.dark .ant-modal-confirm-paragraph {
+  color: #e2e8f0 !important;
+}
+
 /* Modal.info / Modal.error 使用 confirm 结构，不会命中普通 ant-modal-title。 */
 .dark .ant-modal-confirm-title,
 .dark .ant-modal-confirm-content {
@@ -413,7 +421,9 @@ body.dark {
 .dark .ant-modal-confirm-content strong,
 .dark .ant-modal-confirm-content code,
 .dark .ant-modal-confirm-content li,
-.dark .ant-modal-confirm-content p {
+.dark .ant-modal-confirm-content p,
+.dark .ant-modal-body > p,
+.dark .ant-modal-body > div:not([class]) {
   color: inherit;
 }
 
@@ -425,6 +435,10 @@ body.dark {
   color: #0f172a !important;
 }
 
+.light .ant-modal-body,
+.light .ant-modal-confirm-body-wrapper,
+.light .ant-modal-confirm-body,
+.light .ant-modal-confirm-paragraph,
 .light .ant-modal-confirm-content {
   color: #334155 !important;
 }
@@ -434,6 +448,53 @@ body.dark {
 .light .ant-modal-confirm-content li,
 .light .ant-modal-confirm-content p {
   color: inherit;
+}
+
+/* Drawer / Popover / Popconfirm 同样使用 body portal，统一防止暗色下黑字。 */
+.dark .ant-drawer-content,
+.dark .ant-drawer-header,
+.dark .ant-drawer-body,
+.dark .ant-drawer-footer,
+.dark .ant-drawer-title,
+.dark .ant-popover-inner,
+.dark .ant-popover-inner-content,
+.dark .ant-popover-title,
+.dark .ant-popconfirm-title,
+.dark .ant-popconfirm-description {
+  color: #e2e8f0 !important;
+}
+
+.dark .ant-drawer-content,
+.dark .ant-drawer-header,
+.dark .ant-drawer-footer,
+.dark .ant-popover-inner {
+  background: rgba(15, 23, 42, 0.96) !important;
+}
+
+.dark .ant-drawer-title,
+.dark .ant-popover-title,
+.dark .ant-popconfirm-title {
+  color: #f8fafc !important;
+}
+
+.dark .ant-drawer-close {
+  color: #cbd5e1 !important;
+}
+
+.light .ant-drawer-content,
+.light .ant-drawer-header,
+.light .ant-drawer-body,
+.light .ant-drawer-footer,
+.light .ant-popover-inner,
+.light .ant-popover-inner-content,
+.light .ant-popconfirm-description {
+  color: #334155 !important;
+}
+
+.light .ant-drawer-title,
+.light .ant-popover-title,
+.light .ant-popconfirm-title {
+  color: #0f172a !important;
 }
 
 /* 跨主题语义文字：用于门户弹窗等挂载到 body 的内容。 */

@@ -107,7 +107,7 @@ const AgentStreamRenderer: React.FC<AgentStreamRendererProps> = ({
       case 'command':
         return { icon: <CodeOutlined />, color: '#722ed1', bgColor: '#f9f0ff', label: '执行命令' }
       case 'output':
-        return { icon: <RobotOutlined />, color: '#1890ff', bgColor: '#e6f7ff', label: 'AI回复' }
+        return { icon: <PlayCircleOutlined />, color: '#0891b2', bgColor: '#ecfeff', label: '执行结果' }
       case 'text':
         return { icon: <RobotOutlined />, color: '#1890ff', bgColor: '#e6f7ff', label: 'AI回复' }
       case 'error':

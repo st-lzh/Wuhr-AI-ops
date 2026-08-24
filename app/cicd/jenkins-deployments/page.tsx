@@ -653,23 +653,6 @@ const JenkinsDeploymentsPage: React.FC = () => {
 
   return (
     <MainLayout>
-      <style jsx global>{`
-        .custom-modal .ant-modal-content {
-          background-color: #ffffff;
-          border-radius: 8px;
-          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-        }
-        .custom-modal .ant-modal-body {
-          color: #262626;
-          line-height: 1.5;
-        }
-        .ant-modal-content {
-          background-color: #ffffff;
-        }
-        .ant-modal-body {
-          color: #262626;
-        }
-      `}</style>
       <div className="p-6">
         {/* 页面标题 */}
         <div className="mb-6">

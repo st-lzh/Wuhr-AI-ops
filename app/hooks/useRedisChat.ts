@@ -3,6 +3,11 @@ import { message } from 'antd'
 import { copyWithFeedback } from '../utils/clipboard'
 import { ChatMessage, ChatSession, RedisChatConfig } from '../types/chat'
 import type { CICDContextSelection } from '../types/cicd-ai'
+import {
+  EXECUTION_RESULT_MARKER,
+  formatAgentExecutionResult,
+  parseAgentExecutionFlow
+} from '../utils/agentExecutionFlow'
 
 interface SendMessageModelConfig {
   model: string
@@ -21,82 +26,6 @@ interface SendMessageModelConfig {
   networkTargets?: Array<{ id: string; name: string; managementIp: string; type: string; vendor: string; platform: string; readOnly: boolean }>
   networkBatchLabel?: string
   cicdContext?: CICDContextSelection
-}
-
-// 从文本内容解析执行流程数据
-const parseExecutionFlowFromText = (content: string): any[] => {
-  const lines = content.split('\n')
-  const streamData: any[] = []
-  let isInAIReply = false
-  let aiReplyContent = ''
-
-  // 辅助函数:保存AI回复
-  const saveAIReply = () => {
-    if (isInAIReply && aiReplyContent.trim()) {
-      streamData.push({
-        type: 'text',
-        content: aiReplyContent.trim(),
-        timestamp: new Date().toISOString()
-      })
-      isInAIReply = false
-      aiReplyContent = ''
-    }
-  }
-
-  for (const line of lines) {
-    if (line.includes('🤔')) {
-      // 遇到新的思考标记,先保存之前的AI回复
-      saveAIReply()
-      streamData.push({
-        type: 'thinking',
-        content: line.replace('🤔 ', '').trim(),
-        timestamp: new Date().toISOString()
-      })
-    } else if (line.includes('💻 执行:')) {
-      // 遇到新的命令标记,先保存之前的AI回复
-      saveAIReply()
-      const commandMatch = line.match(/💻 执行: (?:\[([^\]]+)\] )?(.+)/)
-      const toolName = commandMatch?.[1]
-      const command = commandMatch?.[2] || line.replace('💻 执行: ', '').trim()
-
-      streamData.push({
-        type: 'command',
-        content: command,
-        timestamp: new Date().toISOString(),
-        metadata: toolName ? { toolName } : undefined
-      })
-    } else if (line.includes('💬 AI回复:')) {
-      // 开始收集AI回复内容
-      saveAIReply() // 先保存之前的AI回复(如果有)
-      isInAIReply = true
-      aiReplyContent = ''
-    } else if (line.includes('📤 输出:')) {
-      // 遇到输出标记,先保存之前的AI回复
-      saveAIReply()
-      // 然后添加输出
-      streamData.push({
-        type: 'output',
-        content: line.replace('📤 输出:', '').trim(),
-        timestamp: new Date().toISOString()
-      })
-    } else if (line.includes('✅') || line.includes('❌')) {
-      // 遇到状态标记,先保存之前的AI回复
-      saveAIReply()
-      streamData.push({
-        type: 'output',
-        content: line.replace(/^(✅|❌)\s*/, '').trim(),
-        timestamp: new Date().toISOString()
-      })
-    } else if (isInAIReply) {
-      // 收集AI回复的内容行
-      aiReplyContent += (aiReplyContent ? '\n' : '') + line
-    }
-  }
-
-  // 如果最后还有未保存的AI回复
-  saveAIReply()
-
-  return streamData
 }
 
 // 生成专业DevOps总结的函数（支持流式传输）
@@ -1339,11 +1268,15 @@ export function useRedisChat(options: UseRedisChatOptions = {}) {
                           ))
                         }
 
-                        console.log('💻 [命令] command:', parsed.content.substring(0, 50), 'hasResult:', !!parsed.metadata?.result)
+                        const hasCommandResult = parsed.metadata
+                          && Object.prototype.hasOwnProperty.call(parsed.metadata, 'result')
+                          && parsed.metadata.result !== null
+                          && parsed.metadata.result !== undefined
+                        console.log('💻 [命令] command:', parsed.content.substring(0, 50), 'hasResult:', hasCommandResult)
 
                         // 🔥 第一次发送（result为null）：只显示命令
                         // 第二次发送（有result）：只显示输出
-                        if (!parsed.metadata?.result) {
+                        if (!hasCommandResult) {
                           // 第一次：显示命令
                           // 🔧 如果有toolName，将其嵌入到文本中，格式: 💻 执行: [toolName] command
                           const toolNamePrefix = parsed.metadata?.toolName ? `[${parsed.metadata.toolName}] ` : ''
@@ -1354,23 +1287,6 @@ export function useRedisChat(options: UseRedisChatOptions = {}) {
                         } else {
                           // 第二次：显示输出
                           const result = parsed.metadata.result
-                          let outputText = ''
-
-                          const extractResultContent = (value: any): string => {
-                            if (typeof value === 'string') return value
-                            if (Array.isArray(value)) {
-                              return value
-                                .map(item => {
-                                  if (typeof item === 'string') return item
-                                  if (typeof item?.text === 'string') return item.text
-                                  return JSON.stringify(item)
-                                })
-                                .filter(Boolean)
-                                .join('\n')
-                            }
-                            if (value == null) return ''
-                            return JSON.stringify(value, null, 2)
-                          }
 
                           console.log('📄 [命令输出]', {
                             hasStdout: !!result.stdout,
@@ -1380,42 +1296,12 @@ export function useRedisChat(options: UseRedisChatOptions = {}) {
                             stderrLength: result.stderr?.length || 0
                           })
 
-                          // 🔥 添加AI回复标记，然后直接显示命令输出（不显示AI分析）
-                          if (result.stdout || result.stderr || result.error) {
-                            outputText += `\n💬 AI回复:\n`
-                          }
-
-                          // 🔥 去掉"📄 输出:"标记，直接显示内容
-                          if (result.stdout) {
-                            outputText += `${result.stdout}\n`
-                          }
-                          if (result.stderr) {
-                            outputText += `⚠️ 错误:\n${result.stderr}\n`
-                          }
-                          if (result.error && !result.stderr) {
-                            outputText += `❌ 错误: ${result.error}\n`
-                          }
-
-                          // MCP 等结构化工具通常返回 content 数组，而不是 stdout。
-                          // 将它作为真实工具输出写入执行流和后续持久化记录。
-                          if (!outputText && result.content !== undefined) {
-                            const contentText = extractResultContent(result.content)
-                            if (contentText) outputText = `\n💬 AI回复:\n${contentText}\n`
-                          }
-
-                          if (!outputText && result.structuredContent !== undefined) {
-                            const structuredText = extractResultContent(result.structuredContent)
-                            if (structuredText) outputText = `\n💬 AI回复:\n${structuredText}\n`
-                          }
-
-                          // host_fanout 返回 summary + results 的结构化对象。原样保存到执行流，
-                          // 让批量每台主机的真实退出码、输出和错误可追溯，而不只显示模型总结。
-                          if (!outputText && result && typeof result === 'object') {
-                            const resultText = extractResultContent(result)
-                            if (resultText && resultText !== '{}') {
-                              outputText = `\n💬 AI回复:\n${resultText}\n`
-                            }
-                          }
+                          // shell、MCP 与批量工具统一显示为“执行结果”，
+                          // 与模型最终答复分开，并持久化到历史会话。
+                          const resultText = formatAgentExecutionResult(result)
+                          const outputText = resultText
+                            ? `\n${EXECUTION_RESULT_MARKER}\n${resultText}\n`
+                            : ''
 
                           if (outputText) {
                             console.log('✅ [第二次] 显示输出，长度:', outputText.length)
@@ -1435,9 +1321,11 @@ export function useRedisChat(options: UseRedisChatOptions = {}) {
                         // text类型是AI生成的分析内容，不应该出现在执行流程中
                         const outputContent = parsed.content
                         if (outputContent && parsed.type === 'output') {
-                          // output类型，直接追加
-                          setStreamingMessage(prev => prev + outputContent)
-                          fullResponse += outputContent
+                          // 旧版 Agent 会发送独立 output 事件，同样补上结果边界，
+                          // 否则 SystemChat 会把无标记文本当成模型分析而丢弃。
+                          const outputText = `\n${EXECUTION_RESULT_MARKER}\n${outputContent}\n`
+                          setStreamingMessage(prev => prev + outputText)
+                          fullResponse += outputText
                         }
                         if (outputContent && parsed.type === 'text') {
                           latestAgentText = outputContent
@@ -1708,7 +1596,7 @@ export function useRedisChat(options: UseRedisChatOptions = {}) {
             })
 
             // 🔥 从fullResponse解析执行流程数据用于保存
-            const parsedStreamData = parseExecutionFlowFromText(fullResponse)
+            const parsedStreamData = parseAgentExecutionFlow(fullResponse)
 
             // 设置最终消息
             const finalMessage: ChatMessage = {
@@ -1736,7 +1624,7 @@ export function useRedisChat(options: UseRedisChatOptions = {}) {
             console.error('❌ [错误] 生成总结失败:', summaryError)
 
             // 🔥 从fullResponse解析执行流程数据用于保存
-            const parsedStreamData = parseExecutionFlowFromText(fullResponse)
+            const parsedStreamData = parseAgentExecutionFlow(fullResponse)
 
             // 即使总结失败，也保存一个基本消息
             const fallbackMessage: ChatMessage = {
