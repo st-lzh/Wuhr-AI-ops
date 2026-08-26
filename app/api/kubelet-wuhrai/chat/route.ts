@@ -14,6 +14,7 @@ import {
 } from '../../../../lib/auth/apiHelpers'
 import { getPrismaClient } from '../../../../lib/config/database'
 import { revealSecret } from '../../../../lib/crypto/encryption'
+import { withFinalMarkdownInstruction } from '../../../../lib/ai/responseFormatting'
 
 // kubelet-wuhrai REST API 客户端类
 class KubeletWuhraiAPIClient {
@@ -269,7 +270,7 @@ export async function POST(request: NextRequest) {
         // 构建HTTP API请求
         const message = body.systemPrompt ? `${body.systemPrompt}\n\n${body.message}` : body.message
         const httpRequest = {
-          query: message,
+          query: withFinalMarkdownInstruction(message),
           config: {
             provider: body.provider,
             model: body.model,

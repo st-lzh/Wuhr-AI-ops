@@ -59,15 +59,21 @@ const EnhancedMarkdownRenderer: React.FC<EnhancedMarkdownRendererProps> = ({
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{
-          // 简化代码渲染 - 移除代码块，只保留内联代码的命令高亮
+          // 区分 Markdown 代码块和内联代码，保留命令与原始输出的排版。
+          pre: ({ children }) => (
+            <pre className="enhanced-code-block">{children}</pre>
+          ),
           code({ node, className, children, ...props }: any) {
             const match = /language-(\w+)/.exec(className || '')
-            const language = match ? match[1] : ''
-            
-            // 如果是代码块，直接以普通文本形式显示，不渲染代码块
-            if (language) {
-              const codeContent = String(children).replace(/\n$/, '')
-              return <span className="plain-text">{codeContent}</span>
+            const codeContent = String(children).replace(/\n$/, '')
+            const isBlock = Boolean(match) || codeContent.includes('\n')
+
+            if (isBlock) {
+              return (
+                <code className={`block-code ${className || ''}`} data-language={match?.[1] || 'text'} {...props}>
+                  {codeContent}
+                </code>
+              )
             }
 
             // 不再处理特殊标记，直接返回普通内联代码
@@ -200,6 +206,7 @@ const EnhancedMarkdownRenderer: React.FC<EnhancedMarkdownRendererProps> = ({
           line-height: 1.7;
           color: inherit;
           font-size: 14px;
+          overflow-wrap: anywhere;
         }
 
         .plain-text {
@@ -218,6 +225,31 @@ const EnhancedMarkdownRenderer: React.FC<EnhancedMarkdownRendererProps> = ({
           font-size: 0.95em !important;
           font-weight: 500 !important;
           border: none !important;
+        }
+
+        .enhanced-code-block {
+          display: block;
+          max-width: 100%;
+          margin: 14px 0;
+          padding: 14px 16px;
+          overflow-x: auto;
+          border: 1px solid ${isCurrentlyDark ? 'rgba(96, 165, 250, 0.24)' : 'rgba(37, 99, 235, 0.18)'};
+          border-radius: 8px;
+          background: ${isCurrentlyDark ? 'rgba(2, 6, 23, 0.72)' : 'rgba(241, 245, 249, 0.92)'};
+          color: ${isCurrentlyDark ? '#dbeafe' : '#172554'};
+          font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, monospace;
+          font-size: 0.9em;
+          line-height: 1.65;
+          white-space: pre;
+        }
+
+        .block-code {
+          display: block;
+          min-width: max-content;
+          color: inherit !important;
+          background: transparent !important;
+          font: inherit;
+          white-space: inherit;
         }
 
         .enhanced-h1, .enhanced-h2, .enhanced-h3 {
@@ -244,6 +276,7 @@ const EnhancedMarkdownRenderer: React.FC<EnhancedMarkdownRendererProps> = ({
           margin: 12px 0;
           color: inherit;
           line-height: 1.6;
+          white-space: pre-wrap;
         }
 
         .enhanced-list, .enhanced-ordered-list {

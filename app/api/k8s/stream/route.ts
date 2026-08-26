@@ -11,6 +11,7 @@ import {
 import { resolveRuntimeModelConfig } from '../../../../lib/ai/runtimeModelConfig'
 import { resolveRuntimeToolConfig } from '../../../../lib/ai/runtimeToolConfig'
 import { resolvePersistedConversationHistory } from '../../../../lib/ai/conversationHistory'
+import { withFinalMarkdownInstruction } from '../../../../lib/ai/responseFormatting'
 
 // 流式数据类型定义
 interface StreamData {
@@ -60,7 +61,7 @@ export async function POST(request: NextRequest) {
 
     const cicdContext = await resolveCICDContext(prisma, body.cicdContext || {})
     if (cicdContext) await recordCICDContextRead(prisma, user.id, cicdContext)
-    const contextualQuery = `${formatCICDContextPrompt(cicdContext)}${actualQuery}`
+    const contextualQuery = withFinalMarkdownInstruction(`${formatCICDContextPrompt(cicdContext)}${actualQuery}`)
 
     const hostId = config?.hostId || requestConfig?.hostId || cicdContext?.coordinatorHostId
     const executionContext = await resolveChatExecutionContext({

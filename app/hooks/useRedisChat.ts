@@ -8,6 +8,7 @@ import {
   formatAgentExecutionResult,
   parseAgentExecutionFlow
 } from '../utils/agentExecutionFlow'
+import { ensureFinalMarkdownDocument } from '../../lib/ai/responseFormatting'
 
 interface SendMessageModelConfig {
   model: string
@@ -39,6 +40,30 @@ const generateDevOpsSummary = async (originalQuery: string, executionResults: st
       hasOriginalQuery: !!originalQuery,
       hasExecutionResults: !!executionResults
     })
+
+    // 总结必须在服务端生成：服务端从数据库解析当前模型密钥，
+    // 浏览器无需持有或传输托管 API Key。
+    const managedSummaryResponse = await fetch('/api/ai/summarize', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({
+        originalQuery,
+        executionResults,
+        isK8sMode: isK8sMode === true,
+        provider,
+        model
+      }),
+      signal
+    })
+    if (managedSummaryResponse.ok) {
+      const managedSummary = await managedSummaryResponse.json()
+      const content = ensureFinalMarkdownDocument(managedSummary.content || '')
+      onStreamData?.(content)
+      return content
+    }
+    const managedSummaryError = await managedSummaryResponse.text()
+    console.warn('服务端 Markdown 总结失败，进入兼容降级:', managedSummaryResponse.status, managedSummaryError.slice(0, 500))
     
     // 专业wuhrai系统提示词
     const systemPrompt = `你是Wuhr AI，一个专业的wuhrai和Kubernetes运维助手。重要规则：
@@ -1564,18 +1589,23 @@ export function useRedisChat(options: UseRedisChatOptions = {}) {
           // 返回最终文本时才保留兼容性的总结回退。
           console.log('🚀 [调试] 正在确定最终真实答复...')
           try {
-            const finalSummaryContent = latestAgentText.trim() || await generateDevOpsSummary(
-                content, // 用户原始查询
-                fullResponse, // 执行过程和结果
-                requestBody.isK8sMode,
-                requestBody.hostId,
-                requestBody.apiKey,
-                requestBody.provider,
-                requestBody.model,
-                requestBody.baseUrl,
-                realTimeStreamCallback, // 🔥 传递实时流式回调
-                signal // 传递signal用于中断
-              )
+            // Agent 的最后一个 text 事件可能只是“准备生成总结”的 ReAct
+            // 过渡文本。只要存在真实执行证据，就由平台把全部结果
+            // 单独交给模型生成最终 Markdown，不再误用过渡文本。
+            const finalSummaryContent = fullResponse.trim()
+              ? await generateDevOpsSummary(
+                  content,
+                  fullResponse,
+                  requestBody.isK8sMode,
+                  requestBody.hostId,
+                  requestBody.apiKey,
+                  requestBody.provider,
+                  requestBody.model,
+                  requestBody.baseUrl,
+                  realTimeStreamCallback,
+                  signal
+                )
+              : ensureFinalMarkdownDocument(latestAgentText)
 
             console.log('🎉 [调试] 流式总结生成完成:', {
               summaryLength: finalSummaryContent?.length || 0,

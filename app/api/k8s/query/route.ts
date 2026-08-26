@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '../../../../lib/auth/apiHelpers-new'
 import { getPrismaClient } from '../../../../lib/config/database'
 import { resolveRuntimeModelConfig } from '../../../../lib/ai/runtimeModelConfig'
+import { withFinalMarkdownInstruction } from '../../../../lib/ai/responseFormatting'
 
 // POST方法：处理K8s模式非流式聊天请求
 export async function POST(request: NextRequest) {
@@ -75,7 +76,7 @@ export async function POST(request: NextRequest) {
 
     // 构建HTTP API请求 - 强制设置为K8s模式
     const httpRequest = {
-      query: actualQuery,
+      query: withFinalMarkdownInstruction(actualQuery),
       isK8sMode: true, // 🔥 强制设置为K8s模式
       config: {
         provider: runtimeModel.provider,

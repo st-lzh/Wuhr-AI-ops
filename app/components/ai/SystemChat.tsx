@@ -420,6 +420,11 @@ const SystemChat: React.FC = () => {
       || servers.find(server => server.isDefault)
       || effectiveTargetHosts[0]
   }, [effectiveTargetHosts, hostConfig.selectedServerId, servers])
+  // “检查 Agent”只需要主机 ID。@选择刚写入状态时，servers 详情可能
+  // 还没完成本轮渲染，不应因此隐藏按钮。
+  const agentCheckTargetId = effectiveTargetHostIds.length === 1
+    ? effectiveTargetHostIds[0]
+    : hostConfig.selectedServerId || approvalCoordinator?.id || ''
   const hasExecutionTarget = effectiveTargetHostIds.length > 0 || !!hostConfig.selectedServerId
   const hasConversationTarget = hasExecutionTarget || hasCICDContext || hasNetworkTarget
 
@@ -1960,8 +1965,10 @@ const SystemChat: React.FC = () => {
                       isError={isError}
                       isRejected={msg.status === 'rejected' || msg.metadata?.approvalRejected === true}
                       isStreaming={false}
-                      isAgentMode={showAgentMode && isAgentMode}
-                      agentSession={getMessageAgentSession(msg.id)}
+                      // 执行流程已由上方 AgentStreamRenderer 独立展示；此处只负责
+                      // 最终总结，必须直接走 Markdown，不再交给旧 Agent 步骤解析器。
+                      isAgentMode={showAgentMode && isAgentMode && !msg.metadata?.agentStreamData?.length}
+                      agentSession={msg.metadata?.agentStreamData?.length ? null : getMessageAgentSession(msg.id)}
                       metadata={msg.metadata}
                       className="ai-response"
                       onAgentModeToggle={(enabled) => {
@@ -2566,12 +2573,12 @@ const SystemChat: React.FC = () => {
 
                   <div className="flex items-center justify-end rounded border border-blue-500/20 px-2.5 py-2">
                     <Space size={2} className="shrink-0">
-                      {approvalCoordinator && (
+                      {agentCheckTargetId && (
                         <Button
                           type="text"
                           size="small"
                           loading={kubeletCheckLoading}
-                          onClick={() => checkKubeletWuhrai(approvalCoordinator.id)}
+                          onClick={() => checkKubeletWuhrai(agentCheckTargetId)}
                           className="h-6 px-2 text-xs text-blue-400"
                         >
                           {kubeletCheckLoading ? '检查中' : '检查 Agent'}

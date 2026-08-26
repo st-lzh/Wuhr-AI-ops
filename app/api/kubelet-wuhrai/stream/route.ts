@@ -4,6 +4,7 @@ import { getPrismaClient } from '../../../../lib/config/database'
 import { resolveRuntimeModelConfig } from '../../../../lib/ai/runtimeModelConfig'
 import { resolveRuntimeToolConfig } from '../../../../lib/ai/runtimeToolConfig'
 import { resolvePersistedConversationHistory } from '../../../../lib/ai/conversationHistory'
+import { withFinalMarkdownInstruction } from '../../../../lib/ai/responseFormatting'
 
 // 流式数据类型定义
 interface StreamData {
@@ -95,7 +96,7 @@ export async function POST(request: NextRequest) {
 
     // 构建HTTP API请求
     const httpRequest = {
-      query: actualQuery,
+      query: withFinalMarkdownInstruction(actualQuery),
       sessionId: typeof body.sessionId === 'string' ? body.sessionId : undefined,
       history,
       isK8sMode: body.isK8sMode || body.config?.isK8sMode, // 🔥 关键：确保K8s模式参数传递
