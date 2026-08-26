@@ -137,8 +137,10 @@ export async function GET(
         recommendations.push({ type: 'info', message: '请执行“更新 Agent”，升级后再开始智能运维会话' })
       }
 
-      if (kubeletStatus === 'installed') {
+      if (kubeletStatus === 'installed' && !needsUpgrade) {
         recommendations.push({ type: 'success', message: '平台与 Agent 通信鉴权已验证，可以使用 AI 运维功能' })
+      } else if (kubeletStatus === 'installed' && needsUpgrade) {
+        recommendations.push({ type: 'warning', message: '通信鉴权正常，但旧版 Agent 含已知执行流程缺陷，升级前不建议继续操作' })
       } else if (kubeletStatus === 'authentication_mismatch') {
         recommendations.push({ type: 'error', message: 'Agent 通信密钥与当前平台不一致，AI 请求会被 401 拒绝' })
         recommendations.push({ type: 'info', message: '点击下方“同步密钥并更新 Agent”，平台会通过 SSH 安全同步当前密钥' })
