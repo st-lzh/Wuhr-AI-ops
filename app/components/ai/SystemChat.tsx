@@ -1599,15 +1599,18 @@ const SystemChat: React.FC = () => {
         // 尝试解析最新的流式数据
         const lines = streamingMessage.split('\n')
         const newStreamData: typeof agentStreamData = []
+        let collectingOutput = false
 
         for (const line of lines) {
           if (line.includes('🤔')) {
+            collectingOutput = false
             newStreamData.push({
               type: 'thinking',
               content: line.replace('🤔 ', ''),
               timestamp: new Date().toISOString()
             })
           } else if (line.includes('💻 执行:')) {
+            collectingOutput = false
             // 🔧 提取toolName（格式: "💻 执行: [toolName] command" 或 "💻 执行: command"）
             const commandMatch = line.match(/💻 执行: (?:\[([^\]]+)\] )?(.+)/)
             const toolName = commandMatch?.[1] // toolName在括号内
@@ -1620,6 +1623,7 @@ const SystemChat: React.FC = () => {
               metadata: toolName ? { toolName } : undefined
             })
           } else if (line.includes('命令已拒绝')) {
+            collectingOutput = false
             // 🔥 检测到命令拒绝标记
             newStreamData.push({
               type: 'command_rejected',
@@ -1627,6 +1631,7 @@ const SystemChat: React.FC = () => {
               timestamp: new Date().toISOString()
             })
           } else if (line.includes('🔐 命令需要批准')) {
+            collectingOutput = false
             // 🔥 检测到批准请求标记 - 从文本中提取approvalId并添加到对应command的metadata
             const approvalIdMatch = line.match(/🔐 命令需要批准 (.+)/)
             const approvalIdFromText = approvalIdMatch ? approvalIdMatch[1].trim() : null
@@ -1664,23 +1669,25 @@ const SystemChat: React.FC = () => {
             // 不创建新的数据项，跳过这一行
           } else if (line.includes(EXECUTION_RESULT_MARKER) || line.includes('📤 输出:')) {
             // 检测到执行结果边界，后续内容归入 output，不与模型总结混淆。
+            collectingOutput = true
             newStreamData.push({
               type: 'output',
               content: '', // 标记行本身不显示内容
               timestamp: new Date().toISOString(),
               metadata: { isOutputStart: true }
             })
+          } else if (line.includes('💬 AI回复:')) {
+            // 最终总结在执行流程外单独展示；同时结束当前命令结果收集。
+            collectingOutput = false
           } else if (line.trim() && !line.includes('🤔') && !line.includes('💻') && !line.includes('🔐') && !line.includes('命令已拒绝')) {
-            // 🔥 检查前一项是否是output类型，如果是则继续添加为output
-            const lastItem = newStreamData[newStreamData.length - 1]
-            if (lastItem && lastItem.type === 'output') {
+            if (collectingOutput) {
               newStreamData.push({
                 type: 'output',
                 content: line,
                 timestamp: new Date().toISOString()
               })
             }
-            // 🔥 跳过其他text内容（AI分析总结）
+            // 跳过其他 text 内容（思考过程与最终总结）。
           }
         }
 

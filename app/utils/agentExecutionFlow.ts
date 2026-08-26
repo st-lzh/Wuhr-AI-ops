@@ -82,7 +82,7 @@ export const parseAgentExecutionFlow = (
   timestampFactory: () => string = () => new Date().toISOString()
 ): AgentExecutionStep[] => {
   const steps: AgentExecutionStep[] = []
-  let collecting: 'output' | 'text' | null = null
+  let collecting: 'output' | null = null
   let collectedLines: string[] = []
 
   const flushCollected = () => {
@@ -141,7 +141,7 @@ export const parseAgentExecutionFlow = (
 
     if (line.includes('💬 AI回复:')) {
       flushCollected()
-      collecting = 'text'
+      // 最终 AI 总结由消息正文单独渲染，不能再次写进执行流程。
       continue
     }
 

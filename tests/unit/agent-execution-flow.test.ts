@@ -33,7 +33,7 @@ test('MCP 与批量工具的结构化结果不会被丢弃', () => {
   assert.match(batchResult, /failed/)
 })
 
-test('执行流程同时恢复命令、多行结果和最终 AI 答复', () => {
+test('执行流程只恢复命令和多行结果，最终 AI 总结不重复进入流程', () => {
   const content = [
     '💻 执行: [bash] df -h',
     EXECUTION_RESULT_MARKER,
@@ -44,9 +44,30 @@ test('执行流程同时恢复命令、多行结果和最终 AI 答复', () => {
   ].join('\n')
 
   const steps = parseAgentExecutionFlow(content, () => '2026-08-24T00:00:00.000Z')
-  assert.deepEqual(steps.map(step => step.type), ['command', 'output', 'text'])
+  assert.deepEqual(steps.map(step => step.type), ['command', 'output'])
   assert.equal(steps[0].content, 'df -h')
   assert.equal(steps[0].metadata?.toolName, 'bash')
   assert.match(steps[1].content, /\/dev\/vda1/)
-  assert.equal(steps[2].content, '磁盘空间正常。')
+  assert.ok(steps.every(step => !step.content.includes('磁盘空间正常')))
+})
+
+test('多条命令分别保留自己的真实结果，不混入最终总结', () => {
+  const content = [
+    '💻 执行: [bash] hostname',
+    EXECUTION_RESULT_MARKER,
+    'prod-01',
+    '💻 执行: [bash] uptime',
+    EXECUTION_RESULT_MARKER,
+    'up 10 days',
+    '💬 AI回复:',
+    '两条检查均执行成功。'
+  ].join('\n')
+
+  const steps = parseAgentExecutionFlow(content, () => '2026-08-26T00:00:00.000Z')
+  assert.deepEqual(steps.map(step => [step.type, step.content]), [
+    ['command', 'hostname'],
+    ['output', 'prod-01'],
+    ['command', 'uptime'],
+    ['output', 'up 10 days']
+  ])
 })

@@ -176,7 +176,9 @@ const AgentStreamRenderer: React.FC<AgentStreamRendererProps> = ({
     return merged
   }
 
-  const mergedData = mergeOutputs(streamData)
+  // 兼容历史会话：旧数据可能把最终总结存成 text 步骤。
+  // 执行流程只展示命令、逐条结果、审批和错误，总结由外层消息正文展示一次。
+  const mergedData = mergeOutputs(streamData.filter(item => item.type !== 'text'))
 
   // 🔥 直接渲染，不需要复杂的合并逻辑
   const renderStreamGroup = (item: StreamData, itemIndex: number) => {

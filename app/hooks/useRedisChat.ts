@@ -1523,9 +1523,8 @@ export function useRedisChat(options: UseRedisChatOptions = {}) {
             reader.releaseLock()
           }
 
-          if (latestAgentText.trim()) {
-            fullResponse += `\n💬 AI回复:\n${latestAgentText.trim()}\n`
-          }
+          // latestAgentText 是所有工具执行完成后的最终总结，只用于消息正文。
+          // fullResponse 只保留命令和逐条执行结果，避免总结重复进入执行流程。
 
           // 🔥 流式数据接收完毕，开始生成专业总结
           console.log('🎯 [流式完成] 所有数据接收完毕，开始生成专业DevOps总结（流式）')
