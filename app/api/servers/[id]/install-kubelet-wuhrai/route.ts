@@ -4,7 +4,12 @@ import { getPrismaClient } from '../../../../../lib/config/database'
 import {
   createSSHConfigFromServer
 } from '../../../../../lib/utils/sshConnectionUtils'
-import { buildAgentInstallCommand } from '../../../../../lib/agentRelease'
+import {
+  AGENT_RELEASE_VERSION,
+  buildAgentInstallCommand,
+  isAgentUpgradeRequired,
+  normalizeAgentVersion
+} from '../../../../../lib/agentRelease'
 import { randomUUID } from 'node:crypto'
 
 function resolvePlatformAgentApiKey(): string {
@@ -25,6 +30,19 @@ function buildAuthenticatedHealthCheck(port: number, apiKeyFile: string): string
     `'http://127.0.0.1:${port}/api/health' 2>/dev/null || true)`,
     `[ "$status" = '200' ] && echo 'healthy' || echo "http_$status"`
   ].join(' ')
+}
+
+function buildAgentVersionCheck(port: number): string {
+  return `curl --noproxy '*' -fsS 'http://127.0.0.1:${port}/api/version' 2>/dev/null || true`
+}
+
+function parseAgentVersion(output: string): string {
+  try {
+    const data = JSON.parse(output.trim())
+    return normalizeAgentVersion(typeof data.version === 'string' ? data.version : '')
+  } catch {
+    return ''
+  }
 }
 
 export async function POST(
@@ -152,8 +170,16 @@ export async function POST(
         )
 
         if (healthCheck.stdout.trim() === 'healthy') {
-          installLogs.push('✅ kubelet-wuhrai 服务已在运行，鉴权验证通过')
-          installSuccess = true
+          const versionResult = await sshClient.executeCommand(buildAgentVersionCheck(kubeletPort))
+          const currentVersion = parseAgentVersion(versionResult.stdout)
+          if (isAgentUpgradeRequired(currentVersion)) {
+            installLogs.push(
+              `🔄 Agent ${currentVersion ? `当前版本 v${currentVersion}` : '版本无法识别'}，准备更新至 v${AGENT_RELEASE_VERSION}...`
+            )
+          } else {
+            installLogs.push(`✅ Agent v${currentVersion} 已在运行，鉴权与版本验证通过`)
+            installSuccess = true
+          }
         } else if (/http_(401|403)/.test(healthCheck.stdout)) {
           installLogs.push('🔄 检测到 Agent 密钥与平台不一致，准备自动修复...')
         } else {
@@ -169,8 +195,16 @@ export async function POST(
             buildAuthenticatedHealthCheck(kubeletPort, remoteApiKeyFile)
           )
           if (healthCheck2.stdout.trim() === 'healthy') {
-            installLogs.push('✅ kubelet-wuhrai 服务启动成功，鉴权验证通过')
-            installSuccess = true
+            const versionResult = await sshClient.executeCommand(buildAgentVersionCheck(kubeletPort))
+            const currentVersion = parseAgentVersion(versionResult.stdout)
+            if (isAgentUpgradeRequired(currentVersion)) {
+              installLogs.push(
+                `🔄 服务已启动，但 Agent ${currentVersion ? `仍为 v${currentVersion}` : '版本无法识别'}，继续更新至 v${AGENT_RELEASE_VERSION}...`
+              )
+            } else {
+              installLogs.push(`✅ Agent v${currentVersion} 服务启动成功，鉴权与版本验证通过`)
+              installSuccess = true
+            }
           } else {
             installLogs.push('⚠️ 服务未通过鉴权健康检查，尝试重新安装...')
           }
@@ -208,8 +242,17 @@ export async function POST(
           )
 
           if (verifyResult.stdout.trim() === 'healthy') {
-            installLogs.push('✅ kubelet-wuhrai 服务及鉴权验证成功')
-            installSuccess = true
+            const versionResult = await sshClient.executeCommand(buildAgentVersionCheck(kubeletPort))
+            const installedVersion = parseAgentVersion(versionResult.stdout)
+            if (isAgentUpgradeRequired(installedVersion)) {
+              installLogs.push(
+                `❌ Agent 服务已启动，但版本验证失败（期望 v${AGENT_RELEASE_VERSION}，实际 ${installedVersion ? `v${installedVersion}` : '未知'}）`
+              )
+              errorMessage = 'Agent 更新后版本验证失败，请检查服务是否仍引用旧二进制'
+            } else {
+              installLogs.push(`✅ Agent v${installedVersion} 服务、鉴权与版本验证成功`)
+              installSuccess = true
+            }
           } else {
             installLogs.push(`⚠️ 安装完成但服务未通过鉴权健康检查（${verifyResult.stdout.trim() || '无响应'}）`)
             errorMessage = '安装完成但 Agent 通信鉴权未通过'

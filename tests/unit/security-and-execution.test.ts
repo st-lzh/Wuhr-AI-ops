@@ -22,9 +22,12 @@ import { assessAutomationRisk, nextCronDate } from '../../lib/operations/automat
 import { chunkRunbook, hashRunbookContent } from '../../lib/knowledge/runbookService'
 import { checkDockerRegistry } from '../../lib/artifacts/registryClient'
 import {
+  AGENT_RELEASE_VERSION,
   AGENT_INSTALLER_MIRROR_URL,
   AGENT_INSTALLER_PRIMARY_URL,
-  buildAgentInstallCommand
+  buildAgentInstallCommand,
+  isAgentUpgradeRequired,
+  normalizeAgentVersion
 } from '../../lib/agentRelease'
 import { canAccessImproveProxy } from '../../lib/improve/backendProxy'
 import { encryptProviderApiKey } from '../../lib/ai/modelProviders'
@@ -104,6 +107,8 @@ test('Agent 安装命令先用 GitHub、再回退国内镜像且拒绝非法端�
   assert.match(command, /curl[^\n]+\|\| curl/)
   assert.doesNotMatch(command, /&&\s*\|\|/)
   assert.match(command, /sh "\$tmp" --port 2081/)
+  assert.match(command, new RegExp(`WUHR_AGENT_VERSION='${AGENT_RELEASE_VERSION}'`))
+  assert.match(AGENT_INSTALLER_MIRROR_URL, new RegExp(`/v${AGENT_RELEASE_VERSION}/install-agent\\.sh$`))
   assert.doesNotMatch(command, /--port=/)
   assert.doesNotMatch(command, /\|\s*(ba)?sh/)
   assert.match(commandWithKey, /--api-key-file '\/tmp\/\.wuhr-agent-api-key-test'/)
@@ -114,6 +119,15 @@ test('Agent 安装命令先用 GitHub、再回退国内镜像且拒绝非法端�
     () => buildAgentInstallCommand(2081, { apiKeyFile: '/tmp/key;touch-pwned' }),
     /路径不合法/
   )
+})
+
+test('Agent 版本检查可识别 v 前缀和所有旧版本', () => {
+  assert.equal(normalizeAgentVersion(`v${AGENT_RELEASE_VERSION}`), AGENT_RELEASE_VERSION)
+  assert.equal(isAgentUpgradeRequired(AGENT_RELEASE_VERSION), false)
+  assert.equal(isAgentUpgradeRequired(`v${AGENT_RELEASE_VERSION}`), false)
+  assert.equal(isAgentUpgradeRequired('1.0.0'), true)
+  assert.equal(isAgentUpgradeRequired('dev'), true)
+  assert.equal(isAgentUpgradeRequired(''), true)
 })
 
 test('AI 资产代理允许管理员和显式权限，拒绝普通无权限用户', () => {

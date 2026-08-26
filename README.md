@@ -154,15 +154,15 @@ sudo ./install.sh
 
 下载地址：
 
-- [GitHub Release](https://github.com/st-lzh/Wuhr-AI-ops/releases/tag/v1.0.0)
+- [GitHub Release](https://github.com/st-lzh/Wuhr-AI-ops/releases/tag/v1.0.1)
 - [国内下载镜像](http://106.12.150.207/download/)
 
 在受管服务器安装后端 Agent：
 
 ```bash
 tmp=$(mktemp) && trap 'rm -f "$tmp"' 0 HUP INT TERM \
-  && (curl -fsSL 'https://github.com/st-lzh/Wuhr-AI-ops/releases/download/v1.0.0/install-agent.sh' -o "$tmp" \
-  || curl -fsSL 'http://106.12.150.207/download/install-agent.sh' -o "$tmp") \
+  && (curl -fsSL 'https://github.com/st-lzh/Wuhr-AI-ops/releases/download/v1.0.1/install-agent.sh' -o "$tmp" \
+  || curl -fsSL 'http://106.12.150.207/download/v1.0.1/install-agent.sh' -o "$tmp") \
   && sudo sh "$tmp" --port=2081
 ```
 

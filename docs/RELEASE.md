@@ -25,7 +25,7 @@
 公开 GitHub Release 只上传后端 Agent 文件；前端镜像独立发布到 Docker Hub。在前端仓库根目录构建 Agent 发布包：
 
 ```bash
-./packaging/build-agent-release.sh --version 1.0.0
+./packaging/build-agent-release.sh --version 1.0.1
 ```
 
 构建器会按顺序执行：
@@ -42,14 +42,14 @@
 ```text
 dist/agent/install-agent.sh
 dist/agent/install-agent.sh.sha256
-dist/agent/wuhr-agent-1.0.0-linux-amd64.tar.gz
-dist/agent/wuhr-agent-1.0.0-linux-amd64.tar.gz.sha256
-dist/agent/wuhr-agent-1.0.0-linux-arm64.tar.gz
-dist/agent/wuhr-agent-1.0.0-linux-arm64.tar.gz.sha256
-dist/agent/wuhr-agent-1.0.0-darwin-amd64.tar.gz
-dist/agent/wuhr-agent-1.0.0-darwin-amd64.tar.gz.sha256
-dist/agent/wuhr-agent-1.0.0-darwin-arm64.tar.gz
-dist/agent/wuhr-agent-1.0.0-darwin-arm64.tar.gz.sha256
+dist/agent/wuhr-agent-1.0.1-linux-amd64.tar.gz
+dist/agent/wuhr-agent-1.0.1-linux-amd64.tar.gz.sha256
+dist/agent/wuhr-agent-1.0.1-linux-arm64.tar.gz
+dist/agent/wuhr-agent-1.0.1-linux-arm64.tar.gz.sha256
+dist/agent/wuhr-agent-1.0.1-darwin-amd64.tar.gz
+dist/agent/wuhr-agent-1.0.1-darwin-amd64.tar.gz.sha256
+dist/agent/wuhr-agent-1.0.1-darwin-arm64.tar.gz
+dist/agent/wuhr-agent-1.0.1-darwin-arm64.tar.gz.sha256
 ```
 
 安装器根据 `uname` 选择其中一个包，优先使用 GitHub Release，失败或 SHA-256 不匹配时改用 `http://106.12.150.207/download/`。
@@ -77,7 +77,7 @@ wuhrai/wuhrai:git-SHORT_COMMIT
 只有内部验证可以允许未提交工作区：
 
 ```bash
-./packaging/build-agent-release.sh --version 1.0.0-review --skip-tests
+./packaging/build-agent-release.sh --version 1.0.1-review --skip-tests
 ```
 
 `--skip-tests` 不应出现在正式发布流水线。
@@ -88,7 +88,7 @@ wuhrai/wuhrai:git-SHORT_COMMIT
 for checksum in dist/agent/*.sha256; do
   (cd dist/agent && shasum -a 256 -c "$(basename "$checksum")")
 done
-tar -tzf dist/agent/wuhr-agent-1.0.0-linux-amd64.tar.gz
+tar -tzf dist/agent/wuhr-agent-1.0.1-linux-amd64.tar.gz
 ```
 
 必须在干净的 amd64 和 arm64 Linux 虚拟机各执行一次，macOS 包也要完成解压和 `--dry-run` 验证：

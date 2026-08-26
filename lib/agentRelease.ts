@@ -1,10 +1,10 @@
-export const AGENT_RELEASE_VERSION = '1.0.0'
+export const AGENT_RELEASE_VERSION = '1.0.1'
 
 export const AGENT_INSTALLER_PRIMARY_URL =
   `https://github.com/st-lzh/Wuhr-AI-ops/releases/download/v${AGENT_RELEASE_VERSION}/install-agent.sh`
 
 export const AGENT_INSTALLER_MIRROR_URL =
-  'http://106.12.150.207/download/install-agent.sh'
+  `http://106.12.150.207/download/v${AGENT_RELEASE_VERSION}/install-agent.sh`
 
 export interface AgentInstallCommandOptions {
   apiKeyFile?: string
@@ -14,6 +14,14 @@ function validateRemoteFilePath(filePath: string): void {
   if (!/^\/[A-Za-z0-9/._-]+$/.test(filePath)) {
     throw new Error('Agent 远程密钥文件路径不合法')
   }
+}
+
+export function normalizeAgentVersion(version: string | null | undefined): string {
+  return String(version || '').trim().replace(/^v/i, '')
+}
+
+export function isAgentUpgradeRequired(version: string | null | undefined): boolean {
+  return normalizeAgentVersion(version) !== AGENT_RELEASE_VERSION
 }
 
 /**
@@ -38,6 +46,6 @@ export function buildAgentInstallCommand(
     'tmp=$(mktemp)',
     `trap 'rm -f "$tmp"' 0 HUP INT TERM`,
     `(curl -fsSL '${AGENT_INSTALLER_PRIMARY_URL}' -o "$tmp" || curl -fsSL '${AGENT_INSTALLER_MIRROR_URL}' -o "$tmp")`,
-    `sh "$tmp" ${installerArgs.join(' ')}`
+    `WUHR_AGENT_VERSION='${AGENT_RELEASE_VERSION}' WUHR_AGENT_MIRROR_BASE='http://106.12.150.207/download/v${AGENT_RELEASE_VERSION}' sh "$tmp" ${installerArgs.join(' ')}`
   ].join(' && ')
 }

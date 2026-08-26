@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { classifyAgentProbe } from '../../../../../lib/agentHealth'
+import { AGENT_RELEASE_VERSION, isAgentUpgradeRequired } from '../../../../../lib/agentRelease'
 import { requireAuth } from '../../../../../lib/auth/apiHelpers-new'
 import { getPrismaClient } from '../../../../../lib/config/database'
 
@@ -84,6 +85,23 @@ export async function GET(
         console.log('❌ Agent 健康端点无响应:', fetchError instanceof Error ? fetchError.message : '未知错误')
       }
 
+      if (healthStatus && healthStatus >= 200 && healthStatus < 300) {
+        try {
+          const versionResponse = await fetchAgent(
+            `http://${server.ip}:${kubeletPort}/api/version`,
+            requestHeaders
+          )
+          if (versionResponse.ok) {
+            const versionData = await versionResponse.json().catch(() => ({}))
+            if (typeof versionData.version === 'string' && versionData.version.trim()) {
+              kubeletVersion = versionData.version.trim()
+            }
+          }
+        } catch (versionError) {
+          console.log('⚠️ Agent 版本端点不可用:', versionError instanceof Error ? versionError.message : '未知错误')
+        }
+      }
+
       if (healthStatus && healthStatus >= 200 && healthStatus < 300 && platformApiKey) {
         try {
           const authResponse = await fetchAgent(
@@ -107,6 +125,16 @@ export async function GET(
         if (kubeletVersion && kubeletVersion !== 'unknown') {
           recommendations.push({ type: 'info', message: `版本：${kubeletVersion}` })
         }
+      }
+
+
+      const needsUpgrade = kubeletStatus !== 'not_installed' && isAgentUpgradeRequired(kubeletVersion)
+      if (needsUpgrade) {
+        recommendations.push({
+          type: 'warning',
+          message: `当前 Agent ${kubeletVersion && kubeletVersion !== 'unknown' ? `v${kubeletVersion}` : '版本未知'}，平台要求 v${AGENT_RELEASE_VERSION}`
+        })
+        recommendations.push({ type: 'info', message: '请执行“更新 Agent”，升级后再开始智能运维会话' })
       }
 
       if (kubeletStatus === 'installed') {
@@ -138,6 +166,8 @@ export async function GET(
       data: {
         kubeletStatus,
         kubeletVersion,
+        latestVersion: AGENT_RELEASE_VERSION,
+        needsUpgrade: kubeletStatus !== 'not_installed' && isAgentUpgradeRequired(kubeletVersion),
         kubeletPort,
         recommendations,
         serverInfo: {

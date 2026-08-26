@@ -33,7 +33,7 @@
 <body>
   <main>
     <div class="eyebrow">China Download Mirror</div>
-    <h1>Wuhr AI Ops v1.0.0</h1>
+    <h1>Wuhr Agent v1.0.1</h1>
     <p class="lead">本镜像只提供编译后的 Wuhr Agent 后端包，不包含前端 Docker 镜像或后端源码。安装器会自动识别操作系统和 CPU 架构，并对下载内容执行 SHA-256 校验。</p>
 
     <div class="grid">
@@ -42,8 +42,8 @@
         <div class="meta">Ubuntu / Debian / RHEL / CentOS / Rocky / Alpine</div>
         <p>适用于 Intel、AMD 的 64 位 Linux，支持 systemd、OpenRC 和 SysV init。</p>
         <div class="actions">
-          <a class="button" href="./wuhr-agent-1.0.0-linux-amd64.tar.gz">下载后端包</a>
-          <a class="button secondary" href="./wuhr-agent-1.0.0-linux-amd64.tar.gz.sha256">SHA-256</a>
+          <a class="button" href="./v1.0.1/wuhr-agent-1.0.1-linux-amd64.tar.gz">下载后端包</a>
+          <a class="button secondary" href="./v1.0.1/wuhr-agent-1.0.1-linux-amd64.tar.gz.sha256">SHA-256</a>
         </div>
       </article>
 
@@ -52,8 +52,8 @@
         <div class="meta">ARM 服务器 / 云主机</div>
         <p>适用于 aarch64、arm64 的 64 位 Linux，支持 systemd、OpenRC 和 SysV init。</p>
         <div class="actions">
-          <a class="button" href="./wuhr-agent-1.0.0-linux-arm64.tar.gz">下载后端包</a>
-          <a class="button secondary" href="./wuhr-agent-1.0.0-linux-arm64.tar.gz.sha256">SHA-256</a>
+          <a class="button" href="./v1.0.1/wuhr-agent-1.0.1-linux-arm64.tar.gz">下载后端包</a>
+          <a class="button secondary" href="./v1.0.1/wuhr-agent-1.0.1-linux-arm64.tar.gz.sha256">SHA-256</a>
         </div>
       </article>
 
@@ -62,8 +62,8 @@
         <div class="meta">Intel Mac</div>
         <p>适用于 Intel 处理器的 macOS，通过 launchd 注册并管理 Agent 系统服务。</p>
         <div class="actions">
-          <a class="button" href="./wuhr-agent-1.0.0-darwin-amd64.tar.gz">下载后端包</a>
-          <a class="button secondary" href="./wuhr-agent-1.0.0-darwin-amd64.tar.gz.sha256">SHA-256</a>
+          <a class="button" href="./v1.0.1/wuhr-agent-1.0.1-darwin-amd64.tar.gz">下载后端包</a>
+          <a class="button secondary" href="./v1.0.1/wuhr-agent-1.0.1-darwin-amd64.tar.gz.sha256">SHA-256</a>
         </div>
       </article>
 
@@ -72,8 +72,8 @@
         <div class="meta">Apple Silicon</div>
         <p>适用于 Apple M 系列芯片的 macOS，通过 launchd 注册并管理 Agent 系统服务。</p>
         <div class="actions">
-          <a class="button" href="./wuhr-agent-1.0.0-darwin-arm64.tar.gz">下载后端包</a>
-          <a class="button secondary" href="./wuhr-agent-1.0.0-darwin-arm64.tar.gz.sha256">SHA-256</a>
+          <a class="button" href="./v1.0.1/wuhr-agent-1.0.1-darwin-arm64.tar.gz">下载后端包</a>
+          <a class="button secondary" href="./v1.0.1/wuhr-agent-1.0.1-darwin-arm64.tar.gz.sha256">SHA-256</a>
         </div>
       </article>
     </div>
@@ -82,13 +82,13 @@
       <h2>自动识别并安装</h2>
       <p>Agent 默认监听 <code>2081</code>。下列命令先获取 GitHub 安装器，GitHub 不可用时改用本镜像；安装器下载后端包时也会执行相同的回退和校验逻辑。</p>
       <pre>tmp=$(mktemp) &amp;&amp; trap 'rm -f "$tmp"' 0 HUP INT TERM \
-  &amp;&amp; (curl -fsSL 'https://github.com/st-lzh/Wuhr-AI-ops/releases/download/v1.0.0/install-agent.sh' -o "$tmp" \
-  || curl -fsSL 'http://106.12.150.207/download/install-agent.sh' -o "$tmp") \
+  &amp;&amp; (curl -fsSL 'https://github.com/st-lzh/Wuhr-AI-ops/releases/download/v1.0.1/install-agent.sh' -o "$tmp" \
+  || curl -fsSL 'http://106.12.150.207/download/v1.0.1/install-agent.sh' -o "$tmp") \
   &amp;&amp; sudo sh "$tmp" --port 2081</pre>
     </section>
 
     <footer>
-      GitHub 备用来源：<a href="https://github.com/st-lzh/Wuhr-AI-ops/releases/tag/v1.0.0">st-lzh/Wuhr-AI-ops v1.0.0</a>
+      GitHub 备用来源：<a href="https://github.com/st-lzh/Wuhr-AI-ops/releases/tag/v1.0.1">Wuhr Agent v1.0.1</a>
     </footer>
   </main>
 </body>

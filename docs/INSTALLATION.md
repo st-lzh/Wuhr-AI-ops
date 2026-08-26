@@ -162,35 +162,35 @@ sudo ./install.sh all --non-interactive --image-mode build
 
 ## 4. 校验 Agent 发布包
 
-以 `1.0.0` 为例：
+以 `1.0.1` 为例：
 
 下载来源：
 
-- GitHub：`https://github.com/st-lzh/Wuhr-AI-ops/releases/tag/v1.0.0`
+- GitHub：`https://github.com/st-lzh/Wuhr-AI-ops/releases/tag/v1.0.1`
 - 国内镜像：`http://106.12.150.207/download/`
 
 Agent 按操作系统和 CPU 架构分为四个包：
 
-- `wuhr-agent-1.0.0-linux-amd64.tar.gz`
-- `wuhr-agent-1.0.0-linux-arm64.tar.gz`
-- `wuhr-agent-1.0.0-darwin-amd64.tar.gz`
-- `wuhr-agent-1.0.0-darwin-arm64.tar.gz`
+- `wuhr-agent-1.0.1-linux-amd64.tar.gz`
+- `wuhr-agent-1.0.1-linux-arm64.tar.gz`
+- `wuhr-agent-1.0.1-darwin-amd64.tar.gz`
+- `wuhr-agent-1.0.1-darwin-arm64.tar.gz`
 
 推荐直接使用在线安装器。它先访问 GitHub，失败或校验不通过时自动切换国内镜像：
 
 ```bash
 tmp=$(mktemp) && trap 'rm -f "$tmp"' 0 HUP INT TERM \
-  && (curl -fsSL 'https://github.com/st-lzh/Wuhr-AI-ops/releases/download/v1.0.0/install-agent.sh' -o "$tmp" \
-  || curl -fsSL 'http://106.12.150.207/download/install-agent.sh' -o "$tmp") \
+  && (curl -fsSL 'https://github.com/st-lzh/Wuhr-AI-ops/releases/download/v1.0.1/install-agent.sh' -o "$tmp" \
+  || curl -fsSL 'http://106.12.150.207/download/v1.0.1/install-agent.sh' -o "$tmp") \
   && sudo sh "$tmp" --port=2081
 ```
 
 手动下载时必须同时下载对应的 `.sha256` 文件。例如：
 
 ```bash
-sha256sum -c wuhr-agent-1.0.0-linux-amd64.tar.gz.sha256
-tar -xzf wuhr-agent-1.0.0-linux-amd64.tar.gz
-cd wuhr-agent-1.0.0-linux-amd64
+sha256sum -c wuhr-agent-1.0.1-linux-amd64.tar.gz.sha256
+tar -xzf wuhr-agent-1.0.1-linux-amd64.tar.gz
+cd wuhr-agent-1.0.1-linux-amd64
 sudo ./install-agent.sh --port=2081
 ```
 

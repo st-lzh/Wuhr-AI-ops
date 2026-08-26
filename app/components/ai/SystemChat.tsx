@@ -843,11 +843,13 @@ const SystemChat: React.FC = () => {
       const result = await response.json()
 
       if (result.success) {
-        const { kubeletStatus, kubeletVersion, recommendations } = result.data
+        const { kubeletStatus, kubeletVersion, latestVersion, needsUpgrade, recommendations } = result.data
 
         let statusText = ''
 
-        if (kubeletStatus === 'installed') {
+        if (kubeletStatus === 'installed' && needsUpgrade) {
+          statusText = `⚠️ Agent 需要更新 ${kubeletVersion ? `(当前 v${kubeletVersion}，最新 v${latestVersion})` : ''}`
+        } else if (kubeletStatus === 'installed') {
           statusText = `✅ Agent 已安装且通信正常 ${kubeletVersion ? `(v${kubeletVersion})` : ''}`
         } else if (kubeletStatus === 'auto_installed') {
           statusText = `🚀 Agent 已自动部署 ${kubeletVersion ? `(v${kubeletVersion})` : ''}`
@@ -861,10 +863,12 @@ const SystemChat: React.FC = () => {
           statusText = '❌ Agent 服务不可达或尚未安装'
         }
 
-        const canRepairAgent = ['not_installed', 'authentication_mismatch', 'legacy_unverified'].includes(kubeletStatus)
+        const canRepairAgent = needsUpgrade || ['not_installed', 'authentication_mismatch', 'legacy_unverified'].includes(kubeletStatus)
         const repairActionLabel = kubeletStatus === 'not_installed'
           ? '自动安装并同步 Agent'
-          : '同步密钥并更新 Agent'
+          : needsUpgrade
+            ? `更新至 Agent v${latestVersion}`
+            : '同步密钥并更新 Agent'
 
         // 显示详细信息
         Modal.info({
